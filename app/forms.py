@@ -1,7 +1,7 @@
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed
 from wtforms import StringField, PasswordField, BooleanField, IntegerField, DateField, TimeField, TextAreaField, SubmitField
-from wtforms.validators import DataRequired, URL, Optional, Length
+from wtforms.validators import DataRequired, URL, Optional, Length, Email
 
 class ShortenURLForm(FlaskForm):
     long_url = StringField('Long URL', validators=[DataRequired(), URL(message="Invalid URL")])
@@ -31,5 +31,16 @@ class BulkUploadForm(FlaskForm):
     submit = SubmitField('Process Bulk')
 
 class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[DataRequired()])
+    submit = SubmitField('Unlock')
+
+class RegisterForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(min=4, max=20)])
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
+    submit = SubmitField('Register')
+
+class LinkPasswordForm(FlaskForm): # Renamed from original LoginForm to avoid confusion
     password = PasswordField('Password', validators=[DataRequired()])
     submit = SubmitField('Unlock')

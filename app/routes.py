@@ -3,11 +3,12 @@ import csv
 import json
 import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session
+from flask_login import login_user, logout_user, current_user, login_required
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 
-from app.models import db, URL
-from app.forms import ShortenURLForm, BulkUploadForm, LoginForm
+from app.models import db, URL, User
+from app.forms import ShortenURLForm, BulkUploadForm, LoginForm, RegisterForm, LinkPasswordForm
 from app.utils import generate_short_code, get_qr_data_url, generate_qr, select_ab_url
 
 main = Blueprint('main', __name__)
@@ -60,6 +61,7 @@ def index():
 
         # Create Record
         new_url = URL(
+            user_id=current_user.id if current_user.is_authenticated else None,
             short_code=short_code,
             long_url=long_url,
             ab_urls=ab_list,
@@ -166,7 +168,7 @@ def redirect_to_url(short_code):
         # Check session
         auth_key = f"auth_{short_code}"
         if not session.get(auth_key):
-             return redirect(url_for('main.login', short_code=short_code))
+             return redirect(url_for('main.link_password_auth', short_code=short_code))
              
     # Select destination
     target_url = url_entry.long_url
@@ -181,10 +183,10 @@ def redirect_to_url(short_code):
     
     return redirect(target_url, code=302)
 
-@main.route('/login/<short_code>', methods=['GET', 'POST'])
-def login(short_code):
+@main.route('/link-auth/<short_code>', methods=['GET', 'POST'])
+def link_password_auth(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
-    form = LoginForm()
+    form = LinkPasswordForm()
     
     if form.validate_on_submit():
         if check_password_hash(url_entry.password_hash, form.password.data):
@@ -194,6 +196,46 @@ def login(short_code):
             flash("Invalid Password", 'danger')
             
     return render_template('login.html', form=form, short_code=short_code)
+
+@main.route('/register', methods=['GET', 'POST'])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for('main.index'))
+    form = RegisterForm()
+    if form.validate_on_submit():
+        hashed_password = generate_password_hash(form.password.data)
+        user = User(username=form.username.data, email=form.email.data, password_hash=hashed_password)
+        db.session.add(user)
+        db.session.commit()
+        flash('Your account has been created! You can now log in.', 'success')
+        return redirect(url_for('main.login'))
+    return render_template('register.html', form=form)
+
+@main.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('main.index'))
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(username=form.username.data).first()
+        if user and check_password_hash(user.password_hash, form.password.data):
+            login_user(user)
+            next_page = request.args.get('next')
+            return redirect(next_page) if next_page else redirect(url_for('main.index'))
+        else:
+            flash('Login Unsuccessful. Please check username and password', 'danger')
+    return render_template('login_user.html', form=form)
+
+@main.route('/logout')
+def logout():
+    logout_user()
+    return redirect(url_for('main.index'))
+
+@main.route('/dashboard')
+@login_required
+def dashboard():
+    urls = URL.query.filter_by(user_id=current_user.id).order_by(URL.created_at.desc()).all()
+    return render_template('dashboard.html', urls=urls)
 
 @main.route('/<short_code>/stats')
 def stats(short_code):

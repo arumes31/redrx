@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}My Dashboard - Redirx{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>My Dashboard</h2>
+            <a href="{{ url_for('main.index') }}" class="btn btn-shorten">Shorten New Link</a>
+        </div>
+        
+        <div class="card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Code</th>
+                                <th>Long URL</th>
+                                <th>Clicks</th>
+                                <th>Created</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for url in urls %}
+                            <tr>
+                                <td><span class="fw-bold text-info">{{ url.short_code }}</span></td>
+                                <td class="text-truncate" style="max-width: 250px;">{{ url.long_url }}</td>
+                                <td>{{ url.clicks }}</td>
+                                <td>{{ url.created_at.strftime('%Y-%m-%d') }}</td>
+                                <td>
+                                    {% if url.is_active() %}
+                                        <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Inactive</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('main.stats', short_code=url.short_code) }}" class="btn btn-sm btn-outline-info">Stats</a>
+                                    <a href="{{ url_for('main.qr_download', short_code=url.short_code) }}" class="btn btn-sm btn-outline-light">QR</a>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">You haven't shortened any links yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

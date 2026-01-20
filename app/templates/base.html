@@ -12,7 +12,36 @@
 <body data-animation="{% block animation %}circles{% endblock %}">
     <canvas id="canvas"></canvas>
     
-    <div class="container py-5">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-transparent">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="{{ url_for('main.index') }}">Redirx</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.index') }}">Home</a>
+                    </li>
+                    {% if current_user.is_authenticated %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('main.dashboard') }}">Dashboard</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('main.logout') }}">Logout ({{ current_user.username }})</a>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('main.login') }}">Login</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('main.register') }}">Register</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <div class="row justify-content-center">
