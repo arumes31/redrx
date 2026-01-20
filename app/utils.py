@@ -14,10 +14,10 @@ import os
 from urllib.parse import urlparse
 
 def update_phishing_list():
-    """Downloads the latest phishing domain list."""
-    url = current_app.config.get('PHISHING_LIST_URL')
+    """Downloads the latest phishing domain lists."""
+    urls = current_app.config.get('PHISHING_LIST_URLS')
     path = current_app.config.get('BLOCKED_DOMAINS_PATH')
-    if not url or not path:
+    if not urls or not path:
         return
     
     try:
@@ -27,10 +27,18 @@ def update_phishing_list():
             if file_age < 86400: # 24 hours
                 return
 
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(response.text)
+        with open(path, 'w', encoding='utf-8') as f:
+            for url in urls:
+                url = url.strip()
+                if not url:
+                    continue
+                try:
+                    response = requests.get(url, timeout=10)
+                    if response.status_code == 200:
+                        f.write(response.text)
+                        f.write('\n') # Ensure newline between lists
+                except Exception:
+                    continue
     except Exception: # nosec B110
         pass
 
@@ -55,12 +63,13 @@ def is_safe_url(target_url):
     if path and os.path.exists(path):
         try:
             with open(path, 'r', encoding='utf-8') as f:
-                # We check for exact match or suffix to be efficient but safe
-                # Note: Large files should be optimized (e.g. bloom filter or set)
-                # For now, we do a basic search
-                for line in f:
-                    blocked_domain = line.strip().lower()
-                    if blocked_domain and (domain == blocked_domain or domain.endswith('.' + blocked_domain)):
+                blocked_domains = {line.strip().lower() for line in f if line.strip()}
+                
+                # Check exact or parent domains
+                parts = domain.split('.')
+                for i in range(len(parts)):
+                    check_domain = '.'.join(parts[i:])
+                    if check_domain in blocked_domains:
                         return False
         except Exception: # nosec B110
             pass
