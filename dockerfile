@@ -16,6 +16,9 @@ COPY app/ ./app/
 COPY config.py .
 COPY run.py .
 
+# Create the database directory for SQLite fallback
+RUN mkdir -p db
+
 EXPOSE 5000
 
 ENV BASE_DOMAIN=short.example.com
