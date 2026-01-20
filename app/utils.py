@@ -15,16 +15,21 @@ from urllib.parse import urlparse
 
 def update_phishing_list():
     """Downloads the latest phishing domain lists."""
+    if not current_app.config.get('ENABLE_PHISHING_CHECK'):
+        return
+
     urls = current_app.config.get('PHISHING_LIST_URLS')
     path = current_app.config.get('BLOCKED_DOMAINS_PATH')
+    interval = current_app.config.get('PHISHING_CHECK_INTERVAL', 24)
+    
     if not urls or not path:
         return
     
     try:
-        # Check if file is old (e.g. older than 24h)
+        # Check if file is old (e.g. older than interval hours)
         if os.path.exists(path):
             file_age = time.time() - os.path.getmtime(path)
-            if file_age < 86400: # 24 hours
+            if file_age < (interval * 3600):
                 return
 
         with open(path, 'w', encoding='utf-8') as f:
@@ -59,6 +64,9 @@ def is_safe_url(target_url):
         return False
 
     # 2. Check downloaded list
+    if not current_app.config.get('ENABLE_PHISHING_CHECK'):
+        return True
+
     path = current_app.config.get('BLOCKED_DOMAINS_PATH')
     if path and os.path.exists(path):
         try:
