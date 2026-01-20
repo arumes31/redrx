@@ -70,14 +70,18 @@
                                         {{ form.password.label(class="form-label") }}
                                         {{ form.password(class="form-control", placeholder="Optional") }}
                                     </div>
-                                    <div class="col-md-6">
-                                        {{ form.expiry_hours.label(class="form-label") }}
-                                        {{ form.expiry_hours(class="form-control") }}
-                                        <div class="form-check mt-2">
-                                            {{ form.disable_expiry(class="form-check-input") }}
-                                            {{ form.disable_expiry.label(class="form-check-label") }}
-                                        </div>
+                                <div class="col-md-6 form-section">
+                                    {{ form.expiry_hours.label(class="form-label") }}
+                                    <div class="input-group">
+                                        {{ form.expiry_hours(class="form-control", id="expiry_input", placeholder="24") }}
+                                        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="document.getElementById('expiry_input').value=0">Never</button>
                                     </div>
+                                    <div class="form-text text-light opacity-50 small">Set to 0 to never expire.</div>
+                                    <div class="form-check mt-2">
+                                        {{ form.disable_expiry(class="form-check-input") }}
+                                        {{ form.disable_expiry.label(class="form-check-label") }}
+                                    </div>
+                                </div>
                                 </div>
                                 <div class="row form-section">
                                     <div class="col-md-6">

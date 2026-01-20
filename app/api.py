@@ -55,7 +55,7 @@ def shorten():
 
     # Expiry logic
     expires_at = None
-    if not disable_expiry:
+    if not disable_expiry and int(expiry_hours) != 0:
         expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(expiry_hours))
 
     # Parse datetime strings if provided (ISO 8601 expected)
