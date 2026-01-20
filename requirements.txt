@@ -1,8 +1,9 @@
-Flask==3.0.3
-Flask-SQLAlchemy==3.1.1
-Flask-WTF==1.2.1
-email-validator==2.1.0.post1
-qrcode[pil]==7.4.2
-Pillow==10.1.0
-Werkzeug==3.0.1
-pytest==8.0.0
+Flask>=3.1.2
+Flask-SQLAlchemy>=3.1.1
+Flask-WTF>=1.2.2
+email-validator>=2.3.0
+qrcode[pil]>=8.2
+Pillow>=12.1.0
+Werkzeug>=3.1.5
+pytest>=9.0.2
+psycopg2-binary>=2.9.11

@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body p-4 p-md-5">
+                <h1 class="text-center mb-4"><i class="fas fa-link me-2"></i>Redirx</h1>
+                
+                <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="single-tab" data-bs-toggle="tab" data-bs-target="#single" type="button">Single Link</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="bulk-tab" data-bs-toggle="tab" data-bs-target="#bulk" type="button">Bulk CSV</button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="myTabContent">
+                    <div class="tab-pane fade show active" id="single" role="tabpanel">
+                        <form method="POST" enctype="multipart/form-data">
+                            {{ form.hidden_tag() }}
+                            
+                            <div class="row">
+                                <div class="col-md-12 form-section">
+                                    {{ form.long_url.label(class="form-label") }}
+                                    {{ form.long_url(class="form-control", placeholder="https://example.com/long/path") }}
+                                    {% if form.long_url.errors %}
+                                        <div class="text-danger small">{{ form.long_url.errors[0] }}</div>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-6 form-section">
+                                    {{ form.custom_code.label(class="form-label") }}
+                                    {{ form.custom_code(class="form-control", placeholder="e.g. MYLINK") }}
+                                    {% if form.custom_code.errors %}
+                                        <div class="text-danger small">{{ form.custom_code.errors[0] }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <a class="text-decoration-none text-light" data-bs-toggle="collapse" href="#advancedOptions" role="button">
+                                    <i class="fas fa-cog me-1"></i> Advanced Options
+                                </a>
+                            </div>
+
+                            <div class="collapse" id="advancedOptions">
+                                <div class="row">
+                                    <div class="col-md-12 form-section">
+                                        {{ form.ab_urls.label(class="form-label") }}
+                                        {{ form.ab_urls(class="form-control", placeholder="https://alt1.com, https://alt2.com") }}
+                                    </div>
+                                </div>
+                                <div class="row form-section">
+                                    <div class="col-md-6">
+                                        {{ form.password.label(class="form-label") }}
+                                        {{ form.password(class="form-control", placeholder="Optional") }}
+                                    </div>
+                                    <div class="col-md-6">
+                                        {{ form.expiry_hours.label(class="form-label") }}
+                                        {{ form.expiry_hours(class="form-control") }}
+                                        <div class="form-check mt-2">
+                                            {{ form.disable_expiry(class="form-check-input") }}
+                                            {{ form.disable_expiry.label(class="form-check-label") }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row form-section">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Start Time (Optional)</label>
+                                        {{ form.start_date(class="form-control mb-1") }}
+                                        {{ form.start_time(class="form-control") }}
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">End Time (Optional)</label>
+                                        {{ form.end_date(class="form-control mb-1") }}
+                                        {{ form.end_time(class="form-control") }}
+                                    </div>
+                                </div>
+                                <div class="row form-section">
+                                    <div class="col-md-6">
+                                        {{ form.qr_color.label(class="form-label") }}
+                                        {{ form.qr_color(class="form-control form-control-color w-100") }}
+                                    </div>
+                                    <div class="col-md-6">
+                                        {{ form.qr_bg.label(class="form-label") }}
+                                        {{ form.qr_bg(class="form-control form-control-color w-100") }}
+                                    </div>
+                                    <div class="col-md-12 mt-2">
+                                        {{ form.logo_file.label(class="form-label") }}
+                                        {{ form.logo_file(class="form-control") }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {{ form.submit(class="btn btn-shorten btn-lg w-100 mt-3") }}
+                        </form>
+
+                        {% if short_url %}
+                            <div class="mt-4 text-center animate__animated animate__fadeIn">
+                                <h5 class="text-success"><i class="fas fa-check-circle"></i> Shortened!</h5>
+                                <div class="short-url mb-3">{{ short_url }}</div>
+                                
+                                <button class="btn btn-outline-light me-2" onclick="navigator.clipboard.writeText('{{ short_url }}'); this.innerHTML='<i class=\'fas fa-check\'></i> Copied!'; setTimeout(() => this.innerHTML='<i class=\'fas fa-copy\'></i> Copy', 2000);">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                                <a href="{{ stats_url }}" class="btn btn-outline-info me-2">
+                                    <i class="fas fa-chart-bar"></i> Stats
+                                </a>
+                                <a href="{{ short_url }}/qr" class="btn btn-outline-light" download>
+                                    <i class="fas fa-download"></i> QR
+                                </a>
+
+                                <div class="qr-container mt-3">
+                                    <img src="data:image/png;base64,{{ qr_data }}" alt="QR Code" class="qr-img">
+                                </div>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="tab-pane fade" id="bulk" role="tabpanel">
+                        <form action="{{ url_for('main.bulk_upload') }}" method="POST" enctype="multipart/form-data">
+                            {{ bulk_form.hidden_tag() }}
+                            <div class="mb-3">
+                                {{ bulk_form.csv_file.label(class="form-label") }}
+                                {{ bulk_form.csv_file(class="form-control") }}
+                                <div class="form-text text-light opacity-50">CSV Header: <code>long_url, custom_code</code> (optional)</div>
+                            </div>
+                            {{ bulk_form.submit(class="btn btn-shorten btn-lg w-100") }}
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

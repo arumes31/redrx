@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}404 Not Found{% endblock %}
+
+{% block content %}
+<div class="text-center mt-5">
+    <h1 class="display-1 fw-bold text-danger">404</h1>
+    <p class="lead">Oops! That link seems to be lost in the void.</p>
+    <a href="{{ url_for('main.index') }}" class="btn btn-outline-light mt-3">Take me home</a>
+</div>
+{% endblock %}

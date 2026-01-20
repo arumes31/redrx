@@ -56,7 +56,7 @@ def index():
             
         expires_at = None
         if not form.disable_expiry.data:
-             expires_at = datetime.datetime.utcnow() + datetime.timedelta(hours=form.expiry_hours.data)
+             expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
 
         # Create Record
         new_url = URL(
@@ -132,7 +132,7 @@ def bulk_upload():
                      custom_code = generate_short_code(current_app.config['SHORT_CODE_LENGTH'])
                 
                 # Default expiry
-                expires_at = datetime.datetime.utcnow() + datetime.timedelta(hours=current_app.config['EXPIRY_HOURS'])
+                expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=current_app.config['EXPIRY_HOURS'])
                 
                 new_url = URL(
                     short_code=custom_code,

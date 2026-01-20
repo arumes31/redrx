@@ -1,0 +1,25 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - SECRET_KEY=dev-secret-key-change-in-prod
+      - DATABASE_URL=postgresql://redirx:securepassword@db:5432/redirx_db
+      - BASE_DOMAIN=localhost:5000
+    depends_on:
+      - db
+    restart: always
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=redirx
+      - POSTGRES_PASSWORD=securepassword
+      - POSTGRES_DB=redirx_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  postgres_data:

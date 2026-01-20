@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}410 Gone{% endblock %}
+
+{% block content %}
+<div class="text-center mt-5">
+    <h1 class="display-1 fw-bold text-warning">410</h1>
+    <p class="lead">This link has expired and is no longer available.</p>
+    <a href="{{ url_for('main.index') }}" class="btn btn-outline-light mt-3">Create a new one</a>
+</div>
+{% endblock %}

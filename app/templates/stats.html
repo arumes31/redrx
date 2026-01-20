@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Stats - Redirx{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="fas fa-chart-line text-info"></i> Statistics</h2>
+            <a href="{{ url_for('main.index') }}" class="btn btn-outline-light btn-sm">Create New</a>
+        </div>
+        
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="card h-100 text-center p-4">
+                    <div class="display-4 text-primary fw-bold">{{ url.clicks }}</div>
+                    <div class="text-muted text-uppercase small ls-1">Total Clicks</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                 <div class="card h-100 text-center p-4">
+                    <div class="display-4 {% if active %}text-success{% else %}text-danger{% endif %} fw-bold">
+                        {% if active %}ACTIVE{% else %}INACTIVE{% endif %}
+                    </div>
+                    <div class="text-muted text-uppercase small ls-1">Status</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100 text-center p-4">
+                     <div class="h2 mt-3">{{ url.short_code }}</div>
+                     <div class="text-muted text-uppercase small ls-1">Short Code</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-body p-4">
+                <h5 class="mb-3">Link Details</h5>
+                <dl class="row mb-0">
+                    <dt class="col-sm-3 text-muted">Original URL</dt>
+                    <dd class="col-sm-9 text-break"><a href="{{ url.long_url }}" target="_blank" class="text-light">{{ url.long_url }}</a></dd>
+
+                    <dt class="col-sm-3 text-muted">Short URL</dt>
+                    <dd class="col-sm-9"><a href="{{ short_url }}" target="_blank" class="text-info">{{ short_url }}</a></dd>
+
+                    {% if url.ab_urls %}
+                    <dt class="col-sm-3 text-muted">Alternate URLs</dt>
+                    <dd class="col-sm-9">
+                        <ul class="list-unstyled mb-0">
+                            {% for alt in url.ab_urls %}
+                                <li class="text-break"><small class="text-secondary"><i class="fas fa-random me-1"></i></small> {{ alt }}</li>
+                            {% endfor %}
+                        </ul>
+                    </dd>
+                    {% endif %}
+
+                    <dt class="col-sm-3 text-muted">Created At</dt>
+                    <dd class="col-sm-9">{{ url.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</dd>
+
+                    <dt class="col-sm-3 text-muted">Expires At</dt>
+                    <dd class="col-sm-9">
+                        {% if url.expires_at %}
+                            {{ url.expires_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC
+                        {% else %}
+                            <span class="text-success">Never</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
