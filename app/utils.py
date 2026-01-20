@@ -7,6 +7,24 @@ from PIL import Image
 
 import requests
 
+import os
+from urllib.parse import urlparse
+
+def is_safe_url(target_url):
+    """Checks if the URL is not in the blocked domains list."""
+    blocked = os.environ.get('BLOCKED_DOMAINS', '').split(',')
+    if not blocked or blocked == ['']:
+        return True
+    
+    try:
+        domain = urlparse(target_url).netloc.lower()
+        for b in blocked:
+            if b.strip().lower() in domain:
+                return False
+    except Exception: # nosec B110
+        pass
+    return True
+
 def get_geo_info(ip):
     """Fetches country from IP using a free API."""
     if ip == '127.0.0.1':

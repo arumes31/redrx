@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.security import generate_password_hash
 from app.models import db, URL, User
-from app.utils import generate_short_code, generate_qr
+from app.utils import generate_short_code, generate_qr, is_safe_url
 from app import limiter
 import datetime
 import base64
@@ -25,6 +25,10 @@ def shorten():
         return jsonify({'error': 'Missing long_url'}), 400
 
     long_url = data['long_url'].strip()
+    
+    if not is_safe_url(long_url):
+        return jsonify({'error': 'Destination URL is blocked'}), 403
+
     custom_code = data.get('custom_code')
     code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
     

@@ -12,7 +12,7 @@ from PIL import Image
 
 from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, BulkUploadForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
-from app.utils import generate_short_code, get_qr_data_url, generate_qr, select_ab_url, get_geo_info
+from app.utils import generate_short_code, get_qr_data_url, generate_qr, select_ab_url, get_geo_info, is_safe_url
 
 main = Blueprint('main', __name__)
 
@@ -31,6 +31,11 @@ def index():
     
     if form.validate_on_submit():
         long_url = form.long_url.data
+        
+        if not is_safe_url(long_url):
+            flash("That destination URL is blocked for safety reasons.", 'danger')
+            return render_template('index.html', form=form, bulk_form=bulk_form)
+
         custom_code = form.custom_code.data.strip().upper() if form.custom_code.data else None
         
         # Check Custom Code Availability

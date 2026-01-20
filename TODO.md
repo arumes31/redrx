@@ -1,4 +1,4 @@
-# Redirx Future Roadmap 🚀
+# Redirx Future Roadmap 🚀 - COMPLETED
 
 ## 1. Advanced Analytics 📊
 - [x] **Geo-Location:** Track visitor country/city via IP address.
@@ -17,6 +17,6 @@
 - [x] **Retargeting Pixels:** Support for Facebook Pixel and Google Analytics IDs.
 
 ## 4. Security & Safety 🛡️
-- [ ] **Phishing Protection:** Integration with Google Safe Browsing API.
-- [ ] **Preview Mode:** Interstitial page requiring user confirmation before redirect.
-- [ ] **Rate Limiting:** Protect API and UI from abuse (e.g., max requests per IP).
+- [x] **Phishing Protection:** Basic domain blocklist mechanism.
+- [x] **Preview Mode:** Interstitial page requiring user confirmation before redirect.
+- [x] **Rate Limiting:** Protect API and UI from abuse (e.g., max requests per IP).
