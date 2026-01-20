@@ -5,25 +5,33 @@ Redirx is a modern, feature-rich URL shortener built with Python (Flask), Postgr
 ## ✨ Features
 
 - **Custom Short Codes:** Create memorable links.
-- **A/B Testing & Rotation:** Rotate between multiple destination URLs for a single short code.
+- **Rotate Targets:** Rotate between multiple destination URLs for a single short code.
 - **Password Protection:** Secure your links with a password.
-- **Expiration & Scheduling:** Set start/end times or automatic expiry in hours.
-- **QR Code Generation:** Customizable QR codes with color options and logo support.
+- **Expiration & Scheduling:** Set start/end times or automatic expiry (set to 0 for permanent links).
+- **QR Code Generation:** Customizable QR codes with color options and logo support, targeting the shortened URL.
 - **Bulk Upload:** Shorten hundreds of links at once via CSV.
-- **Advanced Stats:** Track click counts and link status.
-- **Docker Ready:** Fully containerized with PostgreSQL support.
+- **Advanced Stats:** Track click counts, countries (Local GeoIP), browsers, and platforms.
+- **Phishing Protection:** Auto-updating blocked domain lists with optional auto-removal of malicious links.
+- **Access Control:** Configurable options to disable anonymous link creation or public registration.
+- **Docker Ready:** Fully containerized with PostgreSQL and GeoIP auto-updater.
 
 ## 🛠 Tech Stack
 
 - **Backend:** Flask, Flask-SQLAlchemy (ORM), Flask-WTF (Forms)
 - **Database:** PostgreSQL (default in Docker), SQLite (fallback)
+- **Geo-Location:** MaxMind GeoLite2 (Local mmdb with auto-updater)
 - **Frontend:** HTML5, CSS3 (Bootstrap 5), JavaScript (Canvas API for animations)
-- **Deployment:** Docker, Docker Compose, GitHub Actions
+- **Deployment:** Docker, GHCR, GitHub Actions
 
 ## 🚀 Quick Start (Docker)
 
-The fastest way to get started is using Docker Compose:
+### Using GHCR Image (Recommended)
+Create a `docker-compose.yml` using `docker-compose.ghcr.yml` as a template and run:
+```bash
+docker-compose up -d
+```
 
+### Local Build
 1. Clone the repository.
 2. Run:
    ```bash
@@ -31,7 +39,16 @@ The fastest way to get started is using Docker Compose:
    ```
 3. Open `http://localhost:5000` in your browser.
 
-## 🔧 Local Development
+## 🔧 Configuration (Environment Variables)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAXMIND_LICENSE_KEY` | - | Required for local GeoIP updates. |
+| `ENABLE_PHISHING_CHECK` | `true` | Toggle phishing domain blocking. |
+| `ENABLE_AUTO_REMOVE_PHISHING` | `false` | Automatically delete links found on phishing lists. |
+| `PHISHING_LIST_URLS` | `https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-domains-ACTIVE.txt` | Comma-separated list of phishing list sources. |
+| `DISABLE_ANONYMOUS_CREATE` | `false` | If true, only logged-in users can shorten URLs. |
+| `DISABLE_REGISTRATION` | `false` | If true, the registration page is disabled. |
 
 1. Install dependencies:
    ```bash

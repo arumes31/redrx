@@ -8,23 +8,137 @@ from PIL import Image
 import requests
 import geoip2.database
 from flask import current_app
+import time
 
 import os
 from urllib.parse import urlparse
 
-def is_safe_url(target_url):
-    """Checks if the URL is not in the blocked domains list."""
-    blocked = os.environ.get('BLOCKED_DOMAINS', '').split(',')
-    if not blocked or blocked == ['']:
-        return True
+def update_phishing_list():
+    """Downloads the latest phishing domain lists."""
+    if not current_app.config.get('ENABLE_PHISHING_CHECK'):
+        return
+
+    urls = current_app.config.get('PHISHING_LIST_URLS')
+    path = current_app.config.get('BLOCKED_DOMAINS_PATH')
+    interval = current_app.config.get('PHISHING_CHECK_INTERVAL', 24)
+    
+    if not urls or not path:
+        return
     
     try:
-        domain = urlparse(target_url).netloc.lower()
-        for b in blocked:
-            if b.strip().lower() in domain:
-                return False
+        # Check if file is old (e.g. older than interval hours)
+        if os.path.exists(path):
+            file_age = time.time() - os.path.getmtime(path)
+            if file_age < (interval * 3600):
+                return
+
+        with open(path, 'w', encoding='utf-8') as f:
+            for url in urls:
+                url = url.strip()
+                if not url:
+                    continue
+                try:
+                    response = requests.get(url, timeout=10)
+                    if response.status_code == 200:
+                        f.write(response.text)
+                        f.write('\n') # Ensure newline between lists
+                except Exception:
+                    continue
     except Exception: # nosec B110
         pass
+
+def cleanup_phishing_urls():
+    """Removes URLs from database that are found in the phishing lists."""
+    if not current_app.config.get('ENABLE_AUTO_REMOVE_PHISHING'):
+        return
+
+    path = current_app.config.get('BLOCKED_DOMAINS_PATH')
+    if not path or not os.path.exists(path):
+        return
+
+    from app.models import db, URL
+    
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            blocked_domains = {line.strip().lower() for line in f if line.strip()}
+
+        if not blocked_domains:
+            return
+
+        urls = URL.query.all()
+        removed_count = 0
+        
+        for url_entry in urls:
+            # Check main long_url
+            try:
+                domain = urlparse(url_entry.long_url).netloc.lower()
+                is_phishing = False
+                if domain:
+                    parts = domain.split('.')
+                    for i in range(len(parts)):
+                        if '.'.join(parts[i:]) in blocked_domains:
+                            is_phishing = True
+                            break
+                
+                # Check rotate_targets if main is clean
+                if not is_phishing and url_entry.rotate_targets:
+                    for target in url_entry.rotate_targets:
+                        target_domain = urlparse(target).netloc.lower()
+                        if target_domain:
+                            parts = target_domain.split('.')
+                            for i in range(len(parts)):
+                                if '.'.join(parts[i:]) in blocked_domains:
+                                    is_phishing = True
+                                    break
+                        if is_phishing: break
+
+                if is_phishing:
+                    db.session.delete(url_entry)
+                    removed_count += 1
+            except Exception:
+                continue
+        
+        if removed_count > 0:
+            db.session.commit()
+            
+    except Exception: # nosec B110
+        pass
+
+def is_safe_url(target_url):
+    """Checks if the URL is not in the blocked domains list."""
+    # 1. Check manual overrides from ENV
+    blocked_env = os.environ.get('BLOCKED_DOMAINS', '').split(',')
+    domain = ""
+    try:
+        domain = urlparse(target_url).netloc.lower()
+        if not domain: # For relative or malformed URLs
+             return False
+             
+        for b in blocked_env:
+            if b.strip() and b.strip().lower() in domain:
+                return False
+    except Exception:
+        return False
+
+    # 2. Check downloaded list
+    if not current_app.config.get('ENABLE_PHISHING_CHECK'):
+        return True
+
+    path = current_app.config.get('BLOCKED_DOMAINS_PATH')
+    if path and os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                blocked_domains = {line.strip().lower() for line in f if line.strip()}
+                
+                # Check exact or parent domains
+                parts = domain.split('.')
+                for i in range(len(parts)):
+                    check_domain = '.'.join(parts[i:])
+                    if check_domain in blocked_domains:
+                        return False
+        except Exception: # nosec B110
+            pass
+            
     return True
 
 def get_geo_info(ip):
