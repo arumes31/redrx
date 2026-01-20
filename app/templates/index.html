@@ -36,6 +36,10 @@
                                         <div class="text-danger small">{{ form.custom_code.errors[0] }}</div>
                                     {% endif %}
                                 </div>
+                                <div class="col-md-6 form-section">
+                                    {{ form.code_length.label(class="form-label") }}
+                                    {{ form.code_length(class="form-control", min=3, max=20) }}
+                                </div>
                             </div>
                             
                             <div class="mb-3">
@@ -77,6 +81,10 @@
                                     <div class="col-md-6">
                                         {{ form.ga_tracking_id.label(class="form-label") }}
                                         {{ form.ga_tracking_id(class="form-control", placeholder="e.g. UA-XXXXX-Y or G-XXXXXXX") }}
+                                        <div class="form-check mt-2">
+                                            {{ form.preview_mode(class="form-check-input") }}
+                                            {{ form.preview_mode.label(class="form-check-label") }}
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="row form-section">

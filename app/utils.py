@@ -16,7 +16,7 @@ def get_geo_info(ip):
         if response.status_code == 200:
             data = response.json()
             return data.get('country', 'Unknown')
-    except Exception:
+    except Exception: # nosec B110
         pass
     return "Unknown"
 

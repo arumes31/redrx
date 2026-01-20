@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, current_app
 from werkzeug.security import generate_password_hash
 from app.models import db, URL, User
 from app.utils import generate_short_code, generate_qr
+from app import limiter
 import datetime
 import base64
 
@@ -14,6 +15,7 @@ def get_user_from_api_key():
     return User.query.filter_by(api_key=api_key).first()
 
 @api.route('/shorten', methods=['POST'])
+@limiter.limit("60 per minute") # Higher limit for API
 def shorten():
     # Authenticate User
     user = get_user_from_api_key()
@@ -24,6 +26,7 @@ def shorten():
 
     long_url = data['long_url'].strip()
     custom_code = data.get('custom_code')
+    code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
     
     # Optional parameters
     ab_urls = data.get('ab_urls')  # Expecting a list of strings
@@ -33,6 +36,7 @@ def shorten():
     
     fb_pixel_id = data.get('fb_pixel_id')
     ga_tracking_id = data.get('ga_tracking_id')
+    preview_mode = data.get('preview_mode', False)
     
     start_at_str = data.get('start_at')
     end_at_str = data.get('end_at')
@@ -43,9 +47,9 @@ def shorten():
             return jsonify({'error': 'Custom code already taken'}), 409
         short_code = custom_code
     else:
-        short_code = generate_short_code(current_app.config['SHORT_CODE_LENGTH'])
+        short_code = generate_short_code(code_length)
         while URL.query.filter_by(short_code=short_code).first():
-            short_code = generate_short_code(current_app.config['SHORT_CODE_LENGTH'])
+            short_code = generate_short_code(code_length)
 
     # Expiry logic
     expires_at = None
@@ -84,6 +88,7 @@ def shorten():
         password_hash=password_hash,
         fb_pixel_id=fb_pixel_id,
         ga_tracking_id=ga_tracking_id,
+        preview_mode=preview_mode,
         expires_at=expires_at,
         start_at=start_at,
         end_at=end_at

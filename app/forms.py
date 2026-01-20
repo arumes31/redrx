@@ -6,12 +6,14 @@ from wtforms.validators import DataRequired, URL, Optional, Length, Email
 class ShortenURLForm(FlaskForm):
     long_url = StringField('Long URL', validators=[DataRequired(), URL(message="Invalid URL")])
     custom_code = StringField('Custom Code', validators=[Optional(), Length(min=3, max=20)])
+    code_length = IntegerField('Auto-gen Length', default=6, validators=[Optional()])
     ab_urls = StringField('Alternate URLs', validators=[Optional()], description="Comma-separated URLs")
     password = PasswordField('Password', validators=[Optional()])
     
     # Tracking Pixels
     fb_pixel_id = StringField('Facebook Pixel ID', validators=[Optional()])
     ga_tracking_id = StringField('Google Analytics ID', validators=[Optional()])
+    preview_mode = BooleanField('Enable Preview Mode')
     
     # Expiry
     expiry_hours = IntegerField('Expiry (Hours)', default=24, validators=[Optional()])
@@ -51,5 +53,6 @@ class LinkPasswordForm(FlaskForm): # Renamed from original LoginForm to avoid co
 
 class EditURLForm(FlaskForm):
     long_url = StringField('Destination URL', validators=[DataRequired(), URL()])
+    preview_mode = BooleanField('Preview Mode')
     active = BooleanField('Active')
     submit = SubmitField('Update Link')

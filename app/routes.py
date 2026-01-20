@@ -5,6 +5,8 @@ import datetime
 import uuid
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session
 from flask_login import login_user, logout_user, current_user, login_required
+from flask_limiter import Limiter
+from app import limiter # Import the instance
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 
@@ -15,6 +17,7 @@ from app.utils import generate_short_code, get_qr_data_url, generate_qr, select_
 main = Blueprint('main', __name__)
 
 @main.route('/', methods=['GET', 'POST'])
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_CREATE', '10 per minute'), methods=['POST'])
 def index():
     form = ShortenURLForm()
     bulk_form = BulkUploadForm()
@@ -38,7 +41,7 @@ def index():
             short_code = custom_code
         else:
             # Generate unique code
-            length = current_app.config['SHORT_CODE_LENGTH']
+            length = form.code_length.data or current_app.config['SHORT_CODE_LENGTH']
             short_code = generate_short_code(length)
             while URL.query.filter_by(short_code=short_code).first():
                  short_code = generate_short_code(length)
@@ -69,6 +72,7 @@ def index():
             password_hash=password_hash,
             fb_pixel_id=form.fb_pixel_id.data,
             ga_tracking_id=form.ga_tracking_id.data,
+            preview_mode=form.preview_mode.data,
             start_at=start_at,
             end_at=end_at,
             expires_at=expires_at
@@ -196,6 +200,10 @@ def redirect_to_url(short_code):
     db.session.add(new_click)
     db.session.commit()
     
+    # If preview mode is enabled
+    if url_entry.preview_mode:
+        return render_template('preview.html', target_url=target_url, short_code=short_code)
+
     # If pixels are present, use intermediate page
     if url_entry.fb_pixel_id or url_entry.ga_tracking_id:
         return render_template('redirect.html', 
@@ -220,6 +228,7 @@ def link_password_auth(short_code):
     return render_template('login.html', form=form, short_code=short_code)
 
 @main.route('/register', methods=['GET', 'POST'])
+@limiter.limit("5 per hour") # Prevent spam accounts
 def register():
     if current_user.is_authenticated:
         return redirect(url_for('main.index'))
@@ -279,7 +288,7 @@ def edit_url(short_code):
     
     if form.validate_on_submit():
         url_entry.long_url = form.long_url.data
-        # If we added an 'active' column we'd save it here.
+        url_entry.preview_mode = form.preview_mode.data
         db.session.commit()
         flash('Link updated successfully.', 'success')
         return redirect(url_for('main.dashboard'))

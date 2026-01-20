@@ -12,6 +12,10 @@
                     {{ form.long_url.label(class="form-label") }}
                     {{ form.long_url(class="form-control") }}
                 </div>
+                <div class="form-check mb-3">
+                    {{ form.preview_mode(class="form-check-input") }}
+                    {{ form.preview_mode.label(class="form-check-label") }}
+                </div>
                 <div class="d-flex justify-content-between mt-4">
                     <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-light">Cancel</a>
                     {{ form.submit(class="btn btn-shorten") }}

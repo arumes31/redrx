@@ -28,6 +28,7 @@ class URL(db.Model):
     password_hash = db.Column(db.String(255), nullable=True)
     fb_pixel_id = db.Column(db.String(50), nullable=True)
     ga_tracking_id = db.Column(db.String(50), nullable=True)
+    preview_mode = db.Column(db.Boolean, default=False)
     clicks_count = db.Column('clicks', db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     expires_at = db.Column(db.DateTime, nullable=True)
