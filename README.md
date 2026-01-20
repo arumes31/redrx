@@ -43,6 +43,52 @@ The fastest way to get started is using Docker Compose:
    python run.py
    ```
 
+## 🔌 API Documentation
+
+### Shorten URL
+**Endpoint:** `POST /api/v1/shorten`
+
+**Body:**
+```json
+{
+  "long_url": "https://example.com/my-long-link",
+  "custom_code": "optional-custom-code",
+  "expiry_hours": 24,
+  "disable_expiry": false,
+  "password": "secret-password",
+  "ab_urls": ["https://alt1.com", "https://alt2.com"],
+  "start_at": "2024-01-01T12:00:00Z",
+  "end_at": "2024-12-31T12:00:00Z"
+}
+```
+
+**Response:**
+```json
+{
+  "short_code": "ABC123",
+  "short_url": "https://short.example.com/ABC123",
+  "long_url": "https://example.com/my-long-link",
+  "expires_at": "2024-01-02T12:00:00+00:00",
+  "password_protected": true,
+  "ab_urls": ["https://alt1.com", "https://alt2.com"]
+}
+```
+
+### Get URL Info
+**Endpoint:** `GET /api/v1/<short_code>`
+
+**Response:**
+```json
+{
+  "short_code": "ABC123",
+  "long_url": "https://example.com",
+  "clicks": 42,
+  "created_at": "2024-01-01T12:00:00",
+  "expires_at": "2024-01-02T12:00:00",
+  "active": true
+}
+```
+
 ## 🧪 Running Tests
 
 ```bash

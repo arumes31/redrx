@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY config.py .
 COPY run.py .
+
+# Create the database directory for SQLite fallback
+RUN mkdir -p db
 
 EXPOSE 5000
 

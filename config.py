@@ -13,4 +13,5 @@ class Config:
     SHORT_CODE_LENGTH = int(os.environ.get('SHORT_CODE_LENGTH', 6))
     DEFAULT_QR_COLOR = os.environ.get('DEFAULT_QR_COLOR', 'black')
     DEFAULT_QR_BG = os.environ.get('DEFAULT_QR_BACKGROUND', 'white')
+    DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() in ['true', '1', 't']
 
