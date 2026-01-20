@@ -47,6 +47,63 @@ def update_phishing_list():
     except Exception: # nosec B110
         pass
 
+def cleanup_phishing_urls():
+    """Removes URLs from database that are found in the phishing lists."""
+    if not current_app.config.get('ENABLE_AUTO_REMOVE_PHISHING'):
+        return
+
+    path = current_app.config.get('BLOCKED_DOMAINS_PATH')
+    if not path or not os.path.exists(path):
+        return
+
+    from app.models import db, URL
+    
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            blocked_domains = {line.strip().lower() for line in f if line.strip()}
+
+        if not blocked_domains:
+            return
+
+        urls = URL.query.all()
+        removed_count = 0
+        
+        for url_entry in urls:
+            # Check main long_url
+            try:
+                domain = urlparse(url_entry.long_url).netloc.lower()
+                is_phishing = False
+                if domain:
+                    parts = domain.split('.')
+                    for i in range(len(parts)):
+                        if '.'.join(parts[i:]) in blocked_domains:
+                            is_phishing = True
+                            break
+                
+                # Check rotate_targets if main is clean
+                if not is_phishing and url_entry.rotate_targets:
+                    for target in url_entry.rotate_targets:
+                        target_domain = urlparse(target).netloc.lower()
+                        if target_domain:
+                            parts = target_domain.split('.')
+                            for i in range(len(parts)):
+                                if '.'.join(parts[i:]) in blocked_domains:
+                                    is_phishing = True
+                                    break
+                        if is_phishing: break
+
+                if is_phishing:
+                    db.session.delete(url_entry)
+                    removed_count += 1
+            except Exception:
+                continue
+        
+        if removed_count > 0:
+            db.session.commit()
+            
+    except Exception: # nosec B110
+        pass
+
 def is_safe_url(target_url):
     """Checks if the URL is not in the blocked domains list."""
     # 1. Check manual overrides from ENV

@@ -41,10 +41,11 @@ def create_app(config_class=Config):
     from app.api import api as api_blueprint
     app.register_blueprint(api_blueprint)
 
-    from app.utils import update_phishing_list
+    from app.utils import update_phishing_list, cleanup_phishing_urls
 
     with app.app_context():
         db.create_all()
         update_phishing_list()
+        cleanup_phishing_urls()
 
     return app
