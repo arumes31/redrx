@@ -9,7 +9,8 @@ services:
       - BASE_DOMAIN=localhost:5000
       - GEOIP_DB_PATH=/usr/share/GeoIP/GeoLite2-Country.mmdb
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
       - geoip_data:/usr/share/GeoIP
     restart: always
@@ -22,6 +23,11 @@ services:
       - POSTGRES_DB=redrx_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U redrx -d redrx_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: always
 
   geoip-updater:

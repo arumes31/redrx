@@ -28,5 +28,5 @@ ENV DEFAULT_QR_COLOR="black"
 ENV DEFAULT_QR_BACKGROUND="white"
 
 # Use the entry point with gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:create_app()", "--workers", "4", "--threads", "2", "--access-logfile", "-", "--error-logfile", "-"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:create_app()", "--workers", "4", "--threads", "2", "--preload", "--access-logfile", "-", "--error-logfile", "-"]
 
