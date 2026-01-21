@@ -49,7 +49,7 @@ class LinkPasswordForm(FlaskForm): # Renamed from original LoginForm to avoid co
 
 class EditURLForm(FlaskForm):
     long_url = StringField('Destination URL', validators=[DataRequired(), URL()])
+    expiry_hours = IntegerField('Expiry (Hours) from now', validators=[Optional()])
     preview_mode = BooleanField('Preview Mode')
     stats_enabled = BooleanField('Enable Statistics')
-    active = BooleanField('Active')
     submit = SubmitField('Update Link')

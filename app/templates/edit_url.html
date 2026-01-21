@@ -12,6 +12,14 @@
                     {{ form.long_url.label(class="form-label") }}
                     {{ form.long_url(class="form-control") }}
                 </div>
+                <div class="mb-3">
+                    {{ form.expiry_hours.label(class="form-label") }}
+                    <div class="input-group">
+                        {{ form.expiry_hours(class="form-control", id="expiry_input", placeholder="0 for Never") }}
+                        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="document.getElementById('expiry_input').value=0">Never</button>
+                    </div>
+                    <div class="form-text text-light opacity-50 small">Enter hours from now, or 0 to clear expiry.</div>
+                </div>
                 <div class="form-check mb-3">
                     {{ form.preview_mode(class="form-check-input") }}
                     {{ form.preview_mode.label(class="form-check-label") }}

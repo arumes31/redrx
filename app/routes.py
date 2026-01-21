@@ -296,6 +296,13 @@ def edit_url(short_code):
         url_entry.long_url = form.long_url.data
         url_entry.preview_mode = form.preview_mode.data
         url_entry.stats_enabled = form.stats_enabled.data
+        
+        if form.expiry_hours.data is not None:
+            if form.expiry_hours.data == 0:
+                url_entry.expires_at = None
+            else:
+                url_entry.expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
+                
         db.session.commit()
         flash('Link updated successfully.', 'success')
         return redirect(url_for('main.dashboard'))
