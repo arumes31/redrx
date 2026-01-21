@@ -49,6 +49,7 @@ docker-compose up -d
 | `PHISHING_LIST_URLS` | `https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-domains-ACTIVE.txt` | Comma-separated list of phishing list sources. |
 | `DISABLE_ANONYMOUS_CREATE` | `false` | If true, only logged-in users can shorten URLs. |
 | `DISABLE_REGISTRATION` | `false` | If true, the registration page is disabled. |
+| `USE_CLOUDFLARE` | `false` | Enable support for Cloudflare headers (CF-Connecting-IP, CF-IPCountry). |
 
 1. Install dependencies:
    ```bash

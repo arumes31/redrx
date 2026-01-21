@@ -141,9 +141,31 @@ def is_safe_url(target_url):
             
     return True
 
-def get_geo_info(ip):
-    """Fetches country from IP using local MaxMind database."""
-    if ip == '127.0.0.1' or ip.startswith('192.168.') or ip.startswith('10.'):
+def get_client_ip(request):
+    """Returns the client IP, preferring Cloudflare header if enabled."""
+    if current_app.config.get('USE_CLOUDFLARE'):
+        cf_ip = request.headers.get('CF-Connecting-IP')
+        if cf_ip:
+            return cf_ip
+    return request.remote_addr
+
+def get_client_country(request):
+    """Returns the client country code, preferring Cloudflare header if enabled."""
+    if current_app.config.get('USE_CLOUDFLARE'):
+        cf_country = request.headers.get('CF-IPCountry')
+        if cf_country:
+            return cf_country
+    return None
+
+def get_geo_info(ip, request=None):
+    """Fetches country from IP using local MaxMind database or Cloudflare header."""
+    if request:
+        cf_country = get_client_country(request)
+        if cf_country:
+            # Note: Cloudflare returns 'XX' for unknown and 'T1' for Tor
+            return cf_country
+
+    if ip == '127.0.0.1' or ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
         return "Local Network"
     
     db_path = current_app.config.get('GEOIP_DB_PATH')

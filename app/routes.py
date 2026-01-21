@@ -9,6 +9,7 @@ from flask_limiter import Limiter
 from app import limiter # Import the instance
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
+from user_agents import parse
 
 from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, BulkUploadForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
@@ -202,13 +203,16 @@ def redirect_to_url(short_code):
         url_entry.clicks_count += 1
         
         # Record detailed click
-        user_agent = request.user_agent
+        ua_string = request.headers.get('User-Agent')
+        user_agent = parse(ua_string)
+        client_ip = get_client_ip(request)
+        
         new_click = Click(
             url_id=url_entry.id,
-            ip_address=request.remote_addr,
-            country=get_geo_info(request.remote_addr),
-            browser=user_agent.browser,
-            platform=user_agent.platform,
+            ip_address=client_ip,
+            country=get_geo_info(client_ip, request),
+            browser=user_agent.browser.family,
+            platform=user_agent.os.family,
             referrer=request.referrer or "Direct"
         )
         db.session.add(new_click)
