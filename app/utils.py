@@ -42,7 +42,7 @@ def update_phishing_list():
                     if response.status_code == 200:
                         f.write(response.text)
                         f.write('\n') # Ensure newline between lists
-                except Exception:
+                except Exception: # nosec B112
                     continue
     except Exception: # nosec B110
         pass
@@ -95,7 +95,7 @@ def cleanup_phishing_urls():
                 if is_phishing:
                     db.session.delete(url_entry)
                     removed_count += 1
-            except Exception:
+            except Exception: # nosec B112
                 continue
         
         if removed_count > 0:
