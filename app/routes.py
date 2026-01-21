@@ -302,6 +302,19 @@ def edit_url(short_code):
         
     return render_template('edit_url.html', form=form, short_code=short_code)
 
+@main.route('/delete/<short_code>', methods=['POST'])
+@login_required
+def delete_url(short_code):
+    url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
+    
+    if url_entry.user_id != current_user.id:
+        abort(403)
+        
+    db.session.delete(url_entry)
+    db.session.commit()
+    flash('Link deleted successfully.', 'info')
+    return redirect(url_for('main.dashboard'))
+
 @main.route('/<short_code>/stats')
 def stats(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
