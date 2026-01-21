@@ -50,6 +50,7 @@ docker-compose up -d
 | `DISABLE_ANONYMOUS_CREATE` | `false` | If true, only logged-in users can shorten URLs. |
 | `DISABLE_REGISTRATION` | `false` | If true, the registration page is disabled. |
 | `USE_CLOUDFLARE` | `false` | Enable support for Cloudflare headers (CF-Connecting-IP, CF-IPCountry). |
+| `RATELIMIT_STORAGE_URL` | `memory://` | Storage backend for rate limiting (e.g., `redis://localhost:6379`). |
 
 1. Install dependencies:
    ```bash

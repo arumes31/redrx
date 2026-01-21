@@ -14,10 +14,12 @@ login_manager.login_message_category = 'info'
 # Rate limiting configuration from env
 limit_default = os.environ.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")
 limit_create = os.environ.get('RATELIMIT_CREATE', "10 per minute")
+storage_url = os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
 
 limiter = Limiter(
     key_func=get_remote_address,
-    default_limits=[limit_default]
+    default_limits=[limit_default],
+    storage_uri=storage_url
 )
 
 def create_app(config_class=Config):
