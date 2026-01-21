@@ -69,7 +69,7 @@ def index():
             end_at = datetime.datetime.combine(form.end_date.data, form.end_time.data)
             
         expires_at = None
-        if not form.disable_expiry.data and form.expiry_hours.data != 0:
+        if form.expiry_hours.data and form.expiry_hours.data != 0:
              expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
 
         # Create Record

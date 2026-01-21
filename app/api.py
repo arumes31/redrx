@@ -38,7 +38,6 @@ def shorten():
     # Optional parameters
     rotate_targets = data.get('rotate_targets')  # Expecting a list of strings
     password = data.get('password')
-    disable_expiry = data.get('disable_expiry', False)
     expiry_hours = data.get('expiry_hours', current_app.config['EXPIRY_HOURS'])
     
     preview_mode = data.get('preview_mode', True)
@@ -59,7 +58,7 @@ def shorten():
 
     # Expiry logic
     expires_at = None
-    if not disable_expiry and int(expiry_hours) != 0:
+    if int(expiry_hours) != 0:
         expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(expiry_hours))
 
     # Parse datetime strings if provided (ISO 8601 expected)

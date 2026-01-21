@@ -14,7 +14,6 @@ class ShortenURLForm(FlaskForm):
     
     # Expiry
     expiry_hours = IntegerField('Expiry (Hours)', default=24, validators=[Optional()])
-    disable_expiry = BooleanField('Disable Expiry')
     
     # Scheduling
     start_date = DateField('Start Date', validators=[Optional()])
