@@ -405,93 +405,88 @@ def delete_url(short_code):
 def stats(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
     
-    if not url_entry.is_active():
-        # We allow viewing stats for expired links but warn
-        pass
-    
-    short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
+    if url_entry.user_id != current_user.id:
+        abort(403)
+        
+    range_type = request.args.get('range', '30d')
+    now = datetime.datetime.now(datetime.timezone.utc)
     
     # Process Analytics
     clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.asc()).all()
     
-    # 1. Clicks over time (Hybrid: Hourly for 24h, then Daily)
-    now = datetime.datetime.now(datetime.timezone.utc)
+    # 1. Clicks over time (Hybrid logic based on range_type)
     time_data = {}
-    
-    # Last 24 hours (Hourly)
-    for i in range(23, -1, -1):
-        dt = now - datetime.timedelta(hours=i)
-        key = dt.strftime('%Y-%m-%d %H:00')
-        time_data[key] = 0
-        
-    # Last 30 days (Daily) - we'll merge this
-    for i in range(29, -1, -1):
-        dt = now - datetime.timedelta(days=i)
-        key = dt.strftime('%Y-%m-%d')
-        if key not in time_data: # Don't overwrite today's hourly starts if we were doing mixed
-             # Actually, simpler to just have two sets or one continuous. 
-             # Let's do: if older than 24h, group by day. If newer, group by hour.
-             pass
+    if range_type == '24h':
+        cutoff = now - datetime.timedelta(hours=24)
+        for i in range(24, -1, -1):
+            time_data[(now - datetime.timedelta(hours=i)).strftime('%H:00')] = 0
+    elif range_type == '7d':
+        cutoff = now - datetime.timedelta(days=7)
+        for i in range(7, -1, -1):
+            time_data[(now - datetime.timedelta(days=i)).strftime('%Y-%m-%d')] = 0
+    else: # 30d
+        cutoff = now - datetime.timedelta(days=30)
+        for i in range(30, -1, -1):
+            time_data[(now - datetime.timedelta(days=i)).strftime('%Y-%m-%d')] = 0
 
-    # Clear and rebuild for clarity
-    time_data = {}
-    cutoff_24h = now - datetime.timedelta(hours=24)
-    
-    # Fill last 30 days daily as base
-    for i in range(30, 0, -1):
-        dt = now - datetime.timedelta(days=i)
-        time_data[dt.strftime('%Y-%m-%d')] = 0
-        
-    # Fill last 24 hours hourly
-    for i in range(24, -1, -1):
-        dt = now - datetime.timedelta(hours=i)
-        time_data[dt.strftime('%H:00')] = 0
-
-    # Populate with actual data
-    for click in clicks:
-        # If naive, make it utc for comparison
-        click_time = click.timestamp
-        if click_time.tzinfo is None:
-            click_time = click_time.replace(tzinfo=datetime.timezone.utc)
-            
-        if click_time > cutoff_24h:
-            key = click_time.strftime('%H:00')
-        else:
-            key = click_time.strftime('%Y-%m-%d')
-            
-        if key in time_data:
-            time_data[key] += 1
-        else:
-            # For data older than 30 days, we could still group by day if we want
-            key_day = click_time.strftime('%Y-%m-%d')
-            time_data[key_day] = time_data.get(key_day, 0) + 1
-    
-    # Sort time_data? The keys added in order are mostly okay but mixed formats break sort.
-    # Let's keep it simple: labels are keys in order of insertion.
-    
-    # 2. Countries
+    # Filter clicks by range and populate time_data
+    filtered_clicks = []
+    referrer_data = {}
     country_data = {}
-    for click in clicks:
-        country_data[click.country] = country_data.get(click.country, 0) + 1
-    
-    # 3. Browsers
     browser_data = {}
-    for click in clicks:
-        name = click.browser or "Unknown"
-        browser_data[name] = browser_data.get(name, 0) + 1
-
-    # 4. Platforms
     platform_data = {}
+
     for click in clicks:
-        name = click.platform or "Unknown"
-        platform_data[name] = platform_data.get(name, 0) + 1
+        click_time = click.timestamp.replace(tzinfo=datetime.timezone.utc) if click.timestamp.tzinfo is None else click.timestamp
         
+        # Global stats (all time)
+        country_data[click.country] = country_data.get(click.country, 0) + 1
+        browser_data[click.browser or "Unknown"] = browser_data.get(click.browser or "Unknown", 0) + 1
+        platform_data[click.platform or "Unknown"] = platform_data.get(click.platform or "Unknown", 0) + 1
+        
+        # Referrer (Step 1)
+        ref = click.referrer or "Direct"
+        if "://" in ref:
+            ref = urlparse(ref).netloc or ref
+        referrer_data[ref] = referrer_data.get(ref, 0) + 1
+
+        # Range-specific trend data (Step 3)
+        if click_time >= cutoff:
+            filtered_clicks.append(click)
+            if range_type == '24h':
+                key = click_time.strftime('%H:00')
+            else:
+                key = click_time.strftime('%Y-%m-%d')
+            if key in time_data:
+                time_data[key] += 1
+
+    # Step 6: Momentum (Average clicks per day in range)
+    days_in_range = 1 if range_type == '24h' else (7 if range_type == '7d' else 30)
+    avg_daily = round(len(filtered_clicks) / days_in_range, 1)
+
+    # Step 4: IP Anonymization for recent activity (last 10)
+    recent_clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.desc()).limit(10).all()
+    for rc in recent_clicks:
+        if rc.ip_address:
+            parts = rc.ip_address.split('.')
+            if len(parts) == 4:
+                rc.ip_anonymized = f"{parts[0]}.{parts[1]}.{parts[2]}.xxx"
+            else: # IPv6
+                rc.ip_anonymized = rc.ip_address[:rc.ip_address.rfind(':')] + ":xxxx"
+        else:
+            rc.ip_anonymized = "Unknown"
+
+    short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
     return render_template('stats.html', url=url_entry, short_url=short_url, 
                            active=url_entry.is_active(),
                            time_data=time_data,
                            country_data=country_data,
                            browser_data=browser_data,
-                           platform_data=platform_data)
+                           platform_data=platform_data,
+                           referrer_data=referrer_data,
+                           avg_daily=avg_daily,
+                           range_type=range_type,
+                           recent_clicks=recent_clicks)
 
 @main.route('/<short_code>/qr')
 def qr_download(short_code):

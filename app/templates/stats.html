@@ -25,34 +25,47 @@
                 </div>
             </div>
             <div class="col-md-3">
-                 <div class="card h-100 text-center p-4">
-                    <div class="display-6 {% if active %}text-success{% else %}text-danger{% endif %} fw-bold mt-2">
-                        {% if active %}ACTIVE{% else %}EXPIRED{% endif %}
-                    </div>
-                    <div class="text-muted text-uppercase small ls-1 mt-2">Status</div>
+                <div class="card h-100 text-center p-4">
+                    <div class="display-4 text-info fw-bold">{{ avg_daily }}</div>
+                    <div class="text-muted text-uppercase small ls-1">Avg Clicks/Day</div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card h-100 p-4">
+            <div class="col-md-2">
+                 <div class="card h-100 text-center p-4">
+                    <div class="h3 {% if active %}text-success{% else %}text-danger{% endif %} fw-bold mt-2">
+                        {% if active %}ACTIVE{% else %}OFF{% endif %}
+                    </div>
+                    <div class="text-muted text-uppercase small ls-1 mt-1">Status</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100 p-3">
                      <div class="small text-muted mb-1">Target URL:</div>
-                     <div class="text-truncate"><a href="{{ url.long_url }}" class="text-info text-decoration-none">{{ url.long_url }}</a></div>
+                     <div class="text-truncate small"><a href="{{ url.long_url }}" class="text-info text-decoration-none">{{ url.long_url }}</a></div>
                      <div class="small text-muted mt-2 mb-1">Short URL:</div>
                      <div class="text-info fw-bold">{{ short_url }}</div>
                 </div>
             </div>
         </div>
 
-        <!-- Charts Row 1: Time Series -->
+        <!-- Charts Row 1: Time Series & Time Selection -->
         <div class="row mb-4">
             <div class="col-12">
                 <div class="card p-4">
-                    <h5 class="mb-4">Click Trends</h5>
-                    <canvas id="timeChart" height="100"></canvas>
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h5 class="mb-0">Click Trends</h5>
+                        <div class="btn-group btn-group-sm">
+                            <a href="?range=24h" class="btn btn-outline-info {{ 'active' if range_type == '24h' }}">24h</a>
+                            <a href="?range=7d" class="btn btn-outline-info {{ 'active' if range_type == '7d' }}">7d</a>
+                            <a href="?range=30d" class="btn btn-outline-info {{ 'active' if range_type == '30d' or not range_type }}">30d</a>
+                        </div>
+                    </div>
+                    <canvas id="timeChart" height="80"></canvas>
                 </div>
             </div>
         </div>
 
-        <!-- Charts Row 2: Demographics -->
+        <!-- Charts Row 2: Demographics & Referrers -->
         <div class="row g-4 mb-4">
             <div class="col-md-4">
                 <div class="card h-100 p-4">
@@ -62,14 +75,54 @@
             </div>
             <div class="col-md-4">
                 <div class="card h-100 p-4">
-                    <h5 class="mb-4">Browsers</h5>
-                    <canvas id="browserChart"></canvas>
+                    <h5 class="mb-4">Top Referrers</h5>
+                    <canvas id="referrerChart"></canvas>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="card h-100 p-4">
-                    <h5 class="mb-4">Platforms</h5>
-                    <canvas id="platformChart"></canvas>
+                    <h5 class="mb-4">Browsers & Platforms</h5>
+                    <div class="mb-3">
+                        <canvas id="browserChart" height="150"></canvas>
+                    </div>
+                    <canvas id="platformChart" height="150"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity Log (Step 2/4) -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-transparent border-secondary py-3">
+                        <h5 class="mb-0"><i class="fas fa-history me-2"></i> Recent Activity (Last 10)</h5>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>IP (Anonymized)</th>
+                                    <th>Country</th>
+                                    <th>Device</th>
+                                    <th>Referrer</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for click in recent_clicks %}
+                                <tr>
+                                    <td class="small">{{ click.timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td class="font-monospace small">{{ click.ip_anonymized }}</td>
+                                    <td>{{ click.country }}</td>
+                                    <td class="small">{{ click.browser }} / {{ click.platform }}</td>
+                                    <td class="text-truncate small" style="max-width: 200px;">{{ click.referrer }}</td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="5" class="text-center py-4 text-muted">No click data yet.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -114,8 +167,8 @@
             legend: { labels: { color: '#fff' } }
         },
         scales: {
-            y: { ticks: { color: '#aaa' }, grid: { color: 'rgba(255,255,255,0.1)' } },
-            x: { ticks: { color: '#aaa' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+            y: { ticks: { color: '#aaa' }, grid: { color: 'rgba(255,255,255,0.1)' }, beginAtZero: true },
+            x: { ticks: { color: '#aaa', maxRotation: 45, minRotation: 45 }, grid: { color: 'rgba(255,255,255,0.1)' } }
         }
     };
 
@@ -125,6 +178,8 @@
             legend: { position: 'bottom', labels: { color: '#fff' } }
         }
     };
+
+    const colors = ['#0dc5e8', '#667eea', '#764ba2', '#198754', '#ffc107', '#dc3545', '#fd7e14', '#20c997'];
 
     // Time Chart
     new Chart(document.getElementById('timeChart'), {
@@ -137,10 +192,25 @@
                 borderColor: '#0dc5e8',
                 backgroundColor: 'rgba(13, 197, 232, 0.1)',
                 fill: true,
-                tension: 0.3
+                tension: 0.3,
+                pointRadius: 4,
+                pointBackgroundColor: '#0dc5e8'
             }]
         },
         options: chartOptions
+    });
+
+    // Referrer Chart
+    new Chart(document.getElementById('referrerChart'), {
+        type: 'doughnut',
+        data: {
+            labels: {{ referrer_data.keys()|list|tojson }},
+            datasets: [{
+                data: {{ referrer_data.values()|list|tojson }},
+                backgroundColor: colors
+            }]
+        },
+        options: pieOptions
     });
 
     // Country Chart
@@ -150,7 +220,7 @@
             labels: {{ country_data.keys()|list|tojson }},
             datasets: [{
                 data: {{ country_data.values()|list|tojson }},
-                backgroundColor: ['#0dc5e8', '#667eea', '#764ba2', '#198754', '#ffc107', '#dc3545']
+                backgroundColor: colors
             }]
         },
         options: pieOptions
@@ -158,28 +228,30 @@
 
     // Browser Chart
     new Chart(document.getElementById('browserChart'), {
-        type: 'polarArea',
+        type: 'bar',
         data: {
             labels: {{ browser_data.keys()|list|tojson }},
             datasets: [{
+                label: 'Browsers',
                 data: {{ browser_data.values()|list|tojson }},
-                backgroundColor: ['rgba(13, 197, 232, 0.6)', 'rgba(102, 126, 234, 0.6)', 'rgba(118, 75, 162, 0.6)']
+                backgroundColor: 'rgba(102, 126, 234, 0.7)'
             }]
         },
-        options: pieOptions
+        options: { ...chartOptions, indexAxis: 'y' }
     });
 
     // Platform Chart
     new Chart(document.getElementById('platformChart'), {
-        type: 'pie',
+        type: 'bar',
         data: {
             labels: {{ platform_data.keys()|list|tojson }},
             datasets: [{
+                label: 'Platforms',
                 data: {{ platform_data.values()|list|tojson }},
-                backgroundColor: ['#667eea', '#764ba2', '#0dc5e8']
+                backgroundColor: 'rgba(118, 75, 162, 0.7)'
             }]
         },
-        options: pieOptions
+        options: { ...chartOptions, indexAxis: 'y' }
     });
 </script>
 {% endblock %}
