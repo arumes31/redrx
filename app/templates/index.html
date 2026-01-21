@@ -32,13 +32,18 @@
                                         <div class="form-check form-switch">
                                             {{ form.preview_mode(class="form-check-input", role="switch") }}
                                             {{ form.preview_mode.label(class="form-check-label fw-bold") }}
+                                            <i class="fas fa-info-circle text-muted small ms-1" 
+                                               data-bs-toggle="tooltip" 
+                                               title="Preview mode shows a confirmation page before redirecting."></i>
                                         </div>
                                         <div class="form-check form-switch">
                                             {{ form.stats_enabled(class="form-check-input", role="switch") }}
                                             {{ form.stats_enabled.label(class="form-check-label fw-bold") }}
+                                            <i class="fas fa-info-circle text-muted small ms-1" 
+                                               data-bs-toggle="tooltip" 
+                                               title="Statistics tracks clicks, countries, browsers, and platforms."></i>
                                         </div>
                                     </div>
-                                    <div class="form-text text-light opacity-50 small">Preview mode shows a confirmation page. Statistics tracks clicks and visitor info.</div>
                                 </div>
                             </div>
                             
@@ -157,4 +162,12 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl)
+        })
+    });
+</script>
 {% endblock %}
