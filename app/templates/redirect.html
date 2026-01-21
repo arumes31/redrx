@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Redirecting...</title>
+    <title>Redirecting... - Redrx</title>
     
     <!-- Google Analytics -->
     {% if ga_id %}
@@ -16,39 +16,99 @@
     </script>
     {% endif %}
 
-    <!-- Facebook Pixel -->
-    {% if fb_id %}
-    <script>
-    !function(f,b,e,v,n,t,s)
-    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-    n.queue=[];t=b.createElement(e);t.async=!0;
-    t.src=v;s=b.getElementsByTagName(e)[0];
-    s.parentNode.insertBefore(t,s)}(window, document,'script',
-    'https://connect.facebook.net/en_US/fbevents.js');
-    fbq('init', '{{ fb_id }}');
-    fbq('track', 'PageView');
-    </script>
-    <noscript><img height="1" width="1" style="display:none"
-    src="https://www.facebook.com/tr?id={{ fb_id }}&ev=PageView&noscript=1"
-    /></noscript>
-    {% endif %}
-
     <style>
-        body { background: #000; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; }
-        .loader { border: 4px solid #333; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-right: 15px; }
+        body { 
+            background: #0f0c29;
+            background: linear-gradient(to right, #24243e, #302b63, #0f0c29);
+            color: #fff; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            text-align: center;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 3rem;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 500px;
+            width: 90%;
+        }
+        .loader { 
+            border: 4px solid rgba(255,255,255,0.1); 
+            border-top: 4px solid #00d2ff; 
+            border-radius: 50%; 
+            width: 50px; 
+            height: 50px; 
+            animation: spin 1s linear infinite; 
+            margin: 0 auto 20px;
+        }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .countdown {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            color: #00d2ff;
+        }
+        
+        .btn {
+            background: linear-gradient(45deg, #00d2ff, #3a7bd5);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1rem;
+            font-weight: bold;
+            text-decoration: none;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: inline-block;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 210, 255, 0.4);
+        }
+
+        .url-display {
+            font-size: 0.9rem;
+            color: #aaa;
+            margin-top: 1.5rem;
+            word-break: break-all;
+        }
     </style>
-    
-    <script>
-        setTimeout(function() {
-            window.location.href = "{{ target_url }}";
-        }, 1500); // 1.5s delay to allow pixels to fire
-    </script>
 </head>
 <body>
-    <div class="loader"></div>
-    <div>Redirecting you to the destination...</div>
+    <div class="container">
+        <div class="loader"></div>
+        <h2>Redirecting...</h2>
+        <p>You are being redirected to your destination.</p>
+        <div class="countdown" id="countdown">Redirecting in 8 seconds...</div>
+        
+        <a href="{{ target_url }}" class="btn">Redirect Now</a>
+        
+        <div class="url-display">
+            Target: {{ target_url }}
+        </div>
+    </div>
+
+    <script>
+        let seconds = 8;
+        const countdownEl = document.getElementById('countdown');
+        
+        const timer = setInterval(() => {
+            seconds--;
+            if (seconds <= 0) {
+                clearInterval(timer);
+                window.location.href = "{{ target_url }}";
+            } else {
+                countdownEl.innerText = `Redirecting in ${seconds} seconds...`;
+            }
+        }, 1000);
+    </script>
 </body>
 </html>

@@ -1,6 +1,6 @@
-# Redirx 🚀
+# Redrx 🚀
 
-Redirx is a modern, feature-rich URL shortener built with Python (Flask), PostgreSQL, and SQLAlchemy. It features a sleek dark UI with interactive background animations and robust security features.
+Redrx is a modern, feature-rich URL shortener built with Python (Flask), PostgreSQL, and SQLAlchemy. It features a sleek dark UI with interactive background animations and robust security features.
 
 ## ✨ Features
 

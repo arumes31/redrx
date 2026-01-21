@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/arumes31/redirx:latest
+    image: ghcr.io/arumes31/redrx:latest
     ports:
       - "5000:5000"
     environment:
@@ -18,13 +18,13 @@ services:
   db:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-redirx}
+      - POSTGRES_USER=${POSTGRES_USER:-redrx}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-securepassword}
-      - POSTGRES_DB=${POSTGRES_DB:-redirx_db}
+      - POSTGRES_DB=${POSTGRES_DB:-redrx_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-redirx} -d ${POSTGRES_DB:-redirx_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-redrx} -d ${POSTGRES_DB:-redrx_db}"]
       interval: 5s
       timeout: 5s
       retries: 5

@@ -5,7 +5,7 @@ services:
       - "5000:5000"
     environment:
       - SECRET_KEY=dev-secret-key-change-in-prod
-      - DATABASE_URL=postgresql://redirx:securepassword@db:5432/redirx_db
+      - DATABASE_URL=postgresql://redrx:securepassword@db:5432/redrx_db
       - BASE_DOMAIN=localhost:5000
       - GEOIP_DB_PATH=/usr/share/GeoIP/GeoLite2-Country.mmdb
     depends_on:
@@ -17,9 +17,9 @@ services:
   db:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_USER=redirx
+      - POSTGRES_USER=redrx
       - POSTGRES_PASSWORD=securepassword
-      - POSTGRES_DB=redirx_db
+      - POSTGRES_DB=redrx_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: always

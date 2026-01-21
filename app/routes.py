@@ -214,7 +214,7 @@ def redirect_to_url(short_code):
     if url_entry.preview_mode:
         return render_template('preview.html', target_url=target_url, short_code=short_code)
 
-    return redirect(target_url, code=302)
+    return render_template('redirect.html', target_url=target_url)
 
 @main.route('/link-auth/<short_code>', methods=['GET', 'POST'])
 def link_password_auth(short_code):
