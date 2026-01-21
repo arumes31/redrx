@@ -24,7 +24,7 @@ class ShortenURLForm(FlaskForm):
     # QR Customization
     qr_color = StringField('QR Color', default='#000000')
     qr_bg = StringField('QR Background', default='#ffffff')
-    logo_file = FileField('QR Logo', validators=[FileAllowed(['png'], 'PNG Images only!')])
+    logo_file = FileField('QR Logo', validators=[Optional(), FileAllowed(['png', 'jpg', 'jpeg'], 'Images only (PNG, JPG)!')])
     
     submit = SubmitField('Shorten URL')
 

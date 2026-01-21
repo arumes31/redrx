@@ -45,16 +45,13 @@
                             </div>
                             
                             <div class="row">
-                                <div class="col-md-6 form-section">
-                                    {{ form.custom_code.label(class="form-label") }}
-                                    {{ form.custom_code(class="form-control", placeholder="e.g. MYLINK") }}
-                                    {% if form.custom_code.errors %}
-                                        <div class="text-danger small">{{ form.custom_code.errors[0] }}</div>
-                                    {% endif %}
-                                </div>
-                                <div class="col-md-6 form-section">
-                                    {{ form.code_length.label(class="form-label") }}
-                                    {{ form.code_length(class="form-control", min=3, max=20) }}
+                                <div class="col-md-12 form-section">
+                                    {{ form.expiry_hours.label(class="form-label") }}
+                                    <div class="input-group">
+                                        {{ form.expiry_hours(class="form-control", id="expiry_input", placeholder="24") }}
+                                        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="document.getElementById('expiry_input').value=0">Never</button>
+                                    </div>
+                                    <div class="form-text text-light opacity-50 small">Set to 0 to never expire.</div>
                                 </div>
                             </div>
                             
@@ -66,24 +63,29 @@
 
                             <div class="collapse" id="advancedOptions">
                                 <div class="row">
+                                    <div class="col-md-6 form-section">
+                                        {{ form.custom_code.label(class="form-label") }}
+                                        {{ form.custom_code(class="form-control", placeholder="e.g. MYLINK") }}
+                                        {% if form.custom_code.errors %}
+                                            <div class="text-danger small">{{ form.custom_code.errors[0] }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-6 form-section">
+                                        {{ form.code_length.label(class="form-label") }}
+                                        {{ form.code_length(class="form-control", min=3, max=20) }}
+                                    </div>
+                                </div>
+                                <div class="row">
                                     <div class="col-md-12 form-section">
                                         {{ form.rotate_targets.label(class="form-label") }}
                                         {{ form.rotate_targets(class="form-control", placeholder="https://alt1.com, https://alt2.com") }}
                                     </div>
                                 </div>
                                 <div class="row form-section">
-                                    <div class="col-md-6">
+                                    <div class="col-md-12">
                                         {{ form.password.label(class="form-label") }}
                                         {{ form.password(class="form-control", placeholder="Optional") }}
                                     </div>
-                                <div class="col-md-6 form-section">
-                                    {{ form.expiry_hours.label(class="form-label") }}
-                                    <div class="input-group">
-                                        {{ form.expiry_hours(class="form-control", id="expiry_input", placeholder="24") }}
-                                        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="document.getElementById('expiry_input').value=0">Never</button>
-                                    </div>
-                                    <div class="form-text text-light opacity-50 small">Set to 0 to never expire.</div>
-                                </div>
                                 </div>
                                 <div class="row form-section">
                                     <div class="col-md-6">

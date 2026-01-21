@@ -28,76 +28,111 @@
             margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
             text-align: center;
+            overflow: hidden;
+            position: relative;
+        }
+        #bg-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
         }
         .container {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 3rem;
-            border-radius: 15px;
-            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.07);
+            padding: 3.5rem 2rem;
+            border-radius: 20px;
+            backdrop-filter: blur(15px);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            max-width: 500px;
+            max-width: 600px;
             width: 90%;
+            z-index: 2;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
         }
         .loader { 
             border: 4px solid rgba(255,255,255,0.1); 
             border-top: 4px solid #00d2ff; 
             border-radius: 50%; 
-            width: 50px; 
-            height: 50px; 
+            width: 60px; 
+            height: 60px; 
             animation: spin 1s linear infinite; 
-            margin: 0 auto 20px;
+            margin: 0 auto 25px;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
         .countdown {
-            font-size: 1.2rem;
+            font-size: 1.4rem;
             margin-bottom: 2rem;
             color: #00d2ff;
+            font-weight: 600;
         }
         
         .btn {
             background: linear-gradient(45deg, #00d2ff, #3a7bd5);
             color: white;
-            padding: 12px 30px;
+            padding: 14px 40px;
             border: none;
-            border-radius: 25px;
-            font-size: 1rem;
+            border-radius: 30px;
+            font-size: 1.1rem;
             font-weight: bold;
             text-decoration: none;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: all 0.3s ease;
             display: inline-block;
+            box-shadow: 0 4px 15px rgba(0, 210, 255, 0.3);
         }
         
         .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 210, 255, 0.4);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0, 210, 255, 0.5);
+            filter: brightness(1.1);
+        }
+
+        .url-box {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 1rem;
+            border-radius: 10px;
+            margin-top: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .url-label {
+            font-size: 0.8rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
         }
 
         .url-display {
-            font-size: 0.9rem;
-            color: #aaa;
-            margin-top: 1.5rem;
+            font-size: 1rem;
+            color: #00d2ff;
             word-break: break-all;
+            font-family: monospace;
         }
     </style>
 </head>
 <body>
+    <canvas id="bg-canvas"></canvas>
     <div class="container">
         <div class="loader"></div>
-        <h2>Redirecting...</h2>
-        <p>You are being redirected to your destination.</p>
-        <div class="countdown" id="countdown">Redirecting in 8 seconds...</div>
+        <h2 style="margin-bottom: 10px;">Redirecting...</h2>
+        <p style="opacity: 0.8; margin-bottom: 25px;">You are being safely redirected to your destination.</p>
         
-        <a href="{{ target_url }}" class="btn">Redirect Now</a>
+        <div class="countdown" id="countdown">Redirecting in 5 seconds...</div>
         
-        <div class="url-display">
-            Target: {{ target_url }}
+        <a href="{{ target_url }}" class="btn">Proceed Now</a>
+        
+        <div class="url-box">
+            <div class="url-label">Destination URL</div>
+            <div class="url-display">{{ target_url }}</div>
         </div>
     </div>
 
     <script>
-        let seconds = 8;
+        // Countdown logic
+        let seconds = 5;
         const countdownEl = document.getElementById('countdown');
         
         const timer = setInterval(() => {
@@ -109,6 +144,60 @@
                 countdownEl.innerText = `Redirecting in ${seconds} seconds...`;
             }
         }, 1000);
+
+        // Animated Background
+        const canvas = document.getElementById('bg-canvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.size = Math.random() * 2 + 0.5;
+                this.speedX = (Math.random() - 0.5) * 0.5;
+                this.speedY = (Math.random() - 0.5) * 0.5;
+                this.opacity = Math.random() * 0.5 + 0.2;
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
+                    this.reset();
+                }
+            }
+            draw() {
+                ctx.fillStyle = `rgba(0, 210, 255, ${this.opacity})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        for (let i = 0; i < 100; i++) {
+            particles.push(new Particle());
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            requestAnimationFrame(animate);
+        }
+        animate();
     </script>
 </body>
 </html>

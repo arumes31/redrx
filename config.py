@@ -6,6 +6,7 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         'sqlite:///' + os.path.join(basedir, 'db', 'shortener.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    MAX_CONTENT_LENGTH = 1 * 1024 * 1024 # 1MB Limit
     
     # App specific config
     BASE_DOMAIN = os.environ.get('BASE_DOMAIN', 'short.example.com')
