@@ -8,6 +8,7 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - BASE_DOMAIN=${BASE_DOMAIN}
       - GEOIP_DB_PATH=/usr/share/GeoIP/GeoLite2-Country.mmdb
+      - ANONYMIZE_LOGS=${ANONYMIZE_LOGS:-false}
     depends_on:
       db:
         condition: service_healthy

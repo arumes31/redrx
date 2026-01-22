@@ -8,6 +8,7 @@ services:
       - DATABASE_URL=postgresql://redrx:securepassword@db:5432/redrx_db
       - BASE_DOMAIN=localhost:5000
       - GEOIP_DB_PATH=/usr/share/GeoIP/GeoLite2-Country.mmdb
+      - ANONYMIZE_LOGS=${ANONYMIZE_LOGS:-false}
     depends_on:
       db:
         condition: service_healthy

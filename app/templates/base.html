@@ -3,7 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Redrx{% endblock %}</title>
+    {% if config.ENABLE_SEO %}
+    <meta name="description" content="Redrx - A fast, secure, and free URL shortener with detailed statistics, QR codes, and custom links. Shorten your long URLs easily.">
+    <meta name="keywords" content="URL shortener, link shortener, redrx, custom links, QR code generator, link analytics">
+    <meta name="author" content="Redrx">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://redrx.eu/">
+    <meta property="og:title" content="Redrx | Professional URL Shortener">
+    <meta property="og:description" content="Shorten, manage, and track your links with Redrx. Free custom aliases and detailed click analytics.">
+    <meta property="og:image" content="{{ url_for('static', filename='img/logo.svg', _external=True) }}">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://redrx.eu/">
+    <meta property="twitter:title" content="Redrx | Professional URL Shortener">
+    <meta property="twitter:description" content="Shorten, manage, and track your links with Redrx. Free custom aliases and detailed click analytics.">
+    {% endif %}
+
+    <title>{% block title %}Redrx | Fast & Secure URL Shortener{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/logo.svg') }}">
     <link href="{{ url_for('static', filename='css/lib/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/lib/fontawesome.min.css') }}" rel="stylesheet">

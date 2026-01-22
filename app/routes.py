@@ -3,7 +3,7 @@ import csv
 import json
 import datetime
 import uuid
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify, send_from_directory
 from flask_login import login_user, logout_user, current_user, login_required
 from flask_limiter import Limiter
 from app import limiter # Import the instance
@@ -524,3 +524,15 @@ def not_found(e):
 @main.errorhandler(410)
 def gone(e):
     return render_template('410.html'), 410
+
+@main.route('/robots.txt')
+def robots():
+    if not current_app.config.get('ENABLE_SEO'):
+        abort(404)
+    return send_from_directory(current_app.static_folder, 'robots.txt')
+
+@main.route('/sitemap.xml')
+def sitemap():
+    if not current_app.config.get('ENABLE_SEO'):
+        abort(404)
+    return send_from_directory(current_app.static_folder, 'sitemap.xml')
