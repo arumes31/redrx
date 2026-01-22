@@ -1,6 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Redrx API Documentation - Developer Guide{% endblock %}
 
+{% block meta_description %}Complete API documentation for Redrx URL shortener. Learn how to programmatically shorten links, retrieve stats, and manage URLs using our REST API.{% endblock %}
+
+{% block structured_data %}
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Redrx API Documentation",
+  "description": "Developer guide for integrating Redrx URL shortening services.",
+  "articleSection": "API Reference",
+  "author": {
+      "@type": "Organization",
+      "name": "Redrx"
+  }
+}
+{% endblock %}
+
 {% block content %}
 <div class="container py-5">
     <div class="row justify-content-center">

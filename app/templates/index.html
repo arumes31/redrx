@@ -1,5 +1,23 @@
 {% extends "base.html" %}
 
+{% block meta_description %}Shorten URLs, generate QR codes, and track clicks with Redrx. The advanced open-source URL shortener with password protection, device targeting, and detailed analytics.{% endblock %}
+
+{% block structured_data %}
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Redrx",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "Web",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "featureList": "URL Shortening, QR Codes, Link Analytics, Password Protection, Device Targeting"
+}
+{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-8">
