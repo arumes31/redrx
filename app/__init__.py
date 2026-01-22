@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect
+from flask import Flask, request, redirect, Response
 from flask_login import LoginManager
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -84,7 +84,8 @@ def create_app(config_class=Config):
     @app.route('/metrics')
     @limiter.limit(lambda: app.config.get('RATELIMIT_METRICS', '10 per minute')) # Configurable limit
     def custom_metrics():
-        return metrics.export()
+        data, content_type = metrics.generate_metrics()
+        return Response(data, mimetype=content_type)
 
     @login_manager.user_loader
     def load_user(user_id):
