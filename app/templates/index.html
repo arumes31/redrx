@@ -7,10 +7,7 @@
             <div class="card-body p-4 p-md-5">
                 <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="single-tab" data-bs-toggle="tab" data-bs-target="#single" type="button">Single Link</button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="bulk-tab" data-bs-toggle="tab" data-bs-target="#bulk" type="button">Bulk CSV</button>
+                        <button class="nav-link active" id="single-tab" data-bs-toggle="tab" data-bs-target="#single" type="button">Shorten Link</button>
                     </li>
                 </ul>
 
@@ -151,18 +148,6 @@
                                 </div>
                             </div>
                         {% endif %}
-                    </div>
-
-                    <div class="tab-pane fade" id="bulk" role="tabpanel">
-                        <form action="{{ url_for('main.bulk_upload') }}" method="POST" enctype="multipart/form-data">
-                            {{ bulk_form.hidden_tag() }}
-                            <div class="mb-3">
-                                {{ bulk_form.csv_file.label(class="form-label") }}
-                                {{ bulk_form.csv_file(class="form-control") }}
-                                <div class="form-text text-light opacity-50">CSV Header: <code>long_url, custom_code</code> (optional)</div>
-                            </div>
-                            {{ bulk_form.submit(class="btn btn-shorten btn-lg w-100") }}
-                        </form>
                     </div>
                 </div>
             </div>

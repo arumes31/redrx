@@ -30,10 +30,6 @@ class ShortenURLForm(FlaskForm):
     
     submit = SubmitField('Shorten URL')
 
-class BulkUploadForm(FlaskForm):
-    csv_file = FileField('CSV File', validators=[DataRequired(), FileAllowed(['csv'], 'CSV Files only!')])
-    submit = SubmitField('Process Bulk')
-
 class LoginForm(FlaskForm):
     username = StringField('Username or Email', validators=[DataRequired()])
     password = PasswordField('Password', validators=[DataRequired()])

@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from sqlalchemy import func
 
 from app.models import db, URL, User, Click
-from app.forms import ShortenURLForm, BulkUploadForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
+from app.forms import ShortenURLForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
 from app.utils import generate_short_code, get_qr_data_url, generate_qr, select_rotate_target, get_geo_info, is_safe_url, get_client_ip
 
 main = Blueprint('main', __name__)
@@ -23,7 +23,6 @@ main = Blueprint('main', __name__)
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_CREATE', '10 per minute'), methods=['POST'])
 def index():
     form = ShortenURLForm()
-    bulk_form = BulkUploadForm()
     
     short_url = None
     qr_data = None
@@ -41,7 +40,7 @@ def index():
         
         if not is_safe_url(long_url):
             flash("That destination URL is blocked for safety reasons.", 'danger')
-            return render_template('index.html', form=form, bulk_form=bulk_form)
+            return render_template('index.html', form=form)
 
         custom_code = form.custom_code.data.strip().upper() if form.custom_code.data else None
         
@@ -49,7 +48,7 @@ def index():
         if custom_code:
             if URL.query.filter_by(short_code=custom_code).first():
                 flash(f"Code '{custom_code}' is already taken.", 'danger')
-                return render_template('index.html', form=form, bulk_form=bulk_form)
+                return render_template('index.html', form=form)
             short_code = custom_code
         else:
             # Generate unique code
@@ -114,66 +113,8 @@ def index():
         
         flash("URL Shortened Successfully!", 'success')
         
-    return render_template('index.html', form=form, bulk_form=bulk_form, 
+    return render_template('index.html', form=form, 
                            short_url=short_url, qr_data=qr_data, stats_url=stats_url)
-
-@main.route('/bulk', methods=['POST'])
-def bulk_upload():
-    form = BulkUploadForm() # We just use this for validation check mostly
-    # Logic is slightly different as it comes from a different form submission in the UI usually
-    # But we can handle it here or in index. Let's handle it here for cleanliness if the UI posts here.
-    # However, keeping it single-page is better.
-    # Let's assume the index template posts to / for single and /bulk for bulk to keep it clean.
-    
-    if 'csv_file' not in request.files:
-        flash('No file part', 'danger')
-        return redirect(url_for('main.index'))
-        
-    file = request.files['csv_file']
-    if file.filename == '':
-        flash('No selected file', 'danger')
-        return redirect(url_for('main.index'))
-        
-    if file:
-        try:
-            stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
-            csv_reader = csv.DictReader(stream)
-            results = []
-            errors = []
-            
-            for row in csv_reader:
-                long_url = row.get('long_url', '').strip()
-                if not long_url:
-                    errors.append("Row missing 'long_url'")
-                    continue
-                
-                custom_code = row.get('custom_code', '').strip().upper()
-                if custom_code and URL.query.filter_by(short_code=custom_code).first():
-                    # Generate random if taken or skip? Let's generate random to be safe
-                    custom_code = generate_short_code(current_app.config['SHORT_CODE_LENGTH'])
-                elif not custom_code:
-                     custom_code = generate_short_code(current_app.config['SHORT_CODE_LENGTH'])
-                
-                # Default expiry
-                expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=current_app.config['EXPIRY_HOURS'])
-                
-                new_url = URL(
-                    short_code=custom_code,
-                    long_url=long_url,
-                    expires_at=expires_at
-                )
-                db.session.add(new_url)
-                results.append(f"https://{current_app.config['BASE_DOMAIN']}/{custom_code}")
-            
-            db.session.commit()
-            flash(f"Processed {len(results)} URLs.", 'success')
-            return render_template('bulk_results.html', results=results, errors=errors)
-            
-        except Exception as e:
-            flash(f"Error processing CSV: {e}", 'danger')
-            return redirect(url_for('main.index'))
-
-    return redirect(url_for('main.index'))
 
 @main.route('/<short_code>')
 def redirect_to_url(short_code):

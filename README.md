@@ -9,7 +9,6 @@ Redrx is a modern, feature-rich URL shortener built with Python (Flask), Postgre
 - **Password Protection:** Secure your links with a password.
 - **Expiration & Scheduling:** Set start/end times or automatic expiry (set to 0 for permanent links).
 - **QR Code Generation:** Customizable QR codes with color options and logo support, targeting the shortened URL.
-- **Bulk Upload:** Shorten hundreds of links at once via CSV.
 - **Advanced Stats:** Track click counts, countries (Local GeoIP), browsers, and platforms.
 - **Phishing Protection:** Auto-updating blocked domain lists with optional auto-removal of malicious links.
 - **Access Control:** Configurable options to disable anonymous link creation or public registration.
