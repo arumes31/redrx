@@ -36,7 +36,7 @@ limiter = Limiter(
     storage_uri=storage_url
 )
 
-metrics = PrometheusMetrics.for_app_factory()
+metrics = PrometheusMetrics.for_app_factory(path=None)
 
 class AnonymizeFilter(logging.Filter):
     def filter(self, record):
@@ -75,6 +75,11 @@ def create_app(config_class=Config):
     login_manager.init_app(app)
     limiter.init_app(app)
     metrics.init_app(app)
+
+    @app.route('/metrics')
+    @limiter.limit("10 per minute") # Strict limit for metrics to prevent abuse
+    def custom_metrics():
+        return metrics.export()
 
     @login_manager.user_loader
     def load_user(user_id):
