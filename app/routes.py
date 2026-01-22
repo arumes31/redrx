@@ -550,3 +550,7 @@ def api_docs():
 @main.route('/data-usage')
 def data_usage():
     return render_template('data_usage.html')
+
+@main.route('/terms')
+def terms():
+    return render_template('terms.html')
