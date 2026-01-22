@@ -53,6 +53,7 @@ docker-compose up -d
 | `RATELIMIT_DEFAULT` | `200 per day;50 per hour` | Default rate limit for general browsing. |
 | `RATELIMIT_CREATE` | `10 per minute` | Rate limit for creating new links. |
 | `RATELIMIT_REDIRECT` | `100 per minute` | Rate limit for link redirections. |
+| `RATELIMIT_HEALTH` | `10 per minute` | Rate limit for health check endpoint. |
 
 1. Install dependencies:
    ```bash

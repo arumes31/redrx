@@ -26,6 +26,7 @@ from app.utils import generate_short_code, get_qr_data_url, generate_qr, select_
 main = Blueprint('main', __name__)
 
 @main.route('/health')
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_HEALTH', '10 per minute'))
 def health_check():
     health = {"status": "healthy", "checks": {}}
     
