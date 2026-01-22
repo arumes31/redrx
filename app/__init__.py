@@ -80,6 +80,12 @@ def create_app(config_class=Config):
     login_manager.init_app(app)
     limiter.init_app(app)
     metrics.init_app(app)
+    csrf.init_app(app)
+
+    from flask_wtf.csrf import generate_csrf
+    @app.context_processor
+    def inject_csrf_token():
+        return dict(csrf_token=generate_csrf)
 
     @app.route('/metrics')
     @limiter.limit(lambda: app.config.get('RATELIMIT_METRICS', '10 per minute')) # Configurable limit

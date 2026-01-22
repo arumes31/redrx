@@ -284,6 +284,7 @@ def register():
     return render_template('register.html', form=form)
 
 @main.route('/login', methods=['GET', 'POST'])
+@limiter.limit("10 per minute") # Prevent brute force
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('main.index'))
@@ -597,13 +598,16 @@ def sitemap():
     return render_template('sitemap.xml'), 200, {'Content-Type': 'application/xml'}
 
 @main.route('/api-docs')
+@limiter.limit("30 per minute")
 def api_docs():
     return render_template('api_docs.html')
 
 @main.route('/data-usage')
+@limiter.limit("30 per minute")
 def data_usage():
     return render_template('data_usage.html')
 
 @main.route('/terms')
+@limiter.limit("30 per minute")
 def terms():
     return render_template('terms.html')
