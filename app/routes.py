@@ -468,9 +468,21 @@ def stats(short_code):
     days_in_range = 1 if range_type == '24h' else (7 if range_type == '7d' else 30)
     avg_daily = round(len(filtered_clicks) / days_in_range, 1)
 
-    # Step 4: IP Anonymization for recent activity (last 10)
+    # Step 4: IP Anonymization and Relative Time for recent activity (last 10)
     recent_clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.desc()).limit(10).all()
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
     for rc in recent_clicks:
+        # Relative time
+        diff = now_utc - rc.timestamp.replace(tzinfo=datetime.timezone.utc)
+        if diff.days > 0:
+            rc.relative_time = f"{diff.days}d ago"
+        elif diff.seconds >= 3600:
+            rc.relative_time = f"{diff.seconds // 3600}h ago"
+        elif diff.seconds >= 60:
+            rc.relative_time = f"{diff.seconds // 60}m ago"
+        else:
+            rc.relative_time = "Just now"
+
         if rc.ip_address:
             parts = rc.ip_address.split('.')
             if len(parts) == 4:
