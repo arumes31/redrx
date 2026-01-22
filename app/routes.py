@@ -547,6 +547,6 @@ def sitemap():
 def api_docs():
     return render_template('api_docs.html')
 
-@main.route('/privacy')
-def privacy():
-    return render_template('privacy.html')
+@main.route('/data-usage')
+def data_usage():
+    return render_template('data_usage.html')
