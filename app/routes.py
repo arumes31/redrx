@@ -546,3 +546,11 @@ def sitemap():
 @main.route('/api-docs')
 def api_docs():
     return render_template('api_docs.html')
+
+@main.route('/data-usage')
+def data_usage():
+    return render_template('data_usage.html')
+
+@main.route('/terms')
+def terms():
+    return render_template('terms.html')
