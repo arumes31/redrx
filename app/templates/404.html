@@ -1,10 +1,22 @@
 {% extends "base.html" %}
-{% block title %}404 Not Found{% endblock %}
+{% block title %}404 Not Found - Redrx{% endblock %}
 
 {% block content %}
-<div class="text-center mt-5">
-    <h1 class="display-1 fw-bold text-danger">404</h1>
-    <p class="lead">Oops! That link seems to be lost in the void.</p>
-    <a href="{{ url_for('main.index') }}" class="btn btn-outline-light mt-3">Take me home</a>
+<div class="row justify-content-center align-items-center" style="min-height: 60vh;">
+    <div class="col-md-6">
+        <div class="card text-center p-5 border-info">
+            <div class="mb-4">
+                <i class="fas fa-ghost fa-4x text-info animate__animated animate__bounce"></i>
+            </div>
+            <h1 class="display-4 fw-bold text-info">404</h1>
+            <h2 class="mb-3">Lost in the Void</h2>
+            <p class="lead text-muted mb-4">The link you are looking for doesn't exist or has been moved to another dimension.</p>
+            
+            <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+                <a href="{{ url_for('main.index') }}" class="btn btn-outline-light px-4">Go Home</a>
+                <a href="{{ url_for('main.dashboard') }}" class="btn btn-shorten px-4">Dashboard</a>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

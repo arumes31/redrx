@@ -2,7 +2,10 @@
 {% block title %}Stats - Redrx{% endblock %}
 
 {% block head %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="{{ url_for('static', filename='js/lib/chart.js') }}"></script>
+<style>
+    .x-small { font-size: 0.7rem; }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -10,11 +13,22 @@
     <div class="col-lg-11">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2><i class="fas fa-chart-line text-info"></i> Statistics: <small class="text-muted">{{ url.short_code }}</small></h2>
-            <div>
-                <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-light btn-sm me-2">Dashboard</a>
+            <div class="d-flex gap-2">
+                {% if not url.user_id %}
+                <button class="btn btn-outline-warning btn-sm" onclick="copyStatsLink(event)">
+                    <i class="fas fa-share-alt me-1"></i> Share Stats
+                </button>
+                {% endif %}
+                <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-light btn-sm">Dashboard</a>
                 <a href="{{ url_for('main.index') }}" class="btn btn-outline-info btn-sm">Create New</a>
             </div>
         </div>
+        
+        {% if not url.user_id %}
+        <div class="alert alert-info py-2 small mb-4">
+            <i class="fas fa-info-circle me-2"></i> This is a <strong>public link</strong>. Anyone with this statistics URL can view the data below.
+        </div>
+        {% endif %}
         
         <!-- Summary Cards -->
         <div class="row g-4 mb-4">
@@ -104,18 +118,43 @@
                                     <th>Time</th>
                                     <th>IP (Anonymized)</th>
                                     <th>Country</th>
-                                    <th>Device</th>
+                                    <th>Device / Browser</th>
                                     <th>Referrer</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for click in recent_clicks %}
                                 <tr>
-                                    <td class="small">{{ click.timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
-                                    <td class="font-monospace small">{{ click.ip_anonymized }}</td>
-                                    <td>{{ click.country }}</td>
-                                    <td class="small">{{ click.browser }} / {{ click.platform }}</td>
-                                    <td class="text-truncate small" style="max-width: 200px;">{{ click.referrer }}</td>
+                                    <td>
+                                        <div class="small">{{ click.timestamp.strftime('%H:%M:%S') }}</div>
+                                        <div class="text-info x-small fw-bold">{{ click.relative_time }}</div>
+                                    </td>
+                                    <td class="font-monospace small align-middle">{{ click.ip_anonymized }}</td>
+                                    <td class="align-middle">
+                                        <i class="fas fa-globe-americas me-1 text-muted"></i>{{ click.country }}
+                                    </td>
+                                    <td class="small align-middle">
+                                        <span class="text-light">
+                                            {% if 'Windows' in click.platform %}<i class="fab fa-windows me-1"></i>
+                                            {% elif 'Mac' in click.platform %}<i class="fab fa-apple me-1"></i>
+                                            {% elif 'Linux' in click.platform %}<i class="fab fa-linux me-1"></i>
+                                            {% elif 'Android' in click.platform %}<i class="fab fa-android me-1"></i>
+                                            {% elif 'iOS' in click.platform %}<i class="fab fa-apple me-1"></i>
+                                            {% else %}<i class="fas fa-laptop me-1"></i>{% endif %}
+                                            {{ click.platform }}
+                                        </span>
+                                        <div class="text-muted x-small">
+                                            {% if 'Chrome' in click.browser %}<i class="fab fa-chrome me-1"></i>
+                                            {% elif 'Firefox' in click.browser %}<i class="fab fa-firefox me-1"></i>
+                                            {% elif 'Safari' in click.browser %}<i class="fab fa-safari me-1"></i>
+                                            {% elif 'Edge' in click.browser %}<i class="fab fa-edge me-1"></i>
+                                            {% else %}<i class="fas fa-window-maximize me-1"></i>{% endif %}
+                                            {{ click.browser }}
+                                        </div>
+                                    </td>
+                                    <td class="text-truncate small align-middle" style="max-width: 200px;" title="{{ click.referrer }}">
+                                        {{ click.referrer }}
+                                    </td>
                                 </tr>
                                 {% else %}
                                 <tr><td colspan="5" class="text-center py-4 text-muted">No click data yet.</td></tr>
@@ -161,6 +200,18 @@
 
 {% block scripts %}
 <script>
+    function copyStatsLink(event) {
+        navigator.clipboard.writeText(window.location.href);
+        const btn = event.currentTarget;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check me-1"></i> Copied!';
+        btn.classList.replace('btn-outline-warning', 'btn-success');
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.classList.replace('btn-success', 'btn-outline-warning');
+        }, 2000);
+    }
+
     const chartOptions = {
         responsive: true,
         plugins: {

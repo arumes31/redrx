@@ -6,6 +6,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from app.models import db, User
 from config import Config
 import os
+import logging
+import re
 
 login_manager = LoginManager()
 login_manager.login_view = 'main.login'
@@ -22,9 +24,35 @@ limiter = Limiter(
     storage_uri=storage_url
 )
 
+class AnonymizeFilter(logging.Filter):
+    def filter(self, record):
+        if not os.environ.get('ANONYMIZE_LOGS', 'false').lower() in ['true', '1', 't']:
+            return True
+        
+        # Mask IPv4
+        ip_pattern = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
+        if isinstance(record.msg, str):
+            record.msg = re.sub(ip_pattern, 'xxx.xxx.xxx.xxx', record.msg)
+        
+        if record.args:
+            new_args = []
+            for arg in record.args:
+                if isinstance(arg, str):
+                    new_args.append(re.sub(ip_pattern, 'xxx.xxx.xxx.xxx', arg))
+                else:
+                    new_args.append(arg)
+            record.args = tuple(new_args)
+        return True
+
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+
+    # Apply anonymization filter if enabled
+    if app.config.get('ANONYMIZE_LOGS'):
+        for handler in app.logger.handlers:
+            handler.addFilter(AnonymizeFilter())
+        logging.getLogger('werkzeug').addFilter(AnonymizeFilter())
 
     # Reverse Proxy Support
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)

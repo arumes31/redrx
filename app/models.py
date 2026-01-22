@@ -28,11 +28,13 @@ class URL(db.Model):
     password_hash = db.Column(db.String(255), nullable=True)
     preview_mode = db.Column(db.Boolean, default=True)
     stats_enabled = db.Column(db.Boolean, default=True)
+    is_enabled = db.Column(db.Boolean, default=True)
     clicks_count = db.Column('clicks', db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     expires_at = db.Column(db.DateTime, nullable=True)
     start_at = db.Column(db.DateTime, nullable=True)
     end_at = db.Column(db.DateTime, nullable=True)
+    last_accessed_at = db.Column(db.DateTime, nullable=True)
 
     # Relationship to detailed clicks
     clicks = db.relationship('Click', backref='url', lazy=True, cascade="all, delete-orphan")
@@ -51,6 +53,9 @@ class URL(db.Model):
             self._rotate_targets = None
 
     def is_active(self):
+        if not self.is_enabled:
+            return False
+            
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         
         if self.start_at and now < self.start_at:

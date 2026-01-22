@@ -3,7 +3,7 @@ import csv
 import json
 import datetime
 import uuid
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify, send_from_directory
 from flask_login import login_user, logout_user, current_user, login_required
 from flask_limiter import Limiter
 from app import limiter # Import the instance
@@ -406,7 +406,10 @@ def delete_url(short_code):
 def stats(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
     
-    if url_entry.user_id != current_user.id:
+    # Check ownership: If the URL has an owner, only that owner can see stats.
+    # If it's anonymous (user_id is None), then anyone can see stats.
+    current_user_id = current_user.id if current_user.is_authenticated else None
+    if url_entry.user_id != current_user_id:
         abort(403)
         
     range_type = request.args.get('range', '30d')
@@ -465,9 +468,21 @@ def stats(short_code):
     days_in_range = 1 if range_type == '24h' else (7 if range_type == '7d' else 30)
     avg_daily = round(len(filtered_clicks) / days_in_range, 1)
 
-    # Step 4: IP Anonymization for recent activity (last 10)
+    # Step 4: IP Anonymization and Relative Time for recent activity (last 10)
     recent_clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.desc()).limit(10).all()
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
     for rc in recent_clicks:
+        # Relative time
+        diff = now_utc - rc.timestamp.replace(tzinfo=datetime.timezone.utc)
+        if diff.days > 0:
+            rc.relative_time = f"{diff.days}d ago"
+        elif diff.seconds >= 3600:
+            rc.relative_time = f"{diff.seconds // 3600}h ago"
+        elif diff.seconds >= 60:
+            rc.relative_time = f"{diff.seconds // 60}m ago"
+        else:
+            rc.relative_time = "Just now"
+
         if rc.ip_address:
             parts = rc.ip_address.split('.')
             if len(parts) == 4:
@@ -506,6 +521,26 @@ def qr_download(short_code):
 def not_found(e):
     return render_template('404.html'), 404
 
+@main.errorhandler(403)
+def forbidden(e):
+    return render_template('403.html'), 403
+
 @main.errorhandler(410)
 def gone(e):
     return render_template('410.html'), 410
+
+@main.errorhandler(500)
+def internal_error(e):
+    return render_template('500.html'), 500
+
+@main.route('/robots.txt')
+def robots():
+    if not current_app.config.get('ENABLE_SEO'):
+        abort(404)
+    return render_template('robots.txt'), 200, {'Content-Type': 'text/plain'}
+
+@main.route('/sitemap.xml')
+def sitemap():
+    if not current_app.config.get('ENABLE_SEO'):
+        abort(404)
+    return render_template('sitemap.xml'), 200, {'Content-Type': 'application/xml'}

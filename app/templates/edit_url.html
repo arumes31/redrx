@@ -25,14 +25,14 @@
                     {{ form.preview_mode.label(class="form-check-label") }}
                     <i class="fas fa-info-circle text-muted small ms-1" 
                        data-bs-toggle="tooltip" 
-                       title="Preview mode shows a confirmation page before redirecting."></i>
+                       title="When enabled, users will see a preview page showing the destination URL and a security check before being redirected. This helps prevent accidental clicks and increases transparency."></i>
                 </div>
                 <div class="form-check mb-3">
                     {{ form.stats_enabled(class="form-check-input") }}
                     {{ form.stats_enabled.label(class="form-check-label") }}
                     <i class="fas fa-info-circle text-muted small ms-1" 
                        data-bs-toggle="tooltip" 
-                       title="Statistics tracks clicks, countries, browsers, and platforms."></i>
+                       title="Enable this to collect anonymized data on link performance. Since this link is associated with your account, these statistics are PRIVATE and accessible only to you. We track clicks, countries, browsers, and platforms."></i>
                 </div>
                 <div class="d-flex justify-content-between mt-4">
                     <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-light">Cancel</a>
