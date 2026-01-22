@@ -180,6 +180,32 @@
                         </table>
                     </div>
                 </div>
+                <!-- Pagination Controls -->
+                {% if pagination.pages > 1 %}
+                <div class="card-footer bg-dark border-top border-secondary">
+                    <nav aria-label="Page navigation">
+                        <ul class="pagination justify-content-center mb-0">
+                            <li class="page-item {{ 'disabled' if not pagination.has_prev else '' }}">
+                                <a class="page-link bg-dark border-secondary text-light" href="{{ url_for('main.dashboard', page=pagination.prev_num) if pagination.has_prev else '#' }}">Previous</a>
+                            </li>
+                            {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                                {% if page_num %}
+                                    {% if page_num == pagination.page %}
+                                        <li class="page-item active"><span class="page-link bg-info border-info">{{ page_num }}</span></li>
+                                    {% else %}
+                                        <li class="page-item"><a class="page-link bg-dark border-secondary text-light" href="{{ url_for('main.dashboard', page=page_num) }}">{{ page_num }}</a></li>
+                                    {% endif %}
+                                {% else %}
+                                    <li class="page-item disabled"><span class="page-link bg-dark border-secondary text-muted">...</span></li>
+                                {% endif %}
+                            {% endfor %}
+                            <li class="page-item {{ 'disabled' if not pagination.has_next else '' }}">
+                                <a class="page-link bg-dark border-secondary text-light" href="{{ url_for('main.dashboard', page=pagination.next_num) if pagination.has_next else '#' }}">Next</a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+                {% endif %}
             </div>
         </form>
     </div>

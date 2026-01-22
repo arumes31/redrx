@@ -13,3 +13,4 @@ Werkzeug>=3.1.5
 pytest>=9.0.2
 psycopg2-binary>=2.9.11
 user-agents>=2.2.0
+redis>=5.0.0

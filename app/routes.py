@@ -11,6 +11,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 from user_agents import parse
 from urllib.parse import urlparse
+from sqlalchemy import func
 
 from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, BulkUploadForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
@@ -281,22 +282,37 @@ def logout():
 @main.route('/dashboard')
 @login_required
 def dashboard():
-    urls = URL.query.filter_by(user_id=current_user.id).order_by(URL.created_at.desc()).all()
+    page = request.args.get('page', 1, type=int)
+    per_page = 10
     
-    # Calculate stats
-    total_links = len(urls)
-    total_clicks = sum(u.clicks_count for u in urls)
-    active_links = sum(1 for u in urls if u.is_active())
-    top_performer = max(urls, key=lambda u: u.clicks_count) if urls else None
+    # Efficient stats via SQL aggregations
+    stats_query = db.session.query(
+        func.count(URL.id).label('total_links'),
+        func.sum(URL.clicks_count).label('total_clicks')
+    ).filter(URL.user_id == current_user.id).first()
+    
+    active_links = URL.query.filter_by(user_id=current_user.id, is_enabled=True).count()
+    
+    # Pagination
+    pagination = URL.query.filter_by(user_id=current_user.id)\
+        .order_by(URL.created_at.desc())\
+        .paginate(page=page, per_page=per_page, error_out=False)
+        
+    urls = pagination.items
+    
+    # Top performer (separate query, efficient)
+    top_performer = URL.query.filter_by(user_id=current_user.id)\
+        .order_by(URL.clicks_count.desc())\
+        .first()
     
     stats = {
-        'total_links': total_links,
-        'total_clicks': total_clicks,
+        'total_links': stats_query.total_links or 0,
+        'total_clicks': stats_query.total_clicks or 0,
         'active_links': active_links,
         'top_performer': top_performer
     }
     
-    return render_template('dashboard.html', urls=urls, stats=stats)
+    return render_template('dashboard.html', urls=urls, stats=stats, pagination=pagination)
 
 @main.route('/regenerate-api-key', methods=['POST'])
 @login_required
