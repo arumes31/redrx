@@ -306,6 +306,7 @@ def logout():
 
 @main.route('/dashboard')
 @login_required
+@limiter.limit("60 per minute") # High limit for dashboard usage
 def dashboard():
     page = request.args.get('page', 1, type=int)
     per_page = 10
