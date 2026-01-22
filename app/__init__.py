@@ -105,16 +105,35 @@ def create_app(config_class=Config):
     with app.app_context():
         db.create_all()
         
-        # Auto-migration for device targeting columns
+        # Auto-migration for device targeting columns and is_enabled
         try:
             with db.engine.connect() as conn:
-                conn.execute(text("ALTER TABLE urls ADD COLUMN ios_target_url TEXT;"))
-                conn.execute(text("ALTER TABLE urls ADD COLUMN android_target_url TEXT;"))
-                conn.commit()
-                app.logger.info("Added device targeting columns to URL table.")
-        except Exception:
-            # Columns likely exist
-            pass
+                # Check/Add ios_target_url
+                try:
+                    conn.execute(text("ALTER TABLE urls ADD COLUMN ios_target_url TEXT;"))
+                    conn.commit()
+                    app.logger.info("Added ios_target_url column.")
+                except Exception:
+                    pass # Exists
+
+                # Check/Add android_target_url
+                try:
+                    conn.execute(text("ALTER TABLE urls ADD COLUMN android_target_url TEXT;"))
+                    conn.commit()
+                    app.logger.info("Added android_target_url column.")
+                except Exception:
+                    pass # Exists
+                    
+                # Check/Add is_enabled
+                try:
+                    conn.execute(text("ALTER TABLE urls ADD COLUMN is_enabled BOOLEAN DEFAULT TRUE;"))
+                    conn.commit()
+                    app.logger.info("Added is_enabled column.")
+                except Exception:
+                    pass # Exists
+                    
+        except Exception as e:
+            app.logger.error(f"Migration check failed: {e}")
             
         update_phishing_list()
         cleanup_phishing_urls()
