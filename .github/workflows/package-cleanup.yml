@@ -1,0 +1,22 @@
+name: Cleanup Old Package Versions
+
+on:
+  workflow_dispatch: # Allow manual triggering
+  schedule:
+    - cron: '0 0 * * 0' # Run weekly on Sundays at midnight
+
+jobs:
+  delete-versions:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Delete old image versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: 'redirx' # Use the actual lowercase package name
+          package-type: 'container'
+          min-versions-to-keep: 5
+          ignore-versions: 'latest' # Always keep the latest tag
+          delete-only-untagged-versions: 'false'
