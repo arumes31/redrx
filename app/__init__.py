@@ -114,29 +114,69 @@ def create_app(config_class=Config):
     with app.app_context():
         db.create_all()
         
-        # Robust auto-migration check
+        # Comprehensive schema verification
         try:
             inspector = inspect(db.engine)
-            columns = [c['name'] for c in inspector.get_columns('urls')]
             
+            # Map of Table Name -> List of (Column Name, Column Type/SQL)
+            required_schema = {
+                'users': [
+                    ('id', "INTEGER PRIMARY KEY"),
+                    ('username', "VARCHAR(80)"),
+                    ('email', "VARCHAR(120)"),
+                    ('password_hash', "VARCHAR(255)"),
+                    ('api_key', "VARCHAR(36)"),
+                    ('created_at', "TIMESTAMP")
+                ],
+                'urls': [
+                    ('id', "INTEGER PRIMARY KEY"),
+                    ('user_id', "INTEGER"),
+                    ('short_code', "VARCHAR(20)"),
+                    ('long_url', "TEXT"),
+                    ('rotate_targets', "TEXT"),
+                    ('ios_target_url', "TEXT"),
+                    ('android_target_url', "TEXT"),
+                    ('password_hash', "VARCHAR(255)"),
+                    ('preview_mode', "BOOLEAN DEFAULT TRUE"),
+                    ('stats_enabled', "BOOLEAN DEFAULT TRUE"),
+                    ('is_enabled', "BOOLEAN DEFAULT TRUE"),
+                    ('clicks', "INTEGER DEFAULT 0"),
+                    ('created_at', "TIMESTAMP"),
+                    ('expires_at', "TIMESTAMP"),
+                    ('start_at', "TIMESTAMP"),
+                    ('end_at', "TIMESTAMP"),
+                    ('last_accessed_at', "TIMESTAMP")
+                ],
+                'clicks': [
+                    ('id', "INTEGER PRIMARY KEY"),
+                    ('url_id', "INTEGER"),
+                    ('timestamp', "TIMESTAMP"),
+                    ('ip_address', "VARCHAR(45)"),
+                    ('country', "VARCHAR(100)"),
+                    ('browser', "VARCHAR(50)"),
+                    ('platform', "VARCHAR(50)"),
+                    ('referrer', "VARCHAR(255)")
+                ]
+            }
+
             with db.engine.connect() as conn:
-                if 'ios_target_url' not in columns:
-                    conn.execute(text("ALTER TABLE urls ADD COLUMN ios_target_url TEXT;"))
-                    conn.commit()
-                    app.logger.info("Migration: Added ios_target_url column.")
-                
-                if 'android_target_url' not in columns:
-                    conn.execute(text("ALTER TABLE urls ADD COLUMN android_target_url TEXT;"))
-                    conn.commit()
-                    app.logger.info("Migration: Added android_target_url column.")
+                for table_name, columns in required_schema.items():
+                    if not inspector.has_table(table_name):
+                        app.logger.warning(f"Table '{table_name}' missing! create_all should have handled this.")
+                        continue
                     
-                if 'is_enabled' not in columns:
-                    conn.execute(text("ALTER TABLE urls ADD COLUMN is_enabled BOOLEAN DEFAULT TRUE;"))
-                    conn.commit()
-                    app.logger.info("Migration: Added is_enabled column.")
-                    
+                    existing_columns = [c['name'] for c in inspector.get_columns(table_name)]
+                    for col_name, col_def in columns:
+                        if col_name not in existing_columns:
+                            app.logger.info(f"Schema Sync: Adding missing column '{col_name}' to '{table_name}'...")
+                            # Note: For simple types, we just use the name and basic type in ALTER
+                            sql_type = col_def.replace("PRIMARY KEY", "") # Don't try to add PK via ALTER
+                            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {sql_type};"))
+                            conn.commit()
+                            app.logger.info(f"Schema Sync: Successfully added '{col_name}'.")
+                            
         except Exception as e:
-            app.logger.error(f"Migration check failed: {e}")
+            app.logger.error(f"Schema verification failed: {e}")
             
         update_phishing_list()
         cleanup_phishing_urls()
