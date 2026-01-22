@@ -14,13 +14,22 @@ login_manager = LoginManager()
 login_manager.login_view = 'main.login'
 login_manager.login_message_category = 'info'
 
+def get_actual_ip():
+    """Custom key function for Limiter that respects Cloudflare headers."""
+    # We check environment variable directly for the key function
+    if os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']:
+        cf_ip = request.headers.get('CF-Connecting-IP')
+        if cf_ip:
+            return cf_ip
+    return get_remote_address()
+
 # Rate limiting configuration from env
 limit_default = os.environ.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")
 limit_create = os.environ.get('RATELIMIT_CREATE', "10 per minute")
 storage_url = os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
 
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=get_actual_ip,
     default_limits=[limit_default],
     storage_uri=storage_url
 )
