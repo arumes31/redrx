@@ -8,4 +8,4 @@ Disallow: /delete/
 Disallow: /stats/
 Disallow: /api/
 
-Sitemap: https://redrx.eu/sitemap.xml
+Sitemap: https://{{ config.SEO_DOMAIN }}/sitemap.xml

@@ -241,7 +241,7 @@ function showQRModal(code) {
     const downloadBtn = document.getElementById('qrDownloadBtn');
     
     body.innerHTML = '<div class="spinner-border text-info"></div>';
-    downloadBtn.href = `/qr/${code}`; // Note: update route if needed or use direct URL
+    downloadBtn.href = `/${code}/qr`; 
     
     const img = new Image();
     img.src = `/${code}/qr`;

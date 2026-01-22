@@ -10,14 +10,14 @@
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://redrx.eu/">
+    <meta property="og:url" content="https://{{ config.SEO_DOMAIN }}/">
     <meta property="og:title" content="Redrx | Professional URL Shortener">
     <meta property="og:description" content="Shorten, manage, and track your links with Redrx. Free custom aliases and detailed click analytics.">
     <meta property="og:image" content="{{ url_for('static', filename='img/logo.svg', _external=True) }}">
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
-    <meta property="twitter:url" content="https://redrx.eu/">
+    <meta property="twitter:url" content="https://{{ config.SEO_DOMAIN }}/">
     <meta property="twitter:title" content="Redrx | Professional URL Shortener">
     <meta property="twitter:description" content="Shorten, manage, and track your links with Redrx. Free custom aliases and detailed click analytics.">
     {% endif %}

@@ -26,5 +26,6 @@ class Config:
     USE_CLOUDFLARE = os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']
     ANONYMIZE_LOGS = os.environ.get('ANONYMIZE_LOGS', 'false').lower() in ['true', '1', 't']
     ENABLE_SEO = os.environ.get('ENABLE_SEO', 'false').lower() in ['true', '1', 't']
+    SEO_DOMAIN = os.environ.get('SEO_DOMAIN', 'redrx.eu')
     DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() in ['true', '1', 't']
 

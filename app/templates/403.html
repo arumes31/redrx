@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}403 Forbidden - Redrx{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center align-items-center" style="min-height: 60vh;">
+    <div class="col-md-6">
+        <div class="card text-center p-5 border-danger">
+            <div class="mb-4">
+                <i class="fas fa-lock fa-4x text-danger animate__animated animate__shakeX"></i>
+            </div>
+            <h1 class="display-4 fw-bold text-danger">403</h1>
+            <h2 class="mb-3">Access Denied</h2>
+            <p class="lead text-muted mb-4">You don't have permission to access this area. If you think this is a mistake, please contact support.</p>
+            
+            <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+                <a href="{{ url_for('main.index') }}" class="btn btn-outline-light px-4">Home</a>
+                {% if not current_user.is_authenticated %}
+                <a href="{{ url_for('main.login') }}" class="btn btn-shorten px-4">Log In</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

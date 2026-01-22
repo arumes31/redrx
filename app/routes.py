@@ -521,18 +521,26 @@ def qr_download(short_code):
 def not_found(e):
     return render_template('404.html'), 404
 
+@main.errorhandler(403)
+def forbidden(e):
+    return render_template('403.html'), 403
+
 @main.errorhandler(410)
 def gone(e):
     return render_template('410.html'), 410
+
+@main.errorhandler(500)
+def internal_error(e):
+    return render_template('500.html'), 500
 
 @main.route('/robots.txt')
 def robots():
     if not current_app.config.get('ENABLE_SEO'):
         abort(404)
-    return send_from_directory(current_app.static_folder, 'robots.txt')
+    return render_template('robots.txt'), 200, {'Content-Type': 'text/plain'}
 
 @main.route('/sitemap.xml')
 def sitemap():
     if not current_app.config.get('ENABLE_SEO'):
         abort(404)
-    return send_from_directory(current_app.static_folder, 'sitemap.xml')
+    return render_template('sitemap.xml'), 200, {'Content-Type': 'application/xml'}

@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-        <loc>https://redrx.eu/</loc>
+        <loc>https://{{ config.SEO_DOMAIN }}/</loc>
         <lastmod>2026-01-22</lastmod>
         <changefreq>monthly</changefreq>
         <priority>1.0</priority>
     </url>
     <url>
-        <loc>https://redrx.eu/login</loc>
+        <loc>https://{{ config.SEO_DOMAIN }}/login</loc>
         <lastmod>2026-01-22</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
     </url>
     <url>
-        <loc>https://redrx.eu/register</loc>
+        <loc>https://{{ config.SEO_DOMAIN }}/register</loc>
         <lastmod>2026-01-22</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
