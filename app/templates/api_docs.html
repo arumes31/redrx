@@ -1,13 +1,30 @@
 {% extends "base.html" %}
-{% block title %}API Documentation - Redrx{% endblock %}
+{% block title %}Redrx API Documentation - Developer Guide{% endblock %}
+
+{% block meta_description %}Complete API documentation for Redrx URL shortener. Learn how to programmatically shorten links, retrieve stats, and manage URLs using our REST API.{% endblock %}
+
+{% block structured_data %}
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Redrx API Documentation",
+  "description": "Developer guide for integrating Redrx URL shortening services.",
+  "articleSection": "API Reference",
+  "author": {
+      "@type": "Organization",
+      "name": "Redrx"
+  }
+}
+{% endblock %}
 
 {% block content %}
 <div class="container py-5">
     <div class="row justify-content-center">
         <div class="col-lg-10">
+            <h1 class="text-white mb-4"><i class="fas fa-plug me-2 text-info"></i>API Documentation</h1>
             <div class="card bg-dark border-secondary">
                 <div class="card-header border-secondary d-flex justify-content-between align-items-center">
-                    <h3 class="mb-0 text-white"><i class="fas fa-plug me-2 text-info"></i>API Documentation</h3>
+                    <h2 class="h5 mb-0 text-white">Developer Guide</h2>
                     <span class="badge bg-info text-dark">v1.0</span>
                 </div>
                 <div class="card-body">
@@ -18,7 +35,7 @@
                         Include your API key in the <code>X-API-KEY</code> header. You can find your key in the Dashboard.
                     </div>
 
-                    <h4 class="mt-4 text-info">1. Shorten a URL</h4>
+                    <h2 class="mt-4 text-info h4">1. Shorten a URL</h2>
                     <p class="text-muted">Create a new shortened link with optional customization.</p>
                     
                     <div class="card bg-black border-secondary mb-4">
@@ -41,7 +58,7 @@
                         </div>
                     </div>
 
-                    <h5 class="text-light mt-3">Response</h5>
+                    <h3 class="text-light mt-3 h5">Response</h3>
                     <div class="card bg-black border-secondary mb-4">
                         <div class="card-body p-0">
 <pre class="m-0 p-3 text-success" style="overflow-x: auto;"><code>{
@@ -58,7 +75,7 @@
 
                     <hr class="border-secondary my-5">
 
-                    <h4 class="mt-4 text-info">2. Get Link Info</h4>
+                    <h2 class="mt-4 text-info h4">2. Get Link Info</h2>
                     <p class="text-muted">Retrieve details and statistics for a specific link.</p>
                     
                     <div class="card bg-black border-secondary mb-4">
@@ -71,7 +88,7 @@
                         </div>
                     </div>
 
-                    <h5 class="text-light mt-3">Response</h5>
+                    <h3 class="text-light mt-3 h5">Response</h3>
                     <div class="card bg-black border-secondary">
                         <div class="card-body p-0">
 <pre class="m-0 p-3 text-success" style="overflow-x: auto;"><code>{

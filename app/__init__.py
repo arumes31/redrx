@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request, redirect
 from flask_login import LoginManager
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -8,6 +8,7 @@ from config import Config
 import os
 import logging
 import re
+from urllib.parse import urlparse
 
 login_manager = LoginManager()
 login_manager.login_view = 'main.login'
@@ -64,6 +65,25 @@ def create_app(config_class=Config):
     @login_manager.user_loader
     def load_user(user_id):
         return User.query.get(int(user_id))
+
+    @app.before_request
+    def ensure_canonical_domain():
+        # Skip if running in debug mode or localhost to avoid breaking dev env
+        if app.debug or request.host.startswith('localhost') or request.host.startswith('127.0.0.1'):
+            return
+
+        base_domain = app.config.get('BASE_DOMAIN')
+        if not base_domain:
+            return
+
+        # Clean base_domain in case it includes scheme
+        if '://' in base_domain:
+            base_domain = urlparse(base_domain).netloc
+
+        if request.host != base_domain:
+            # Reconstruct URL with canonical host
+            # 301 Moved Permanently
+            return redirect(request.url.replace(request.host, base_domain, 1), code=301)
 
     @app.after_request
     def set_security_headers(response):
