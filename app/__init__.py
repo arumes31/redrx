@@ -14,13 +14,22 @@ login_manager = LoginManager()
 login_manager.login_view = 'main.login'
 login_manager.login_message_category = 'info'
 
+def get_actual_ip():
+    """Custom key function for Limiter that respects Cloudflare headers."""
+    # We check environment variable directly for the key function
+    if os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']:
+        cf_ip = request.headers.get('CF-Connecting-IP')
+        if cf_ip:
+            return cf_ip
+    return get_remote_address()
+
 # Rate limiting configuration from env
 limit_default = os.environ.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")
 limit_create = os.environ.get('RATELIMIT_CREATE', "10 per minute")
 storage_url = os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
 
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=get_actual_ip,
     default_limits=[limit_default],
     storage_uri=storage_url
 )
@@ -105,16 +114,35 @@ def create_app(config_class=Config):
     with app.app_context():
         db.create_all()
         
-        # Auto-migration for device targeting columns
+        # Auto-migration for device targeting columns and is_enabled
         try:
             with db.engine.connect() as conn:
-                conn.execute(text("ALTER TABLE urls ADD COLUMN ios_target_url TEXT;"))
-                conn.execute(text("ALTER TABLE urls ADD COLUMN android_target_url TEXT;"))
-                conn.commit()
-                app.logger.info("Added device targeting columns to URL table.")
-        except Exception:
-            # Columns likely exist
-            pass
+                # Check/Add ios_target_url
+                try:
+                    conn.execute(text("ALTER TABLE urls ADD COLUMN ios_target_url TEXT;"))
+                    conn.commit()
+                    app.logger.info("Added ios_target_url column.")
+                except Exception:
+                    pass # Exists
+
+                # Check/Add android_target_url
+                try:
+                    conn.execute(text("ALTER TABLE urls ADD COLUMN android_target_url TEXT;"))
+                    conn.commit()
+                    app.logger.info("Added android_target_url column.")
+                except Exception:
+                    pass # Exists
+                    
+                # Check/Add is_enabled
+                try:
+                    conn.execute(text("ALTER TABLE urls ADD COLUMN is_enabled BOOLEAN DEFAULT TRUE;"))
+                    conn.commit()
+                    app.logger.info("Added is_enabled column.")
+                except Exception:
+                    pass # Exists
+                    
+        except Exception as e:
+            app.logger.error(f"Migration check failed: {e}")
             
         update_phishing_list()
         cleanup_phishing_urls()

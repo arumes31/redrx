@@ -512,6 +512,12 @@ def gone(e):
 def internal_error(e):
     return render_template('500.html'), 500
 
+@main.errorhandler(429)
+def ratelimit_handler(e):
+    client_ip = get_client_ip(request)
+    client_country = get_geo_info(client_ip, request)
+    return render_template('429.html', client_ip=client_ip, client_country=client_country), 429
+
 @main.route('/robots.txt')
 def robots():
     if not current_app.config.get('ENABLE_SEO'):

@@ -12,6 +12,23 @@ import time
 
 import os
 from urllib.parse import urlparse
+import redis
+
+# Redis cache configuration for GeoIP lookups
+_REDIS_URL = os.environ.get('RATELIMIT_STORAGE_URL', 'redis://localhost:6379')
+_GEO_CACHE_TTL = 300  # 5 minutes
+_GEO_PREFIX = "geo:"
+
+def _get_redis_client():
+    """Lazily initialize Redis client."""
+    if _REDIS_URL.startswith('redis://'):
+        try:
+            return redis.from_url(_REDIS_URL, decode_responses=True)
+        except Exception:
+            return None
+    return None
+
+_redis_client = None
 
 def update_phishing_list():
     """Downloads the latest phishing domain lists."""
@@ -158,27 +175,56 @@ def get_client_country(request):
     return None
 
 def get_geo_info(ip, request=None):
-    """Fetches country from IP using local MaxMind database or Cloudflare header."""
+    """Fetches country from IP using local MaxMind database or Cloudflare header with Redis cache."""
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = _get_redis_client()
+
+    # 1. Check Redis Cache
+    if _redis_client:
+        try:
+            cached_val = _redis_client.get(f"{_GEO_PREFIX}{ip}")
+            if cached_val:
+                return cached_val
+        except Exception:
+            pass # Fallback to lookup on Redis error
+
+    # 2. Check Cloudflare
     if request:
         cf_country = get_client_country(request)
         if cf_country:
-            # Note: Cloudflare returns 'XX' for unknown and 'T1' for Tor
+            # Update Cache if Redis is available
+            if _redis_client:
+                try:
+                    _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, cf_country)
+                except Exception:
+                    pass
             return cf_country
 
     if ip == '127.0.0.1' or ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
         return "Local Network"
     
+    # 3. Check Local DB
     db_path = current_app.config.get('GEOIP_DB_PATH')
     if not db_path or not os.path.exists(db_path):
         return "Unknown (DB Missing)"
 
+    country = "Unknown"
     try:
         with geoip2.database.Reader(db_path) as reader:
             response = reader.country(ip)
-            return response.country.name or "Unknown"
+            country = response.country.name or "Unknown"
     except Exception: # nosec B110
         pass
-    return "Unknown"
+    
+    # 4. Update Redis Cache
+    if _redis_client:
+        try:
+            _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, country)
+        except Exception:
+            pass
+
+    return country
 
 def generate_short_code(length=6):
     """Generates a random short code."""
