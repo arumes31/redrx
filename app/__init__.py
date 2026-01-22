@@ -109,37 +109,31 @@ def create_app(config_class=Config):
     app.register_blueprint(api_blueprint)
 
     from app.utils import update_phishing_list, cleanup_phishing_urls
-    from sqlalchemy import text
+    from sqlalchemy import text, inspect
 
     with app.app_context():
         db.create_all()
         
-        # Auto-migration for device targeting columns and is_enabled
+        # Robust auto-migration check
         try:
+            inspector = inspect(db.engine)
+            columns = [c['name'] for c in inspector.get_columns('urls')]
+            
             with db.engine.connect() as conn:
-                # Check/Add ios_target_url
-                try:
+                if 'ios_target_url' not in columns:
                     conn.execute(text("ALTER TABLE urls ADD COLUMN ios_target_url TEXT;"))
                     conn.commit()
-                    app.logger.info("Added ios_target_url column.")
-                except Exception:
-                    pass # Exists
-
-                # Check/Add android_target_url
-                try:
+                    app.logger.info("Migration: Added ios_target_url column.")
+                
+                if 'android_target_url' not in columns:
                     conn.execute(text("ALTER TABLE urls ADD COLUMN android_target_url TEXT;"))
                     conn.commit()
-                    app.logger.info("Added android_target_url column.")
-                except Exception:
-                    pass # Exists
+                    app.logger.info("Migration: Added android_target_url column.")
                     
-                # Check/Add is_enabled
-                try:
+                if 'is_enabled' not in columns:
                     conn.execute(text("ALTER TABLE urls ADD COLUMN is_enabled BOOLEAN DEFAULT TRUE;"))
                     conn.commit()
-                    app.logger.info("Added is_enabled column.")
-                except Exception:
-                    pass # Exists
+                    app.logger.info("Migration: Added is_enabled column.")
                     
         except Exception as e:
             app.logger.error(f"Migration check failed: {e}")
