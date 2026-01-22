@@ -9,11 +9,18 @@ services:
       - BASE_DOMAIN=${BASE_DOMAIN}
       - GEOIP_DB_PATH=/usr/share/GeoIP/GeoLite2-Country.mmdb
       - ANONYMIZE_LOGS=${ANONYMIZE_LOGS:-false}
+      - RATELIMIT_STORAGE_URL=redis://redis:6379
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - geoip_data:/usr/share/GeoIP
+    restart: always
+
+  redis:
+    image: redis:7-alpine
     restart: always
 
   db:
