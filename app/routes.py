@@ -515,7 +515,8 @@ def internal_error(e):
 @main.errorhandler(429)
 def ratelimit_handler(e):
     client_ip = get_client_ip(request)
-    return render_template('429.html', client_ip=client_ip), 429
+    client_country = get_geo_info(client_ip, request)
+    return render_template('429.html', client_ip=client_ip, client_country=client_country), 429
 
 @main.route('/robots.txt')
 def robots():

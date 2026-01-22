@@ -16,6 +16,9 @@
                 <p class="mb-2 text-light">Please wait a few moments before trying again.</p>
                 <div class="small text-muted border-top border-secondary pt-2">
                     IP: <span class="text-warning font-monospace">{{ client_ip }}</span>
+                    {% if client_country %}
+                    <span class="ms-2">Country: <span class="text-info">{{ client_country }}</span></span>
+                    {% endif %}
                 </div>
             </div>
         </div>
