@@ -2,9 +2,7 @@ name: Daily Security Scan
 
 on:
   schedule:
-    # Runs at 00:00 UTC every day
     - cron: '0 0 * * *'
-  # Allow running manually from the Actions tab
   workflow_dispatch:
 
 jobs:
@@ -17,18 +15,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          python-version: '3.12'
+          go-version: '1.23'
+          cache: true
 
-      - name: Install dependencies
+      - name: Run Govulncheck
         run: |
-          python -m pip install --upgrade pip
-          pip install bandit
-
-      - name: Run Bandit Scan
-        # Scans the 'app' directory, recursive (-r), aggregate output (-ll)
-        run: bandit -r app/ -ll
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...

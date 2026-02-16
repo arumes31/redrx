@@ -1,0 +1,66 @@
+name: Go CI
+
+on:
+  push:
+    branches: [ "main", "test" ]
+  pull_request:
+    branches: [ "main", "test" ]
+
+jobs:
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23' # Using stable version, adjusting if needed
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: redrx
+          POSTGRES_PASSWORD: securepassword
+          POSTGRES_DB: redrx_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Run Tests
+        env:
+          DATABASE_URL: postgresql://redrx:securepassword@localhost:5432/redrx_db?sslmode=disable
+          REDIS_URL: redis://localhost:6379
+          APP_ENV: test
+        run: go test -v ./...

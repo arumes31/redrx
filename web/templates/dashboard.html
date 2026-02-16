@@ -1,0 +1,159 @@
+{{ define "content" }}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h2 class="mb-3">Dashboard</h2>
+
+        <!-- Stats Cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card bg-primary text-white h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">Total Links</h6>
+                        <h2 class="display-4 fw-bold">{{ .TotalLinks }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-success text-white h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">Total Clicks</h6>
+                        <h2 class="display-4 fw-bold">{{ .TotalClicks }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-info text-white h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">Active Links</h6>
+                        <h2 class="display-4 fw-bold">{{ .ActiveLinks }}</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Links Table -->
+        <div class="card">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Your Links</h5>
+                <a href="/" class="btn btn-sm btn-primary"><i class="fas fa-plus"></i> New Link</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Short Link</th>
+                                <th>Original URL</th>
+                                <th>Clicks</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{ range .URLs }}
+                            <tr>
+                                <td>
+                                    <a href="/{{ .ShortCode }}" target="_blank" class="fw-bold text-decoration-none">{{
+                                        .ShortCode }}</a>
+                                    {{ if not .IsEnabled }}<span class="badge bg-danger ms-1">Disabled</span>{{ end }}
+                                </td>
+                                <td class="text-truncate" style="max-width: 200px;" title="{{ .LongURL }}">
+                                    {{ .LongURL }}
+                                </td>
+                                <td>{{ .ClicksCount }}</td>
+                                <td>{{ .CreatedAt.Format "Jan 02, 2006" }}</td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-secondary"
+                                            onclick="navigator.clipboard.writeText('{{ $.BaseURL }}/{{ .ShortCode }}')"><i
+                                                class="fas fa-copy"></i></button>
+                                        <a href="/{{ .ShortCode }}/stats" class="btn btn-outline-info"><i
+                                                class="fas fa-chart-bar"></i></a>
+                                        <!-- Add Edit/Delete actions here later -->
+                                    </div>
+                                </td>
+                            </tr>
+                            {{ else }}
+                            <tr>
+                                <td colspan="5" class="text-center py-4 text-muted">No links found. Create one!</td>
+                            </tr>
+                            {{ end }}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Key Section -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">API Key</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted">Use this key to authenticate API requests (header: <code>X-API-Key</code>).</p>
+            <div class="input-group mb-3">
+                <input type="text" class="form-control" id="apiKeyField" value="{{ .User.APIKey }}" readonly>
+                <button class="btn btn-outline-secondary" type="button" onclick="copyAPIKey()">Copy</button>
+                <button class="btn btn-outline-warning" type="button" onclick="regenerateAPIKey()">Regenerate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+            <h5 class="mb-0">Danger Zone</h5>
+        </div>
+        <div class="card-body">
+            <p>Deleting your account is irreversible. All links and data will be removed.</p>
+            <button class="btn btn-danger" onclick="deleteAccount()">Delete Account</button>
+        </div>
+    </div>
+</div>
+</div>
+
+<script>
+    function copyAPIKey() {
+        var copyText = document.getElementById("apiKeyField");
+        copyText.select();
+        navigator.clipboard.writeText(copyText.value);
+        alert("API Key copied!");
+    }
+
+    async function regenerateAPIKey() {
+        if (!confirm("Are you sure? The old key will stop working immediately.")) return;
+
+        try {
+            const response = await fetch('/api/v1/auth/apikey', { method: 'POST' });
+            if (response.ok) {
+                const data = await response.json();
+                document.getElementById("apiKeyField").value = data.api_key;
+                alert("New API Key generated.");
+            } else {
+                alert("Failed to regenerate key.");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error regenerating key.");
+        }
+    }
+
+    async function deleteAccount() {
+        if (!confirm("WARNING: This will permanently delete your account and ALL links. There is no undo. Are you sure?")) return;
+
+        try {
+            const response = await fetch('/api/v1/auth/account', { method: 'DELETE' });
+            if (response.ok) {
+                alert("Account deleted. Bye!");
+                window.location.href = "/";
+            } else {
+                alert("Failed to delete account.");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error deleting account.");
+        }
+    }
+</script>
+{{ end }}

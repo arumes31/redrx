@@ -1,32 +1,31 @@
-FROM python:3.14-slim
+# Build Stage
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
-# Install system dependencies for potential build requirements
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+COPY go.mod go.sum ./
+RUN go mod download
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
 
-# Copy the application code
-COPY app/ ./app/
-COPY config.py .
-COPY run.py .
+# Build the application
+# -ldflags="-w -s" reduces binary size by stripping debug info
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/server
 
-# Create the database directory for SQLite fallback
-RUN mkdir -p db
+# Final Stage
+FROM gcr.io/distroless/static-debian12
 
-EXPOSE 5000
+WORKDIR /app
 
-ENV BASE_DOMAIN=short.example.com
-ENV EXPIRY_HOURS=24
-ENV SHORT_CODE_LENGTH=6
-ENV DEFAULT_QR_COLOR="black"
-ENV DEFAULT_QR_BACKGROUND="white"
+# Copy the binary from the builder stage
+COPY --from=builder /app/server .
 
-# Use the entry point with gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:create_app()", "--workers", "4", "--threads", "2", "--preload", "--access-logfile", "-", "--error-logfile", "-"]
+# Copy migration files if needed at runtime
+COPY --from=builder /app/migration ./migration
 
+# Copy static assets and templates if they are not embedded
+# COPY --from=builder /app/web ./web
+
+EXPOSE 8080
+
+CMD ["./server"]

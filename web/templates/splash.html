@@ -1,0 +1,46 @@
+{{ define "content" }}
+<div class="row justify-content-center">
+    <div class="col-lg-6 text-center">
+        <div class="card shadow-lg">
+            <div class="card-body p-5">
+                {{ if .SensitiveWarning }}
+                <div class="mb-4 text-warning">
+                    <i class="fas fa-exclamation-triangle fa-4x mb-3"></i>
+                    <h2>Warning: Sensitive Content</h2>
+                    <p class="lead">The link you are about to visit may contain sensitive or adult content.</p>
+                </div>
+                <div class="d-grid gap-3">
+                    <a href="{{ .URL.LongURL }}" class="btn btn-danger btn-lg">I understand, proceed</a>
+                    <a href="/" class="btn btn-outline-secondary">Take me back</a>
+                </div>
+                {{ else }}
+                <div class="mb-4 text-primary">
+                    <i class="fas fa-spinner fa-spin fa-4x mb-3"></i>
+                    <h2>Redirecting...</h2>
+                    <p class="lead">You will be redirected in <span id="countdown">5</span> seconds.</p>
+                </div>
+                <div class="d-grid">
+                    <a href="{{ .URL.LongURL }}" class="btn btn-primary">Click here if not redirected</a>
+                </div>
+                <script>
+                    var count = 5;
+                    var countdown = setInterval(function () {
+                        count--;
+                        document.getElementById('countdown').innerText = count;
+                        if (count <= 0) {
+                            clearInterval(countdown);
+                            window.location.href = "{{ .URL.LongURL }}";
+                        }
+                    }, 1000);
+                </script>
+                {{ end }}
+
+                <hr class="my-4">
+                <div class="small text-muted">
+                    Powered by Redrx
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{ end }}

@@ -1,0 +1,4 @@
+ALTER TABLE urls DROP COLUMN IF EXISTS is_locked;
+ALTER TABLE urls DROP COLUMN IF EXISTS allowed_ips;
+ALTER TABLE urls DROP COLUMN IF EXISTS splash_page;
+ALTER TABLE urls DROP COLUMN IF EXISTS sensitive_warning;

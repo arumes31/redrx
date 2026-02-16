@@ -1,0 +1,188 @@
+{{ define "content" }}
+<div class="row">
+    <div class="col-md-12">
+        <h2 class="mb-4">Stats for /{{ .URL.ShortCode }}</h2>
+        <p><a href="{{ .URL.LongURL }}" target="_blank">{{ .URL.LongURL }}</a></p>
+
+        <div class="row mb-4">
+            <div class="col-md-6 col-lg-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">Total Clicks</h5>
+                        <p class="display-4">{{ .URL.ClicksCount }}</p>
+                    </div>
+                </div>
+            </div>
+            <!-- Placeholder for other summary stats -->
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">Countries</div>
+                    <div class="card-body">
+                        <canvas id="countryChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">Browsers</div>
+                    <div class="card-body">
+                        <canvas id="browserChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">Operating Systems</div>
+                    <div class="card-body">
+                        <canvas id="osChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">Devices</div>
+                    <div class="card-body">
+                        <canvas id="deviceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h4 class="mb-3">Recent Activity</h4>
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>IP</th>
+                        <th>Location</th>
+                        <th>Browser</th>
+                        <th>OS</th>
+                        <th>Device</th>
+                        <th>Referrer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{ range .RecentClicks }}
+                    <tr>
+                        <td>{{ .Timestamp.Format "Jan 02 15:04" }}</td>
+                        <td>{{ .IPAddress }}</td>
+                        <td>{{ .City }}, {{ .Country }}</td>
+                        <td>{{ .Browser }}</td>
+                        <td>{{ .OS }}</td>
+                        <td>{{ .DeviceType }}</td>
+                        <td>{{ .Referrer }}</td>
+                    </tr>
+                    {{ else }}
+                    <tr>
+                        <td colspan="7">No clicks yet.</td>
+                    </tr>
+                    {{ end }}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/chart.js"></script>
+<script>
+    // Helper to generate colors
+    function generateColors(count) {
+        var colors = [];
+        for (var i = 0; i < count; i++) {
+            var hue = (i * 137.508) % 360; // golden angle approximation
+            colors.push(`hsl(${hue}, 70%, 60%)`);
+        }
+        return colors;
+    }
+
+    // Prepare Data from Go Template
+    // We use a safe way to pass data avoiding JS syntax errors in IDEs
+    var statsData = {
+        country: JSON.parse(document.getElementById('data-country').textContent),
+        browser: JSON.parse(document.getElementById('data-browser').textContent),
+        os: JSON.parse(document.getElementById('data-os').textContent),
+        device: JSON.parse(document.getElementById('data-device').textContent)
+    };
+
+    // Country Data
+    var countryLabels = statsData.country.map(i => i.Country);
+    var countryData = statsData.country.map(i => i.Count);
+
+    new Chart(document.getElementById('countryChart'), {
+        type: 'bar',
+        data: {
+            labels: countryLabels,
+            datasets: [{
+                label: 'Clicks',
+                data: countryData,
+                backgroundColor: generateColors(countryLabels.length)
+            }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    });
+
+    // Browser Data
+    var browserLabels = statsData.browser.map(i => i.Browser);
+    var browserData = statsData.browser.map(i => i.Count);
+
+    new Chart(document.getElementById('browserChart'), {
+        type: 'doughnut',
+        data: {
+            labels: browserLabels,
+            datasets: [{
+                data: browserData,
+                backgroundColor: generateColors(browserLabels.length)
+            }]
+        }
+    });
+
+    // OS Data
+    var osLabels = statsData.os.map(i => i.OS);
+    var osData = statsData.os.map(i => i.Count);
+
+    new Chart(document.getElementById('osChart'), {
+        type: 'pie',
+        data: {
+            labels: osLabels,
+            datasets: [{
+                data: osData,
+                backgroundColor: generateColors(osLabels.length)
+            }]
+        }
+    });
+
+    // Device Data
+    var deviceLabels = statsData.device.map(i => i.DeviceType);
+    var deviceData = statsData.device.map(i => i.Count);
+
+    new Chart(document.getElementById('deviceChart'), {
+        type: 'pie',
+        data: {
+            labels: deviceLabels,
+            datasets: [{
+                data: deviceData,
+                backgroundColor: generateColors(deviceLabels.length)
+            }]
+        }
+    });
+</script>
+
+<!-- Embedded Data Scripts -->
+<script id="data-country" type="application/json">
+{{ .CountryStats | json }}
+</script>
+<script id="data-browser" type="application/json">
+{{ .BrowserStats | json }}
+</script>
+<script id="data-os" type="application/json">
+{{ .OSStats | json }}
+</script>
+<script id="data-device" type="application/json">
+{{ .DeviceStats | json }}
+</script>
+
+{{ end }}

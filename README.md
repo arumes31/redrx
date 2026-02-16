@@ -43,7 +43,7 @@ docker-compose up -d
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MAXMIND_LICENSE_KEY` | - | Required for local GeoIP updates. |
+| `REDIS_URL` | `redis://localhost:6379` | Connection string for Redis cache. |
 | `ENABLE_PHISHING_CHECK` | `true` | Toggle phishing domain blocking. |
 | `ENABLE_AUTO_REMOVE_PHISHING` | `false` | Automatically delete links found on phishing lists. |
 | `PHISHING_LIST_URLS` | `https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-domains-ACTIVE.txt` | Comma-separated list of phishing list sources. |

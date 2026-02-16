@@ -1,0 +1,88 @@
+{{ define "base" }}
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ if .Title }}{{ .Title }} | {{ end }}Redrx | Fast & Secure URL Shortener</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/logo.svg">
+    <link href="/static/css/lib/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/fontawesome.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    {{ block "head" . }}{{ end }}
+</head>
+<body data-animation="circles">
+    <canvas id="canvas"></canvas>
+    
+    <nav class="navbar navbar-expand-lg navbar-dark bg-transparent">
+        <div class="container">
+            <a class="navbar-brand fw-bold d-flex align-items-center" href="/">
+                <img src="/static/img/logo.svg" alt="Redrx Logo" width="30" height="30" class="me-2">
+                Redrx
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/api-docs">API</a>
+                    </li>
+                    {{ if .User }}
+                        <li class="nav-item">
+                            <a class="nav-link" href="/dashboard">Dashboard</a>
+                        </li>
+                        <li class="nav-item">
+                            <form action="/logout" method="POST" style="display:inline;">
+                                <button type="submit" class="nav-link btn btn-link" style="text-decoration:none;">Logout ({{ .User.Username }})</button>
+                            </form>
+                        </li>
+                    {{ else }}
+                        <li class="nav-item">
+                            <a class="nav-link" href="/login"><i class="fas fa-sign-in-alt me-1"></i> Login</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/register"><i class="fas fa-user-plus me-1"></i> Register</a>
+                        </li>
+                    {{ end }}
+                </ul>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container mt-4">
+        {{ if .Error }}
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                {{ .Error }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {{ end }}
+        {{ if .Message }}
+             <div class="alert alert-success alert-dismissible fade show" role="alert">
+                {{ .Message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {{ end }}
+
+        {{ template "content" . }}
+    </div>
+
+    <footer class="footer mt-auto py-3 bg-transparent">
+        <div class="container text-center">
+            <a href="/data-usage" class="text-light opacity-50 text-decoration-none small me-3">Data Usage</a>
+            <a href="/terms" class="text-light opacity-50 text-decoration-none small me-3">Terms</a>
+            <a href="https://github.com/arumes31/redrx" target="_blank" class="text-light opacity-50 text-decoration-none small">
+                <i class="fab fa-github me-1"></i> GitHub
+            </a>
+        </div>
+    </footer>
+
+    <script src="/static/js/lib/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/main.js"></script>
+    {{ block "scripts" . }}{{ end }}
+</body>
+</html>
+{{ end }}

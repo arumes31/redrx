@@ -1,27 +1,23 @@
 services:
-  web:
+  app:
     build: .
     ports:
-      - "5000:5000"
+      - "8080:8080"
     environment:
-      - SECRET_KEY=dev-secret-key-change-in-prod
-      - DATABASE_URL=postgresql://redrx:securepassword@db:5432/redrx_db
-      - BASE_DOMAIN=localhost:5000
-      - GEOIP_DB_PATH=/usr/share/GeoIP/GeoLite2-Country.mmdb
-      - ANONYMIZE_LOGS=${ANONYMIZE_LOGS:-false}
-      - RATELIMIT_STORAGE_URL=redis://redis:6379
-      - RATELIMIT_DEFAULT=${RATELIMIT_DEFAULT:-200 per day;50 per hour}
-      - RATELIMIT_CREATE=${RATELIMIT_CREATE:-10 per minute}
-      - RATELIMIT_REDIRECT=${RATELIMIT_REDIRECT:-100 per minute}
-      - RATELIMIT_HEALTH=${RATELIMIT_HEALTH:-10 per minute}
-      - RATELIMIT_METRICS=${RATELIMIT_METRICS:-10 per minute}
+      - APP_ENV=local
+      - PORT=8080
+      - DATABASE_URL=postgresql://redrx:securepassword@db:5432/redrx_db?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
+      - MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
+      - MAXMIND_EDITION_IDS=${MAXMIND_EDITION_IDS:-GeoLite2-Country}
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_started
     volumes:
-      - geoip_data:/usr/share/GeoIP
+      - geoip_data:/root/geoip
     restart: always
 
   redis:
@@ -30,6 +26,8 @@ services:
 
   db:
     image: postgres:15-alpine
+    ports:
+      - "5432:5432"
     environment:
       - POSTGRES_USER=redrx
       - POSTGRES_PASSWORD=securepassword
@@ -37,21 +35,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U redrx -d redrx_db"]
+      test: [ "CMD-SHELL", "pg_isready -U redrx -d redrx_db" ]
       interval: 5s
       timeout: 5s
       retries: 5
-    restart: always
-
-  geoip-updater:
-    image: maxmindinc/geoipupdate
-    environment:
-      - GEOIPUPDATE_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
-      - GEOIPUPDATE_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
-      - GEOIPUPDATE_EDITION_IDS=${MAXMIND_EDITION_IDS:-GeoLite2-Country}
-      - GEOIPUPDATE_FREQUENCY=72
-    volumes:
-      - geoip_data:/usr/share/GeoIP
     restart: always
 
 volumes:

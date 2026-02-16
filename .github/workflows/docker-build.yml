@@ -2,7 +2,9 @@ name: Build and Publish Image
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "test" ]
+  pull_request:
+    branches: [ "main", "test" ]
 
 env:
   REGISTRY: ghcr.io

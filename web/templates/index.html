@@ -1,0 +1,190 @@
+{{ define "content" }}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body p-4 p-md-5">
+                <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="single-tab" data-bs-toggle="tab" data-bs-target="#single"
+                            type="button">Shorten Link</button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="myTabContent">
+                    <div class="tab-pane fade show active" id="single" role="tabpanel">
+                        <form method="POST" action="/" enctype="multipart/form-data">
+
+                            <div class="row">
+                                <div class="col-md-12 form-section mb-3">
+                                    <label class="form-label" for="long_url">Destination URL</label>
+                                    <input type="url" class="form-control" name="long_url" id="long_url"
+                                        placeholder="https://example.com/long/path" required>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-12 form-section mb-3">
+                                    <label class="form-label">Expiry (Hours)</label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" name="expiry_hours" id="expiry_input"
+                                            placeholder="24">
+                                        <button class="btn btn-outline-secondary btn-sm" type="button"
+                                            onclick="document.getElementById('expiry_input').value=0">Never</button>
+                                    </div>
+                                    <div class="form-text text-light opacity-50 small">
+                                        Set to 0 for "Never".
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <a class="text-decoration-none text-light" data-bs-toggle="collapse"
+                                    href="#advancedOptions" role="button">
+                                    <i class="fas fa-cog me-1"></i> Advanced Options
+                                </a>
+                            </div>
+
+                            <div class="collapse" id="advancedOptions">
+                                <div class="row">
+                                    <div class="col-md-6 form-section mb-3">
+                                        <label class="form-label">Custom Code</label>
+                                        <input type="text" class="form-control" name="custom_code"
+                                            placeholder="e.g. MYLINK">
+                                    </div>
+                                    <div class="col-md-6 form-section mb-3">
+                                        <!-- Code length not implemented in simple form yet -->
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 form-section mb-3">
+                                        <label class="form-label">iOS Target URL <i
+                                                class="fab fa-apple text-muted"></i></label>
+                                        <input type="url" class="form-control" name="ios_target_url"
+                                            placeholder="https://apps.apple.com/...">
+                                    </div>
+                                    <div class="col-md-6 form-section mb-3">
+                                        <label class="form-label">Android Target URL <i
+                                                class="fab fa-android text-muted"></i></label>
+                                        <input type="url" class="form-control" name="android_target_url"
+                                            placeholder="https://play.google.com/...">
+                                    </div>
+                                </div>
+
+                                <div class="row form-section mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">QR Foreground Color</label>
+                                        <input type="color" class="form-control form-control-color w-100"
+                                            name="qr_fg_color" value="#000000" title="Choose QR Code Color">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">QR Background Color</label>
+                                        <input type="color" class="form-control form-control-color w-100"
+                                            name="qr_bg_color" value="#ffffff" title="Choose Background Color">
+                                    </div>
+                                </div>
+
+                                <div class="row form-section mb-3">
+                                    <div class="col-md-12">
+                                        <label class="form-label">Embed Logo (Optional)</label>
+                                        <input type="file" class="form-control" name="logo_file"
+                                            accept=".png,.jpg,.jpeg">
+                                        <div class="form-text text-light opacity-50 small">Upload a square image for
+                                            best results.</div>
+                                    </div>
+                                </div>
+
+                                <div class="row form-section mb-3">
+                                    <div class="col-md-12">
+                                        <label class="form-label">Password Protection</label>
+                                        <input type="text" class="form-control" name="password" placeholder="Optional">
+                                    </div>
+                                </div>
+
+                                <div class="row form-section mb-3">
+                                    <div class="col-md-12">
+                                        <label class="form-label">Allowed IPs (Private Link)</label>
+                                        <input type="text" class="form-control" name="allowed_ips"
+                                            placeholder="e.g. 192.168.1.1, 10.0.0.1 (Comma separated)">
+                                        <div class="form-text text-light opacity-50 small">Leave empty for public
+                                            access.</div>
+                                    </div>
+                                </div>
+
+                                <div class="row form-section mb-3">
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="splashPage"
+                                                name="splash_page" value="true">
+                                            <label class="form-check-label" for="splashPage">Splash Page</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="sensitiveWarning"
+                                                name="sensitive_warning" value="true">
+                                            <label class="form-check-label" for="sensitiveWarning">Sensitive Content
+                                                Warning</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary btn-lg w-100 mt-3">Shorten URL</button>
+                        </form>
+
+                        {{ if .ShortURL }}
+                        <div class="mt-4 text-center animate__animated animate__fadeIn">
+                            <h5 class="text-success animate__animated animate__bounceIn"><i
+                                    class="fas fa-check-circle"></i> Shortened!</h5>
+
+                            <div class="input-group mb-3">
+                                <input type="text" class="form-control text-center bg-dark text-light border-secondary"
+                                    value="{{ .ShortURL }}" id="shortUrlInput" readonly>
+                                <button class="btn btn-outline-light" type="button" onclick="copyToClipboard()"
+                                    id="copyBtn">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                            </div>
+
+                            <script>
+                                function copyToClipboard() {
+                                    var copyText = document.getElementById("shortUrlInput");
+                                    copyText.select();
+                                    copyText.setSelectionRange(0, 99999);
+                                    navigator.clipboard.writeText(copyText.value).then(() => {
+                                        var btn = document.getElementById("copyBtn");
+                                        var originalHtml = btn.innerHTML;
+                                        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                                        btn.classList.remove("btn-outline-light");
+                                        btn.classList.add("btn-success");
+                                        setTimeout(() => {
+                                            btn.innerHTML = originalHtml;
+                                            btn.classList.remove("btn-success");
+                                            btn.classList.add("btn-outline-light");
+                                        }, 2000);
+                                    });
+                                }
+                            </script>
+
+                            {{ if .QRData }}
+                            <div class="qr-container mt-4 p-3 bg-light rounded d-inline-block shadow-sm">
+                                <img src="data:image/png;base64,{{ .QRData }}" alt="QR Code"
+                                    class="qr-img img-fluid mb-2" style="max-width: 200px;">
+                                <div class="d-grid gap-2">
+                                    <a href="data:image/png;base64,{{ .QRData }}" download="qrcode.png"
+                                        class="btn btn-sm btn-dark">
+                                        <i class="fas fa-download me-1"></i> Download PNG
+                                    </a>
+                                </div>
+                            </div>
+                            {{ end }}
+                        </div>
+                        {{ end }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{ end }}
