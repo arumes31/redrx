@@ -2,6 +2,70 @@
 
 Redrx is a high-performance, feature-rich URL shortener migrated from Python to **Go**. It features a sleek dark UI, asynchronous analytics, local GeoIP resolution, and robust security.
 
+---
+
+## 🏗 Architecture Overview
+
+```mermaid
+graph TD
+    Client["🌐 Client (Browser/API)"]
+    Gin["🚀 Gin Gonic Web Server"]
+    Psql[("🐘 PostgreSQL 17 (Primary Store)")]
+    Redis[("⚡ Redis 7.4 (Cache/Rate Limit)")]
+    GeoIP["📍 MaxMind GeoIP2 (Local DB)"]
+    Workers["👷 Background Workers"]
+
+    Client -->|HTTP Requests| Gin
+    Gin -->|Auth/Cache| Redis
+    Gin -->|Persistence| Psql
+    Gin -->|Analytics| Workers
+    Workers -->|IP Lookup| GeoIP
+    Workers -->|Write Stats| Psql
+```
+
+## 🔄 Core Flows
+
+### 1. URL Shortening Flow
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant G as Gin Server
+    participant R as Redis
+    participant P as PostgreSQL
+
+    U->>G: POST /api/v1/shorten (Long URL)
+    G->>R: Check Rate Limit
+    R-->>G: OK
+    G->>P: Save Short URL Entry
+    P-->>G: Success
+    G-->>U: Return Short URL
+```
+
+### 2. Redirect & Analytics Flow
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant G as Gin Server
+    participant R as Redis
+    participant P as PostgreSQL
+    participant W as Workers
+
+    U->>G: GET /:short_code
+    G->>R: Check Cache
+    alt Cache Hit
+        R-->>G: URL Data
+    else Cache Miss
+        G->>P: Query URL
+        P-->>G: URL Data
+        G->>R: Update Cache
+    end
+    G->>W: Push Click Event (Async)
+    G-->>U: 302 Redirect to Long URL
+    W->>P: Record Click Stats
+```
+
+---
+
 ## ✨ Features
 
 - **Custom Short Codes:** Create memorable links.
