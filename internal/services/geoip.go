@@ -1,8 +1,9 @@
 package services
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -15,115 +16,117 @@ import (
 	"github.com/oschwald/geoip2-golang"
 )
 
-var (
+type GeoIPService struct {
+	cfg       config.Config
+	logger    *slog.Logger
 	geoReader *geoip2.Reader
 	geoLock   sync.RWMutex
-)
-
-// InitGeoIP initializes the GeoIP service:
-// 1. Checks if DB exists, if not, downloads it.
-// 2. Loads the DB.
-// 3. Starts a background ticker to update it periodically.
-func InitGeoIP(cfg config.Config) {
-	if cfg.MaxMindAccountID == "" || cfg.MaxMindLicenseKey == "" {
-		log.Println("GeoIP: MaxMind credentials not set. fast-fail or skip?")
-		// For now, we log and skip. Lookups will fail gracefully.
-		return
-	}
-
-	dbPath := cfg.MaxMindDBPath
-	dbDir := filepath.Dir(dbPath)
-
-	// Ensure directory exists
-	if err := os.MkdirAll(dbDir, 0755); err != nil {
-		log.Printf("GeoIP: Failed to create directory %s: %v", dbDir, err)
-		return
-	}
-
-	// 1. Initial Download if missing
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		log.Println("GeoIP: Database missing, downloading...")
-		if err := updateGeoDB(cfg); err != nil {
-			log.Printf("GeoIP: Initial download failed: %v", err)
-		}
-	} else {
-		log.Println("GeoIP: Database exists, skipping initial download")
-	}
-
-	// 2. Load Reader
-	reloadReader(dbPath)
-
-	// 3. Background Updater (every 24h)
-	go func() {
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
-			log.Println("GeoIP: Running scheduled update...")
-			if err := updateGeoDB(cfg); err != nil {
-				log.Printf("GeoIP: Update failed: %v", err)
-				continue
-			}
-			reloadReader(dbPath)
-		}
-	}()
 }
 
-func updateGeoDB(cfg config.Config) error {
-	dbDir := filepath.Dir(cfg.MaxMindDBPath)
+func NewGeoIPService(cfg config.Config, logger *slog.Logger) *GeoIPService {
+	return &GeoIPService{
+		cfg:    cfg,
+		logger: logger,
+	}
+}
+
+func (s *GeoIPService) Init() {
+	if s.cfg.MaxMindAccountID == "" || s.cfg.MaxMindLicenseKey == "" {
+		s.logger.Warn("GeoIP: MaxMind credentials not set. Lookups will be disabled.")
+		return
+	}
+
+	dbPath := s.cfg.MaxMindDBPath
+	dbDir := filepath.Dir(dbPath)
+
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		s.logger.Error("GeoIP: Failed to create directory", "dir", dbDir, "error", err)
+		return
+	}
+
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		s.logger.Info("GeoIP: Database missing, downloading...")
+		if err := s.updateGeoDB(); err != nil {
+			s.logger.Error("GeoIP: Initial download failed", "error", err)
+		}
+	}
+
+	s.reloadReader(dbPath)
+}
+
+func (s *GeoIPService) StartUpdater(ctx context.Context) {
+	if s.cfg.MaxMindAccountID == "" {
+		return
+	}
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.logger.Info("GeoIP: Running scheduled update...")
+			if err := s.updateGeoDB(); err != nil {
+				s.logger.Error("GeoIP: Update failed", "error", err)
+				continue
+			}
+			s.reloadReader(s.cfg.MaxMindDBPath)
+		case <-ctx.Done():
+			s.logger.Info("GeoIP: Updater stopping")
+			return
+		}
+	}
+}
+
+func (s *GeoIPService) updateGeoDB() error {
+	dbDir := filepath.Dir(s.cfg.MaxMindDBPath)
 	confPath := filepath.Join(dbDir, "GeoIP.conf")
 
-	// Create temp config for geoipupdate tool
-	// Note: geoipupdate looks for "EditionIDs", not "MaxMindEditionIDs"
 	content := fmt.Sprintf("AccountID %s\nLicenseKey %s\nEditionIDs %s\nDatabaseDirectory %s\n",
-		cfg.MaxMindAccountID, cfg.MaxMindLicenseKey, cfg.MaxMindEditionIDs, dbDir)
+		s.cfg.MaxMindAccountID, s.cfg.MaxMindLicenseKey, s.cfg.MaxMindEditionIDs, dbDir)
 
 	if err := os.WriteFile(confPath, []byte(content), 0600); err != nil {
 		return fmt.Errorf("failed to write GeoIP.conf: %w", err)
 	}
+	defer os.Remove(confPath)
 
-	// Clean up conf file after update (optional, but good practice if it contains secrets)
-	// defer os.Remove(confPath) // Creating it in the persistent vol might be useful for debug though.
-
-	// Run geoipupdate
 	cmd := exec.Command("geoipupdate", "-v", "-f", confPath, "-d", dbDir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("geoipupdate failed: %w, output: %s", err, string(output))
 	}
 
-	log.Println("GeoIP: Database updated successfully")
+	s.logger.Info("GeoIP: Database updated successfully")
 	return nil
 }
 
-func reloadReader(path string) {
-	geoLock.Lock()
-	defer geoLock.Unlock()
+func (s *GeoIPService) reloadReader(path string) {
+	s.geoLock.Lock()
+	defer s.geoLock.Unlock()
 
-	if geoReader != nil {
-		geoReader.Close()
+	if s.geoReader != nil {
+		s.geoReader.Close()
 	}
 
 	reader, err := geoip2.Open(path)
 	if err != nil {
-		log.Printf("GeoIP: Failed to open database: %v", err)
+		s.logger.Error("GeoIP: Failed to open database", "path", path, "error", err)
 		return
 	}
-	geoReader = reader
+	s.geoReader = reader
 
 	meta := reader.Metadata()
-	log.Printf("GeoIP: Loaded database (Epoch: %d)", meta.BuildEpoch)
+	s.logger.Info("GeoIP: Loaded database", "epoch", meta.BuildEpoch)
 }
 
-// GetLocation returns Country, Region, City for an IP
-func GetLocation(ipStr string) (country, region, city string) {
-	// Handle local IPs
+func (s *GeoIPService) GetLocation(ipStr string) (country, region, city string) {
 	if ipStr == "127.0.0.1" || ipStr == "::1" {
 		return "Localhost", "Local", "Local"
 	}
 
-	geoLock.RLock()
-	reader := geoReader
-	geoLock.RUnlock()
+	s.geoLock.RLock()
+	reader := s.geoReader
+	s.geoLock.RUnlock()
 
 	if reader == nil {
 		return "Unknown", "", ""
@@ -136,22 +139,18 @@ func GetLocation(ipStr string) (country, region, city string) {
 
 	record, err := reader.City(ip)
 	if err != nil {
-		log.Printf("GeoIP: Lookup error: %v", err)
+		s.logger.Error("GeoIP: Lookup error", "ip", ipStr, "error", err)
 		return "Error", "", ""
 	}
 
-	country = record.Country.IsoCode // or record.Country.Names["en"]
+	if name, ok := record.Country.Names["en"]; ok {
+		country = name
+	} else {
+		country = record.Country.IsoCode
+	}
+
 	if country == "" {
 		country = "Unknown"
-	} else {
-		// Prefer full name? The dashboard handles ISO codes usually?
-		// Previous implementation used "CountryName" string from ip-api
-		// Let's use Name for consistency with previous behavior or ISO?
-		// ip-api "country" field is usually Full Name "United States".
-		// MaxMind Country.Names["en"] gives "United States".
-		if name, ok := record.Country.Names["en"]; ok {
-			country = name
-		}
 	}
 
 	if len(record.Subdivisions) > 0 {

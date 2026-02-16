@@ -33,7 +33,7 @@ type IndexForm struct {
 	SensitiveWarning bool   `form:"sensitive_warning"`
 }
 
-func ShowIndex(c *gin.Context) {
+func (h *Handler) ShowIndex(c *gin.Context) {
 	session := sessions.Default(c)
 	user := session.Get("user_id")
 
@@ -42,7 +42,7 @@ func ShowIndex(c *gin.Context) {
 	})
 }
 
-func HandleShortenForm(c *gin.Context) {
+func (h *Handler) HandleShortenForm(c *gin.Context) {
 	var form IndexForm
 	if err := c.ShouldBind(&form); err != nil {
 		c.HTML(http.StatusOK, "index.html", gin.H{
@@ -88,7 +88,7 @@ func HandleShortenForm(c *gin.Context) {
 		SensitiveWarning: form.SensitiveWarning,
 	}
 
-	newURL, err := services.CreateShortURL(dto)
+	newURL, err := h.shortenerService.CreateShortURL(dto)
 	if err != nil {
 		c.HTML(http.StatusOK, "index.html", gin.H{
 			"Error": "Failed to shorten: " + err.Error(),
@@ -115,10 +115,10 @@ func HandleShortenForm(c *gin.Context) {
 		qrOpts.BgColor = "#FFFFFF"
 	}
 
-	qrData, _, _ := services.GenerateQRCode(qrOpts)
+	qrData, _, _ := h.qrService.GenerateQRCode(qrOpts)
 
 	// Generate SVG
-	svgContent, _ := services.GenerateQRCodeSVG(qrOpts)
+	svgContent, _ := h.qrService.GenerateQRCodeSVG(qrOpts)
 	svgBase64 := base64.StdEncoding.EncodeToString([]byte(svgContent))
 
 	c.HTML(http.StatusOK, "index.html", gin.H{

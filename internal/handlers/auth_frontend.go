@@ -4,27 +4,26 @@ import (
 	"net/http"
 
 	"redrx/internal/models"
-	"redrx/internal/repository"
 	"redrx/pkg/utils"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 )
 
-func ShowLogin(c *gin.Context) {
+func (h *Handler) ShowLogin(c *gin.Context) {
 	c.HTML(http.StatusOK, "login.html", nil)
 }
 
-func ShowRegister(c *gin.Context) {
+func (h *Handler) ShowRegister(c *gin.Context) {
 	c.HTML(http.StatusOK, "register.html", nil)
 }
 
-func HandleLoginForm(c *gin.Context) {
+func (h *Handler) HandleLoginForm(c *gin.Context) {
 	username := c.PostForm("username")
 	password := c.PostForm("password")
 
 	var user models.User
-	result := repository.DB.Where("username = ? OR email = ?", username, username).First(&user)
+	result := h.db.Where("username = ? OR email = ?", username, username).First(&user)
 	if result.Error != nil {
 		c.HTML(http.StatusUnauthorized, "login.html", gin.H{"Error": "Invalid credentials"})
 		return
@@ -46,14 +45,14 @@ func HandleLoginForm(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard")
 }
 
-func HandleRegisterForm(c *gin.Context) {
+func (h *Handler) HandleRegisterForm(c *gin.Context) {
 	username := c.PostForm("username")
 	email := c.PostForm("email")
 	password := c.PostForm("password")
 
 	// Check if user exists
 	var existingUser models.User
-	if err := repository.DB.Where("username = ? OR email = ?", username, email).First(&existingUser).Error; err == nil {
+	if err := h.db.Where("username = ? OR email = ?", username, email).First(&existingUser).Error; err == nil {
 		c.HTML(http.StatusConflict, "register.html", gin.H{"Error": "Username or email already exists"})
 		return
 	}
@@ -71,7 +70,7 @@ func HandleRegisterForm(c *gin.Context) {
 		APIKey:       utils.GenerateAPIKey(),
 	}
 
-	if err := repository.DB.Create(&newUser).Error; err != nil {
+	if err := h.db.Create(&newUser).Error; err != nil {
 		c.HTML(http.StatusInternalServerError, "register.html", gin.H{"Error": "Failed to create user"})
 		return
 	}

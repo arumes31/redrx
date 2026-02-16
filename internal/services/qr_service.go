@@ -21,25 +21,27 @@ type QROptions struct {
 	Logo    image.Image
 }
 
-func GenerateQRCode(opts QROptions) (string, []byte, error) {
-	qr, err := qrcode.New(opts.Content, qrcode.Highest) // Highest level for logo tolerance
+type QRService struct{}
+
+func NewQRService() *QRService {
+	return &QRService{}
+}
+
+func (s *QRService) GenerateQRCode(opts QROptions) (string, []byte, error) {
+	qr, err := qrcode.New(opts.Content, qrcode.Highest)
 	if err != nil {
 		return "", nil, err
 	}
 
-	// Parse Colors
-	qr.ForegroundColor = parseHexColor(opts.FgColor, color.Black)
-	qr.BackgroundColor = parseHexColor(opts.BgColor, color.White)
+	qr.ForegroundColor = s.parseHexColor(opts.FgColor, color.Black)
+	qr.BackgroundColor = s.parseHexColor(opts.BgColor, color.White)
 
-	// Generate Image
 	img := qr.Image(opts.Size)
 
-	// Embed Logo if present
 	if opts.Logo != nil {
-		img = embedLogo(img, opts.Logo)
+		img = s.embedLogo(img, opts.Logo)
 	}
 
-	// Encode to PNG
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
 		return "", nil, err
@@ -50,9 +52,7 @@ func GenerateQRCode(opts QROptions) (string, []byte, error) {
 	return base64Str, pngBytes, nil
 }
 
-// GenerateQRCodeSVG generates an SVG string for the QR code.
-// Note: Logo embedding is currently NOT supported for SVG to keep it simple.
-func GenerateQRCodeSVG(opts QROptions) (string, error) {
+func (s *QRService) GenerateQRCodeSVG(opts QROptions) (string, error) {
 	qr, err := qrcode.New(opts.Content, qrcode.Highest)
 	if err != nil {
 		return "", err
@@ -62,15 +62,9 @@ func GenerateQRCodeSVG(opts QROptions) (string, error) {
 	bitmap := qr.Bitmap()
 	size := len(bitmap)
 
-	// SVG Header
 	var sb strings.Builder
-	// ViewBox matches module count
 	sb.WriteString(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" shape-rendering="crispEdges">`, size, size))
-
-	// Background
 	sb.WriteString(fmt.Sprintf(`<rect width="100%%" height="100%%" fill="%s"/>`, opts.BgColor))
-
-	// Foreground Modules
 	sb.WriteString(fmt.Sprintf(`<path fill="%s" d="`, opts.FgColor))
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
@@ -80,14 +74,13 @@ func GenerateQRCodeSVG(opts QROptions) (string, error) {
 		}
 	}
 	sb.WriteString(`"/>`)
-
 	sb.WriteString("</svg>")
 	return sb.String(), nil
 }
 
-func parseHexColor(s string, defaultColor color.Color) color.Color {
-	s = strings.TrimPrefix(s, "#")
-	if len(s) != 6 {
+func (s *QRService) parseHexColor(str string, defaultColor color.Color) color.Color {
+	str = strings.TrimPrefix(str, "#")
+	if len(str) != 6 {
 		return defaultColor
 	}
 
@@ -104,15 +97,14 @@ func parseHexColor(s string, defaultColor color.Color) color.Color {
 		return 0
 	}
 
-	r := (hexToByte(s[0]) << 4) + hexToByte(s[1])
-	g := (hexToByte(s[2]) << 4) + hexToByte(s[3])
-	b := (hexToByte(s[4]) << 4) + hexToByte(s[5])
+	r := (hexToByte(str[0]) << 4) + hexToByte(str[1])
+	g := (hexToByte(str[2]) << 4) + hexToByte(str[3])
+	b := (hexToByte(str[4]) << 4) + hexToByte(str[5])
 
 	return color.RGBA{R: r, G: g, B: b, A: 255}
 }
 
-// Nearest-neighbor resize
-func resizeImage(img image.Image, newWidth, newHeight int) image.Image {
+func (s *QRService) resizeImage(img image.Image, newWidth, newHeight int) image.Image {
 	r := image.Rect(0, 0, newWidth, newHeight)
 	dst := image.NewRGBA(r)
 
@@ -129,17 +121,16 @@ func resizeImage(img image.Image, newWidth, newHeight int) image.Image {
 	return dst
 }
 
-func embedLogo(src image.Image, logo image.Image) image.Image {
+func (s *QRService) embedLogo(src image.Image, logo image.Image) image.Image {
 	b := src.Bounds()
 	m := image.NewRGBA(b)
 
 	draw.Draw(m, b, src, image.Point{}, draw.Src)
 
-	// Calculate target logo size (e.g. 20% of QR width)
 	targetW := b.Dx() / 5
 	targetH := b.Dy() / 5
 
-	resizedLogo := resizeImage(logo, targetW, targetH)
+	resizedLogo := s.resizeImage(logo, targetW, targetH)
 
 	offset := image.Pt(
 		(b.Dx()-targetW)/2,

@@ -1,29 +1,26 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
 	"redrx/internal/models"
-	"redrx/internal/repository"
-	"redrx/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
 
-func RedirectToURL(c *gin.Context) {
+func (h *Handler) RedirectToURL(c *gin.Context) {
 	shortCode := c.Param("short_code")
 
 	var urlEntry models.URL
-	ctx := context.Background()
+	ctx := c.Request.Context()
 
 	// 1. Redis Cache Lookup (Full Object)
 	cacheHit := false
-	if repository.Rdb != nil {
-		val, err := repository.Rdb.Get(ctx, "url:"+shortCode).Result()
+	if h.rdb != nil {
+		val, err := h.rdb.Get(ctx, "url:"+shortCode).Result()
 		if err == nil {
 			if err := json.Unmarshal([]byte(val), &urlEntry); err == nil {
 				cacheHit = true
@@ -33,14 +30,14 @@ func RedirectToURL(c *gin.Context) {
 
 	// 2. DB Lookup (if Cache Miss)
 	if !cacheHit {
-		if err := repository.DB.Where("short_code = ?", shortCode).First(&urlEntry).Error; err != nil {
+		if err := h.db.Where("short_code = ?", shortCode).First(&urlEntry).Error; err != nil {
 			c.HTML(http.StatusNotFound, "404.html", gin.H{"error": "Link not found"})
 			return
 		}
 		// Write to Cache
-		if repository.Rdb != nil {
+		if h.rdb != nil {
 			data, _ := json.Marshal(urlEntry)
-			repository.Rdb.Set(ctx, "url:"+shortCode, data, 10*time.Minute)
+			h.rdb.Set(ctx, "url:"+shortCode, data, 10*time.Minute)
 		}
 	}
 
@@ -55,10 +52,6 @@ func RedirectToURL(c *gin.Context) {
 		c.HTML(http.StatusGone, "410.html", gin.H{"error": "Link expired"})
 		return
 	}
-
-	// 4. Password Check (if applicable)
-	// This would require a redirect to an interstitial password page or checking session
-	// keeping simple for now.
 
 	// 5. Security Checks
 	if urlEntry.AllowedIPs != "" {
@@ -86,7 +79,7 @@ func RedirectToURL(c *gin.Context) {
 			Referrer:  c.Request.Referer(),
 			Platform:  c.Request.UserAgent(),
 		}
-		services.RecordClickAsync(click)
+		h.statsService.RecordClickAsync(click)
 	}
 
 	// 7. Splash Page / Warning

@@ -111,8 +111,11 @@ sequenceDiagram
 | `PORT` | `8080` | Application port. |
 | `DATABASE_URL` | - | PostgreSQL connection string. |
 | `REDIS_URL` | - | Redis connection string. |
+| `REDIS_PASSWORD` | - | Redis password. |
+| `SESSION_SECRET` | - | Secret key for session cookies. |
 | `MAXMIND_LICENSE_KEY` | - | Required for automated GeoIP database updates. |
 | `APP_ENV` | `production` | Set to `development` for verbose logging. |
+| `LOG_LEVEL` | `info` | Logging verbosity (debug, info, warn, error). |
 
 ## 🛠 Local Development
 

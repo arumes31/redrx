@@ -18,8 +18,8 @@ type ShortenRequest struct {
 	AndroidTargetURL string `json:"android_target_url,omitempty"`
 }
 
-// Keep the Request struct for Binding
-func ShortenURL(c *gin.Context) {
+// ShortenURL handles the API request to shorten a URL
+func (h *Handler) ShortenURL(c *gin.Context) {
 	var req ShortenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -52,9 +52,8 @@ func ShortenURL(c *gin.Context) {
 		IPAddress:        c.ClientIP(),
 	}
 
-	newURL, err := services.CreateShortURL(dto)
+	newURL, err := h.shortenerService.CreateShortURL(dto)
 	if err != nil {
-		// Map errors to status codes if needed
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

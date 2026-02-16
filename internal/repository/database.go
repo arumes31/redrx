@@ -13,16 +13,13 @@ import (
 	"gorm.io/gorm"
 )
 
-var DB *gorm.DB
-
 func InitDB(cfg config.Config) (*gorm.DB, error) {
-	var err error
-	DB, err = gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	return DB, nil
+	return db, nil
 }
 
 func RunMigrations(databaseURL string) error {

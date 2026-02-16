@@ -4,8 +4,6 @@ import (
 	"net/http"
 
 	"redrx/internal/models"
-	"redrx/internal/repository"
-	"redrx/internal/services"
 	"redrx/pkg/utils"
 
 	"github.com/gin-contrib/sessions"
@@ -24,7 +22,7 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
-func RegisterUser(c *gin.Context) {
+func (h *Handler) RegisterUser(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -33,7 +31,7 @@ func RegisterUser(c *gin.Context) {
 
 	// Check if user exists
 	var existingUser models.User
-	if err := repository.DB.Where("username = ? OR email = ?", req.Username, req.Email).First(&existingUser).Error; err == nil {
+	if err := h.db.Where("username = ? OR email = ?", req.Username, req.Email).First(&existingUser).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "Username or email already exists"})
 		return
 	}
@@ -51,17 +49,17 @@ func RegisterUser(c *gin.Context) {
 		APIKey:       utils.GenerateAPIKey(),
 	}
 
-	if err := repository.DB.Create(&newUser).Error; err != nil {
+	if err := h.db.Create(&newUser).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}
 
-	services.LogAction(&newUser.ID, "REGISTER", newUser.Username, nil, c.ClientIP())
+	h.auditService.LogAction(&newUser.ID, "REGISTER", newUser.Username, nil, c.ClientIP())
 
 	c.JSON(http.StatusCreated, gin.H{"message": "User created successfully"})
 }
 
-func LoginUser(c *gin.Context) {
+func (h *Handler) LoginUser(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -69,7 +67,7 @@ func LoginUser(c *gin.Context) {
 	}
 
 	var user models.User
-	result := repository.DB.Where("username = ? OR email = ?", req.Username, req.Username).First(&user)
+	result := h.db.Where("username = ? OR email = ?", req.Username, req.Username).First(&user)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
@@ -92,12 +90,12 @@ func LoginUser(c *gin.Context) {
 		return
 	}
 
-	services.LogAction(&user.ID, "LOGIN", user.Username, nil, c.ClientIP())
+	h.auditService.LogAction(&user.ID, "LOGIN", user.Username, nil, c.ClientIP())
 
 	c.JSON(http.StatusOK, gin.H{"message": "Login successful", "api_key": user.APIKey})
 }
 
-func LogoutUser(c *gin.Context) {
+func (h *Handler) LogoutUser(c *gin.Context) {
 	session := sessions.Default(c)
 	session.Clear()
 	if err := session.Save(); err != nil {
@@ -107,7 +105,7 @@ func LogoutUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
 
-func GenerateNewAPIKey(c *gin.Context) {
+func (h *Handler) GenerateNewAPIKey(c *gin.Context) {
 	session := sessions.Default(c)
 	userIDVal := session.Get("user_id")
 	if userIDVal == nil {
@@ -118,7 +116,7 @@ func GenerateNewAPIKey(c *gin.Context) {
 
 	newKey := utils.GenerateAPIKey()
 	// Update user's API key
-	if err := repository.DB.Model(&models.User{}).Where("id = ?", userID).Update("api_key", newKey).Error; err != nil {
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("api_key", newKey).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update API key"})
 		return
 	}
@@ -126,7 +124,7 @@ func GenerateNewAPIKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"api_key": newKey})
 }
 
-func DeleteAccount(c *gin.Context) {
+func (h *Handler) DeleteAccount(c *gin.Context) {
 	session := sessions.Default(c)
 	userIDVal := session.Get("user_id")
 	if userIDVal == nil {
@@ -136,7 +134,7 @@ func DeleteAccount(c *gin.Context) {
 	userID := userIDVal.(uint)
 
 	// Transaction to delete URLs and User
-	tx := repository.DB.Begin()
+	tx := h.db.Begin()
 
 	// 1. Delete URLs (Clicks cascade from URL deletion in DB)
 	if err := tx.Where("user_id = ?", userID).Delete(&models.URL{}).Error; err != nil {

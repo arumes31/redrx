@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"redrx/internal/models"
-	"redrx/internal/repository"
 	"redrx/pkg/utils"
 
 	"gorm.io/gorm"
@@ -28,13 +27,25 @@ type ShortenDTO struct {
 	SensitiveWarning bool
 }
 
-func CreateShortURL(dto ShortenDTO) (*models.URL, error) {
+type ShortenerService struct {
+	db           *gorm.DB
+	auditService *AuditService
+}
+
+func NewShortenerService(db *gorm.DB, auditService *AuditService) *ShortenerService {
+	return &ShortenerService{
+		db:           db,
+		auditService: auditService,
+	}
+}
+
+func (s *ShortenerService) CreateShortURL(dto ShortenDTO) (*models.URL, error) {
 	// 1. Determine Short Code
 	var shortCode string
 	if dto.CustomCode != "" {
 		// Check availability
 		var existing models.URL
-		if err := repository.DB.Where("short_code = ?", dto.CustomCode).First(&existing).Error; err == nil {
+		if err := s.db.Where("short_code = ?", dto.CustomCode).First(&existing).Error; err == nil {
 			return nil, errors.New("custom code already taken")
 		}
 		shortCode = dto.CustomCode
@@ -43,7 +54,7 @@ func CreateShortURL(dto ShortenDTO) (*models.URL, error) {
 		for {
 			shortCode = utils.GenerateShortCode(6)
 			var existing models.URL
-			if err := repository.DB.Where("short_code = ?", shortCode).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := s.db.Where("short_code = ?", shortCode).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 				break
 			}
 		}
@@ -83,12 +94,12 @@ func CreateShortURL(dto ShortenDTO) (*models.URL, error) {
 		SensitiveWarning: dto.SensitiveWarning,
 	}
 
-	if err := repository.DB.Create(&newURL).Error; err != nil {
+	if err := s.db.Create(&newURL).Error; err != nil {
 		return nil, err
 	}
 
 	// Audit Log
-	LogAction(dto.UserID, "CREATE_LINK", newURL.ShortCode, map[string]interface{}{
+	s.auditService.LogAction(dto.UserID, "CREATE_LINK", newURL.ShortCode, map[string]interface{}{
 		"long_url": dto.LongURL,
 	}, dto.IPAddress)
 
