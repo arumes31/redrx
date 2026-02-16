@@ -84,53 +84,58 @@
                                     </div>
                                 </div>
 
-                                <div class="row form-section mb-3">
-                                    <div class="col-md-12">
-                                        <label class="form-label">Embed Logo (Optional)</label>
-                                        <input type="file" class="form-control" name="logo_file"
-                                            accept=".png,.jpg,.jpeg">
-                                        <div class="form-text text-light opacity-50 small">Upload a square image for
-                                            best results.</div>
+                            <div class="row form-section mb-3">
+                                <div class="col-md-12">
+                                    <label class="form-label">Embed Logo (Optional)</label>
+                                    <div id="drop-zone" class="drop-zone">
+                                        <i class="fas fa-cloud-upload-alt"></i>
+                                        <p class="mb-0">Drag & drop logo here or click to browse</p>
+                                        <p class="small text-light opacity-50">.png, .jpg, .jpeg (Square recommended)</p>
+                                        <input type="file" name="logo_file" id="logo_file" accept=".png,.jpg,.jpeg" hidden>
+                                    </div>
+                                    <div id="file-name" class="mt-2 small text-success" style="display:none;"></div>
+                                </div>
+                            </div>
+
+                            <div class="row form-section mb-3">
+                                <div class="col-md-12">
+                                    <label class="form-label">Password Protection</label>
+                                    <input type="text" class="form-control" name="password" placeholder="Optional">
+                                </div>
+                            </div>
+
+                            <div class="row form-section mb-3">
+                                <div class="col-md-12">
+                                    <label class="form-label">Allowed IPs (Private Link)</label>
+                                    <input type="text" class="form-control" name="allowed_ips"
+                                        placeholder="e.g. 192.168.1.1, 10.0.0.1 (Comma separated)">
+                                    <div class="form-text text-light opacity-50 small">Leave empty for public
+                                        access.</div>
+                                </div>
+                            </div>
+
+                            <div class="row form-section mb-3">
+                                <div class="col-md-6">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="splashPage"
+                                            name="splash_page" value="true">
+                                        <label class="form-check-label" for="splashPage">Splash Page</label>
                                     </div>
                                 </div>
-
-                                <div class="row form-section mb-3">
-                                    <div class="col-md-12">
-                                        <label class="form-label">Password Protection</label>
-                                        <input type="text" class="form-control" name="password" placeholder="Optional">
-                                    </div>
-                                </div>
-
-                                <div class="row form-section mb-3">
-                                    <div class="col-md-12">
-                                        <label class="form-label">Allowed IPs (Private Link)</label>
-                                        <input type="text" class="form-control" name="allowed_ips"
-                                            placeholder="e.g. 192.168.1.1, 10.0.0.1 (Comma separated)">
-                                        <div class="form-text text-light opacity-50 small">Leave empty for public
-                                            access.</div>
-                                    </div>
-                                </div>
-
-                                <div class="row form-section mb-3">
-                                    <div class="col-md-6">
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" id="splashPage"
-                                                name="splash_page" value="true">
-                                            <label class="form-check-label" for="splashPage">Splash Page</label>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" id="sensitiveWarning"
-                                                name="sensitive_warning" value="true">
-                                            <label class="form-check-label" for="sensitiveWarning">Sensitive Content
-                                                Warning</label>
-                                        </div>
+                                <div class="col-md-6">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="sensitiveWarning"
+                                            name="sensitive_warning" value="true">
+                                        <label class="form-check-label" for="sensitiveWarning">Sensitive Content
+                                            Warning</label>
                                     </div>
                                 </div>
                             </div>
 
-                            <button type="submit" class="btn btn-primary btn-lg w-100 mt-3">Shorten URL</button>
+                            <button type="submit" id="shorten-btn" class="btn btn-primary btn-lg w-100 mt-3">
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                <span class="btn-text">Shorten URL</span>
+                            </button>
                         </form>
 
                         {{ if .ShortURL }}
@@ -171,11 +176,17 @@
                             <div class="qr-container mt-4 p-3 bg-light rounded d-inline-block shadow-sm">
                                 <img src="data:image/png;base64,{{ .QRData }}" alt="QR Code"
                                     class="qr-img img-fluid mb-2" style="max-width: 200px;">
-                                <div class="d-grid gap-2">
+                                <div class="d-flex flex-column gap-2">
                                     <a href="data:image/png;base64,{{ .QRData }}" download="qrcode.png"
-                                        class="btn btn-sm btn-dark">
+                                        class="btn btn-sm btn-dark w-100">
                                         <i class="fas fa-download me-1"></i> Download PNG
                                     </a>
+                                    {{ if .QRSVG }}
+                                    <a href="data:image/svg+xml;base64,{{ .QRSVG }}" download="qrcode.svg"
+                                        class="btn btn-sm btn-outline-dark w-100">
+                                        <i class="fas fa-file-code me-1"></i> Download SVG
+                                    </a>
+                                    {{ end }}
                                 </div>
                             </div>
                             {{ end }}
@@ -187,4 +198,61 @@
         </div>
     </div>
 </div>
+{{ end }}
+
+{{ define "scripts" }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 1. Drag & Drop Logic
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('logo_file');
+    const fileNameDisplay = document.getElementById('file-name');
+
+    if (dropZone && fileInput) {
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        ['dragleave', 'dragend'].forEach(type => {
+            dropZone.addEventListener(type, () => {
+                dropZone.classList.remove('drag-over');
+            });
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                updateFileName();
+            }
+        });
+
+        fileInput.addEventListener('change', updateFileName);
+
+        function updateFileName() {
+            if (fileInput.files.length) {
+                fileNameDisplay.textContent = 'Selected: ' + fileInput.files[0].name;
+                fileNameDisplay.style.display = 'block';
+                dropZone.classList.add('has-file');
+            }
+        }
+    }
+
+    // 2. Loading Spinner Logic
+    const form = document.querySelector('form');
+    const shortenBtn = document.getElementById('shorten-btn');
+
+    if (form && shortenBtn) {
+        form.addEventListener('submit', function() {
+            shortenBtn.classList.add('loading');
+            shortenBtn.disabled = true;
+        });
+    }
+});
+</script>
 {{ end }}

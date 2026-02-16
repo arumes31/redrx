@@ -65,9 +65,11 @@
                                 <td>
                                     <div class="btn-group btn-group-sm">
                                         <button class="btn btn-outline-secondary"
-                                            onclick="navigator.clipboard.writeText('{{ $.BaseURL }}/{{ .ShortCode }}')"><i
+                                            onclick="navigator.clipboard.writeText('{{ $.BaseURL }}/{{ .ShortCode }}')"
+                                            data-bs-toggle="tooltip" title="Copy Link"><i
                                                 class="fas fa-copy"></i></button>
-                                        <a href="/{{ .ShortCode }}/stats" class="btn btn-outline-info"><i
+                                        <a href="/{{ .ShortCode }}/stats" class="btn btn-outline-info"
+                                            data-bs-toggle="tooltip" title="View Statistics"><i
                                                 class="fas fa-chart-bar"></i></a>
                                         <!-- Add Edit/Delete actions here later -->
                                     </div>
