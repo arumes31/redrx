@@ -23,7 +23,7 @@ func (h *Handler) ShowDashboard(c *gin.Context) {
 	h.db.Model(&models.URL{}).Where("user_id = ?", userID).Count(&totalLinks)
 
 	var totalClicks int64
-	h.db.Model(&models.URL{}).Where("user_id = ?", userID).Select("COALESCE(SUM(clicks_count), 0)").Scan(&totalClicks)
+	h.db.Model(&models.URL{}).Where("user_id = ?", userID).Select("COALESCE(SUM(clicks), 0)").Scan(&totalClicks)
 
 	var activeLinks int64
 	h.db.Model(&models.URL{}).Where("user_id = ? AND is_enabled = ?", userID, true).Count(&activeLinks)

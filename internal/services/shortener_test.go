@@ -3,7 +3,10 @@ package services
 import (
 	"log/slog"
 	"os"
+	"redrx/pkg/utils"
+	"strings"
 	"testing"
+	"time"
 
 	"redrx/internal/models"
 
@@ -41,6 +44,28 @@ func TestCreateShortURL(t *testing.T) {
 		assert.Equal(t, "https://google.com", url.LongURL)
 	})
 
+	t.Run("Collision Retry", func(t *testing.T) {
+		calls := 0
+		service.codeGenerator = func(int) string {
+			calls++
+			if calls == 1 {
+				return "COLLIDE"
+			}
+			return "UNIQUE"
+		}
+		defer func() { service.codeGenerator = utils.GenerateShortCode }()
+
+		// Create first URL
+		db.Create(&models.URL{ShortCode: "COLLIDE", LongURL: "https://a.com"})
+
+		dto := ShortenDTO{LongURL: "https://b.com"}
+		url, err := service.CreateShortURL(dto)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "UNIQUE", url.ShortCode)
+		assert.Equal(t, 2, calls)
+	})
+
 	t.Run("Create custom short URL", func(t *testing.T) {
 		dto := ShortenDTO{
 			LongURL:    "https://yahoo.com",
@@ -63,5 +88,69 @@ func TestCreateShortURL(t *testing.T) {
 		_, err = service.CreateShortURL(dto)
 		assert.Error(t, err)
 		assert.Equal(t, "custom code already taken", err.Error())
+	})
+
+	t.Run("Create short URL with Password and Expiry", func(t *testing.T) {
+		hours := 24
+		dto := ShortenDTO{
+			LongURL:     "https://github.com",
+			Password:    "secure-pass",
+			ExpiryHours: &hours,
+		}
+		url, err := service.CreateShortURL(dto)
+		
+		assert.NoError(t, err)
+		assert.NotEmpty(t, url.PasswordHash)
+		assert.NotNil(t, url.ExpiresAt)
+		assert.True(t, url.ExpiresAt.After(time.Now()))
+	})
+
+	t.Run("HashPassword Error", func(t *testing.T) {
+		dto := ShortenDTO{
+			LongURL:  "https://github.com",
+			Password: strings.Repeat("A", 100), // Max is 72
+		}
+		_, err := service.CreateShortURL(dto)
+		assert.Error(t, err)
+	})
+
+	t.Run("DB Create Error", func(t *testing.T) {
+		dbErr := setupTestDB()
+		dbErr.Migrator().DropTable(&models.URL{})
+		auditErr := NewAuditService(dbErr, logger)
+		serviceErr := NewShortenerService(dbErr, auditErr)
+		
+		dto := ShortenDTO{
+			LongURL: "https://github.com",
+		}
+		_, err := serviceErr.CreateShortURL(dto)
+		assert.Error(t, err)
+	})
+
+	t.Run("DB Error during custom code check", func(t *testing.T) {
+		dbErr := setupTestDB()
+		dbErr.Migrator().DropTable(&models.URL{})
+		auditErr := NewAuditService(dbErr, logger)
+		serviceErr := NewShortenerService(dbErr, auditErr)
+		
+		dto := ShortenDTO{
+			LongURL:    "https://github.com",
+			CustomCode: "MOCK",
+		}
+		_, err := serviceErr.CreateShortURL(dto)
+		assert.Error(t, err)
+	})
+
+	t.Run("DB Error during random code check", func(t *testing.T) {
+		dbErr := setupTestDB()
+		dbErr.Migrator().DropTable(&models.URL{})
+		auditErr := NewAuditService(dbErr, logger)
+		serviceErr := NewShortenerService(dbErr, auditErr)
+		
+		dto := ShortenDTO{
+			LongURL: "https://github.com",
+		}
+		_, err := serviceErr.CreateShortURL(dto)
+		assert.Error(t, err)
 	})
 }

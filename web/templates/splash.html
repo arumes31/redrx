@@ -1,4 +1,4 @@
-{{ define "content" }}
+{{ template "header" . }}
 <div class="row justify-content-center">
     <div class="col-lg-6 text-center">
         <div class="card shadow-lg">
@@ -43,4 +43,5 @@
         </div>
     </div>
 </div>
-{{ end }}
+{{ template "footer" . }}
+{{ template "base_end" . }}

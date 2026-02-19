@@ -1,4 +1,4 @@
-{{ define "content" }}
+{{ template "header" . }}
 <div class="row mb-4">
     <div class="col-md-12">
         <h2 class="mb-3">Dashboard</h2>
@@ -88,7 +88,7 @@
     </div>
 
     <!-- API Key Section -->
-    <div class="card mb-4">
+    <div class="card mb-4 mt-4">
         <div class="card-header">
             <h5 class="mb-0">API Key</h5>
         </div>
@@ -103,7 +103,7 @@
     </div>
 
     <!-- Danger Zone -->
-    <div class="card border-danger">
+    <div class="card border-danger mb-4">
         <div class="card-header bg-danger text-white">
             <h5 class="mb-0">Danger Zone</h5>
         </div>
@@ -113,8 +113,8 @@
         </div>
     </div>
 </div>
-</div>
 
+{{ template "footer" . }}
 <script>
     function copyAPIKey() {
         var copyText = document.getElementById("apiKeyField");
@@ -156,6 +156,6 @@
             console.error(e);
             alert("Error deleting account.");
         }
-    }
-</script>
-{{ end }}
+        }
+    </script>
+{{ template "base_end" . }}

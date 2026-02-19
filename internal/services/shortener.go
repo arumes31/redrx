@@ -28,14 +28,16 @@ type ShortenDTO struct {
 }
 
 type ShortenerService struct {
-	db           *gorm.DB
-	auditService *AuditService
+	db            *gorm.DB
+	auditService  *AuditService
+	codeGenerator func(int) string
 }
 
 func NewShortenerService(db *gorm.DB, auditService *AuditService) *ShortenerService {
 	return &ShortenerService{
-		db:           db,
-		auditService: auditService,
+		db:            db,
+		auditService:  auditService,
+		codeGenerator: utils.GenerateShortCode,
 	}
 }
 
@@ -45,17 +47,25 @@ func (s *ShortenerService) CreateShortURL(dto ShortenDTO) (*models.URL, error) {
 	if dto.CustomCode != "" {
 		// Check availability
 		var existing models.URL
-		if err := s.db.Where("short_code = ?", dto.CustomCode).First(&existing).Error; err == nil {
+		err := s.db.Where("short_code = ?", dto.CustomCode).First(&existing).Error
+		if err == nil {
 			return nil, errors.New("custom code already taken")
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
 		}
 		shortCode = dto.CustomCode
 	} else {
 		// Generate unique code
 		for {
-			shortCode = utils.GenerateShortCode(6)
+			shortCode = s.codeGenerator(6)
 			var existing models.URL
-			if err := s.db.Where("short_code = ?", shortCode).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+			err := s.db.Where("short_code = ?", shortCode).First(&existing).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				break
+			}
+			if err != nil {
+				return nil, err
 			}
 		}
 	}

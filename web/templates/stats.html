@@ -1,4 +1,4 @@
-{{ define "content" }}
+{{ template "header" . }}
 <div class="row">
     <div class="col-md-12">
         <h2 class="mb-4">Stats for /{{ .URL.ShortCode }}</h2>
@@ -87,6 +87,7 @@
     </div>
 </div>
 
+{{ template "footer" . }}
 <script src="/static/js/chart.js"></script>
 <script>
     // Helper to generate colors
@@ -184,5 +185,4 @@
 <script id="data-device" type="application/json">
 {{ .DeviceStats | json }}
 </script>
-
-{{ end }}
+{{ template "base_end" . }}

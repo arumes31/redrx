@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,17 +17,24 @@ import (
 	"redrx/internal/repository"
 	"redrx/internal/services"
 
-	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if err := Run(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func Run(ctx context.Context) error {
 	// 1. Load Config
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		fmt.Printf("Failed to load config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// 2. Setup Logger
@@ -44,8 +50,7 @@ func main() {
 	// 3. Initialize Database
 	db, err := repository.InitDB(cfg)
 	if err != nil {
-		logger.Error("Failed to initialize database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 
 	// 4. Initialize Redis
@@ -55,9 +60,11 @@ func main() {
 	}
 
 	// 5. Run Migrations
-	logger.Info("Running database migrations...")
-	if err := repository.RunMigrations(cfg.DatabaseURL); err != nil {
-		logger.Warn("Migration warning", "error", err)
+	if strings.HasPrefix(cfg.DatabaseURL, "postgres") {
+		logger.Info("Running database migrations...")
+		if err := repository.RunMigrations(cfg.DatabaseURL, ""); err != nil {
+			return fmt.Errorf("migration failed: %w", err)
+		}
 	}
 
 	// 6. Initialize Services
@@ -76,50 +83,7 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	r := gin.Default()
-	r.SetFuncMap(template.FuncMap{
-		"json": func(v interface{}) template.JS {
-			a, _ := json.Marshal(v)
-			return template.JS(a)
-		},
-	})
-	r.LoadHTMLGlob("web/templates/*")
-	r.Static("/static", "./web/static")
-
-	// Middleware
-	r.Use(h.RateLimitMiddleware(rateLimiter))
-	store := cookie.NewStore([]byte(cfg.SessionSecret))
-	r.Use(sessions.Sessions("redrx_session", store))
-
-	// Routes
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "healthy"})
-	})
-
-	// Public Routes
-	r.GET("/", h.ShowIndex)
-	r.POST("/", h.HandleShortenForm)
-	r.GET("/login", h.ShowLogin)
-	r.POST("/login", h.HandleLoginForm)
-	r.GET("/register", h.ShowRegister)
-	r.POST("/register", h.HandleRegisterForm)
-	r.POST("/api/register", h.RegisterUser)
-	r.POST("/api/login", h.LoginUser)
-	r.POST("/logout", h.LogoutUser)
-
-	// Protected Routes
-	authorized := r.Group("/")
-	authorized.Use(h.AuthRequired())
-	{
-		authorized.GET("/dashboard", h.ShowDashboard)
-		authorized.POST("/api/v1/shorten", h.ShortenURL)
-		authorized.POST("/api/v1/auth/apikey", h.GenerateNewAPIKey)
-		authorized.DELETE("/api/v1/auth/account", h.DeleteAccount)
-	}
-
-	// Catch-all Redirects
-	r.GET("/:short_code", h.RedirectToURL)
-	r.GET("/:short_code/stats", h.ShowStats)
+	r := h.SetupRouter(rateLimiter, "web/templates/*", "./web/static")
 
 	// 9. Start Server with Graceful Shutdown
 	srv := &http.Server{
@@ -127,45 +91,46 @@ func main() {
 		Handler: r,
 	}
 
-	// Background Context for services
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Background Context for workers
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
 
 	// Start Background Workers
-	go auditService.Start(ctx)
-	go statsService.Start(ctx)
-	go geoIPService.Init() // Init might take time (download)
-	go geoIPService.StartUpdater(ctx)
+	go auditService.Start(workerCtx)
+	go statsService.Start(workerCtx)
+	go geoIPService.Init()
+	go geoIPService.StartUpdater(workerCtx)
 	rateLimiter.StartCleanup(10 * time.Minute)
 
-	// Initializing server in a goroutine so that it doesn't block the graceful shutdown handling
+	// Initializing server in a goroutine
+	serverErr := make(chan error, 1)
 	go func() {
 		logger.Info("Starting server", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("Failed to start server", "error", err)
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown the server with a timeout of 5 seconds.
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	logger.Info("Shutting down server...")
+	// Wait for context cancellation or server error
+	select {
+	case err := <-serverErr:
+		return fmt.Errorf("server error: %w", err)
+	case <-ctx.Done():
+		logger.Info("Shutting down server...")
+	}
 
-	// The context is used to inform the server it has 5 seconds to finish
-	// the request it is currently handling
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Graceful shutdown timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Server forced to shutdown", "error", err)
 	}
 
-	// Stop background workers
-	cancel()
-	// Wait a bit for workers to finish if needed
-	time.Sleep(500 * time.Millisecond)
+	workerCancel()
+	// Wait a tiny bit for workers
+	time.Sleep(100 * time.Millisecond)
 
 	logger.Info("Server exiting")
+	return nil
 }

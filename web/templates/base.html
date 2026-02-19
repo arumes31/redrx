@@ -1,4 +1,4 @@
-{{ define "base" }}
+{{ define "header" }}
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 <head>
@@ -9,7 +9,6 @@
     <link href="/static/css/lib/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/fontawesome.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
-    {{ block "head" . }}{{ end }}
 </head>
 <body data-animation="circles">
     <canvas id="canvas"></canvas>
@@ -37,7 +36,7 @@
                         </li>
                         <li class="nav-item">
                             <form action="/logout" method="POST" style="display:inline;">
-                                <button type="submit" class="nav-link btn btn-link" style="text-decoration:none;">Logout ({{ .User.Username }})</button>
+                                <button type="submit" class="nav-link btn btn-link" style="text-decoration:none;">Logout</button>
                             </form>
                         </li>
                     {{ else }}
@@ -66,8 +65,9 @@
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         {{ end }}
+{{ end }}
 
-        {{ template "content" . }}
+{{ define "footer" }}
     </div>
 
     <footer class="footer mt-auto py-3 bg-transparent">
@@ -82,7 +82,9 @@
 
     <script src="/static/js/lib/bootstrap.bundle.min.js"></script>
     <script src="/static/js/main.js"></script>
-    {{ block "scripts" . }}{{ end }}
+{{ end }}
+
+{{ define "base_end" }}
 </body>
 </html>
 {{ end }}

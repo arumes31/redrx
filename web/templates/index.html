@@ -1,4 +1,4 @@
-{{ define "content" }}
+{{ template "header" . }}
 <div class="row justify-content-center">
     <div class="col-lg-8">
         <div class="card">
@@ -198,9 +198,8 @@
         </div>
     </div>
 </div>
-{{ end }}
 
-{{ define "scripts" }}
+{{ template "footer" . }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // 1. Drag & Drop Logic
@@ -255,4 +254,4 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
-{{ end }}
+{{ template "base_end" . }}

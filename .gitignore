@@ -1,7 +1,48 @@
-db/
-TODO.md
+# Binaries
+*.exe
+/server
+/server.exe
+
+# Coverage and Reports
+/*.out
+/*.html
+/cov/
+/coverage/
+/coverage.out
+/cov
+/coverage
+/coverage_utils
+/cov_handlers.out
+/cov_services
+/handlers
+/handlers.out
+/services
+/services.out
+/utils
+/c
+/c.out
+
+# Database
+/db/
+
+# Environment
+.env
+*.env
+!example.env
+
+# Tool Specific
+.gemini/
+.qodo/
+.vscode/
+.idea/
+
+# GeoIP
+/geoip/
+
+# Misc
 __pycache__/
 .pytest_cache
+TODO.md
 idea.md
 task.md
-*.exe
+*.log

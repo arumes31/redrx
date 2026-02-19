@@ -14,12 +14,19 @@ import (
 	"redrx/internal/config"
 
 	"github.com/oschwald/geoip2-golang"
+	"github.com/oschwald/maxminddb-golang"
 )
+
+type IGeoIPReader interface {
+	City(ip net.IP) (*geoip2.City, error)
+	Metadata() maxminddb.Metadata
+	Close() error
+}
 
 type GeoIPService struct {
 	cfg       config.Config
 	logger    *slog.Logger
-	geoReader *geoip2.Reader
+	geoReader IGeoIPReader
 	geoLock   sync.RWMutex
 }
 
@@ -55,11 +62,15 @@ func (s *GeoIPService) Init() {
 }
 
 func (s *GeoIPService) StartUpdater(ctx context.Context) {
+	s.StartUpdaterWithInterval(ctx, 24*time.Hour)
+}
+
+func (s *GeoIPService) StartUpdaterWithInterval(ctx context.Context, interval time.Duration) {
 	if s.cfg.MaxMindAccountID == "" {
 		return
 	}
 
-	ticker := time.NewTicker(24 * time.Hour)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -106,6 +117,7 @@ func (s *GeoIPService) reloadReader(path string) {
 
 	if s.geoReader != nil {
 		s.geoReader.Close()
+		s.geoReader = nil
 	}
 
 	reader, err := geoip2.Open(path)

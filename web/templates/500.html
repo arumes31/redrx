@@ -1,8 +1,9 @@
-{{ define "content" }}
+{{ template "header" . }}
 <div class="text-center mt-5">
     <h1 class="display-1 fw-bold text-danger">500</h1>
     <h2 class="mb-4">Internal Server Error</h2>
     <p class="lead mb-5">Something went wrong on our end. Please try again later.</p>
     <a href="/" class="btn btn-primary btn-lg">Go Home</a>
 </div>
-{{ end }}
+{{ template "footer" . }}
+{{ template "base_end" . }}

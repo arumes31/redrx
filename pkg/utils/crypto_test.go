@@ -23,3 +23,14 @@ func TestCheckPasswordHash(t *testing.T) {
 	assert.True(t, CheckPasswordHash(password, hash))
 	assert.False(t, CheckPasswordHash(wrongPassword, hash))
 }
+
+func TestHashPassword_Error(t *testing.T) {
+	password := make([]byte, 73)
+	for i := range password {
+		password[i] = 'a'
+	}
+	hash, err := HashPassword(string(password))
+	
+	assert.Error(t, err)
+	assert.Empty(t, hash)
+}
