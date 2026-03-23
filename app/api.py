@@ -84,8 +84,11 @@ def shorten():
         password_hash = generate_password_hash(password)
 
     # Rotate targets
-    if rotate_targets and not isinstance(rotate_targets, list):
-         return jsonify({'error': 'rotate_targets must be a list of strings'}), 400
+    if rotate_targets:
+        if not isinstance(rotate_targets, list):
+             return jsonify({'error': 'rotate_targets must be a list of strings'}), 400
+        if not all(is_safe_url(u) for u in rotate_targets):
+             return jsonify({'error': 'One or more rotate target URLs are blocked or invalid.'}), 403
 
     new_url = URL(
         user_id=user.id if user else None,
