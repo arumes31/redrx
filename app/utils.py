@@ -124,7 +124,26 @@ def cleanup_phishing_urls():
     except Exception: # nosec B110
         pass
 
-def is_safe_url(target_url):
+def get_blocked_domains():
+    """Returns the set of blocked domains using the in-process cache."""
+    if not current_app.config.get('ENABLE_PHISHING_CHECK'):
+        return set()
+
+    path = current_app.config.get('BLOCKED_DOMAINS_PATH')
+    if path and os.path.exists(path):
+        global _blocked_domains_cache, _blocked_domains_mtime
+        try:
+            mtime = os.path.getmtime(path)
+            if _blocked_domains_cache is None or mtime > _blocked_domains_mtime:
+                with open(path, 'r', encoding='utf-8') as f:
+                    _blocked_domains_cache = {line.strip().lower() for line in f if line.strip()}
+                _blocked_domains_mtime = mtime
+            return _blocked_domains_cache
+        except Exception: # nosec B110
+            pass
+    return set()
+
+def is_safe_url(target_url, blocked_domains_cache=None):
     """Checks if the URL is not in the blocked domains list."""
     if not isinstance(target_url, str):
         return False
@@ -155,24 +174,13 @@ def is_safe_url(target_url):
     if not current_app.config.get('ENABLE_PHISHING_CHECK'):
         return True
 
-    path = current_app.config.get('BLOCKED_DOMAINS_PATH')
-    if path and os.path.exists(path):
-        global _blocked_domains_cache, _blocked_domains_mtime
-        try:
-            mtime = os.path.getmtime(path)
-            if _blocked_domains_cache is None or mtime > _blocked_domains_mtime:
-                with open(path, 'r', encoding='utf-8') as f:
-                    _blocked_domains_cache = {line.strip().lower() for line in f if line.strip()}
-                _blocked_domains_mtime = mtime
-                
-            # Check exact or parent domains
-            parts = domain.split('.')
-            for i in range(len(parts)):
-                check_domain = '.'.join(parts[i:])
-                if check_domain in _blocked_domains_cache:
-                    return False
-        except Exception: # nosec B110
-            pass
+    blocked_domains = blocked_domains_cache if blocked_domains_cache is not None else get_blocked_domains()
+    if blocked_domains:
+        parts = domain.split('.')
+        for i in range(len(parts)):
+            check_domain = '.'.join(parts[i:])
+            if check_domain in blocked_domains:
+                return False
             
     return True
 

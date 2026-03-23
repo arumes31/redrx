@@ -84,7 +84,7 @@ def shorten():
         password_hash = generate_password_hash(password)
 
     # Rotate targets
-    if rotate_targets:
+    if rotate_targets is not None:
         if not isinstance(rotate_targets, list):
              return jsonify({'error': 'rotate_targets must be a list of strings'}), 400
         if not all(isinstance(u, str) for u in rotate_targets):
