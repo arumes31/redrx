@@ -95,9 +95,13 @@ def index():
         # Prepare Data
         rotate_list = [u.strip() for u in form.rotate_targets.data.split(',') if u.strip()] if form.rotate_targets.data else None
         
-        if rotate_list and not all(is_safe_url(u) for u in rotate_list):
-            flash("One or more rotate target URLs are blocked or invalid.", 'danger')
-            return render_template('index.html', form=form)
+        if rotate_list:
+            if len(rotate_list) > 50:
+                flash("Maximum 50 rotate targets allowed.", 'danger')
+                return render_template('index.html', form=form)
+            if not all(is_safe_url(u) for u in rotate_list):
+                flash("One or more rotate target URLs are blocked or invalid.", 'danger')
+                return render_template('index.html', form=form)
 
         if form.ios_target_url.data and not is_safe_url(form.ios_target_url.data):
             flash("iOS target URL is blocked or invalid.", 'danger')

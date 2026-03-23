@@ -30,6 +30,9 @@ def _get_redis_client():
 
 _redis_client = None
 
+_blocked_domains_cache = None
+_blocked_domains_mtime = 0
+
 def update_phishing_list():
     """Downloads the latest phishing domain lists."""
     if not current_app.config.get('ENABLE_PHISHING_CHECK'):
@@ -154,16 +157,20 @@ def is_safe_url(target_url):
 
     path = current_app.config.get('BLOCKED_DOMAINS_PATH')
     if path and os.path.exists(path):
+        global _blocked_domains_cache, _blocked_domains_mtime
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                blocked_domains = {line.strip().lower() for line in f if line.strip()}
+            mtime = os.path.getmtime(path)
+            if _blocked_domains_cache is None or mtime > _blocked_domains_mtime:
+                with open(path, 'r', encoding='utf-8') as f:
+                    _blocked_domains_cache = {line.strip().lower() for line in f if line.strip()}
+                _blocked_domains_mtime = mtime
                 
-                # Check exact or parent domains
-                parts = domain.split('.')
-                for i in range(len(parts)):
-                    check_domain = '.'.join(parts[i:])
-                    if check_domain in blocked_domains:
-                        return False
+            # Check exact or parent domains
+            parts = domain.split('.')
+            for i in range(len(parts)):
+                check_domain = '.'.join(parts[i:])
+                if check_domain in _blocked_domains_cache:
+                    return False
         except Exception: # nosec B110
             pass
             
