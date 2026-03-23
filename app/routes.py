@@ -216,10 +216,14 @@ def redirect_to_url(short_code):
         device_match = True
 
     if not device_match and url_entry.rotate_targets:
-        alt = select_rotate_target(url_entry.rotate_targets)
+        safe_rotate_targets = [alt for alt in url_entry.rotate_targets if is_safe_url(alt)]
+        alt = select_rotate_target(safe_rotate_targets)
         if alt:
             target_url = alt
             
+    if not is_safe_url(target_url):
+        abort(403)
+
     # Update last accessed
     url_entry.last_accessed_at = datetime.datetime.now(datetime.timezone.utc)
     db.session.commit()

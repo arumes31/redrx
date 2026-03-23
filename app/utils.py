@@ -123,12 +123,15 @@ def cleanup_phishing_urls():
 
 def is_safe_url(target_url):
     """Checks if the URL is not in the blocked domains list."""
+    if not isinstance(target_url, str):
+        return False
+
     # 0. Check URL scheme
     try:
         parsed = urlparse(target_url)
         if parsed.scheme.lower() not in ['http', 'https']:
             return False
-    except ValueError:
+    except (ValueError, TypeError):
         return False
 
     # 1. Check manual overrides from ENV
