@@ -132,8 +132,9 @@ def get_blocked_domains():
         return set()
 
     path = current_app.config.get('BLOCKED_DOMAINS_PATH')
+    global _blocked_domains_cache, _blocked_domains_mtime, _blocked_domains_path, _blocked_domains_ino
+
     if path and os.path.exists(path):
-        global _blocked_domains_cache, _blocked_domains_mtime, _blocked_domains_path, _blocked_domains_ino
         try:
             stat_info = os.stat(path)
             mtime = stat_info.st_mtime
@@ -156,9 +157,12 @@ def get_blocked_domains():
             # Fail closed if we cannot read the list and have no cache
             raise RuntimeError(f"Critical Security Failure: Unable to load blocked domains list: {e}")
 
-    # If path is not set or file doesn't exist, check if we have a cache.
-    # Otherwise, it might be safer to fail closed here too, but it depends on if the file is optional initially.
-    # We will return the cache if available, else empty set (assuming file is not created yet).
+    elif path:
+        if _blocked_domains_cache is not None:
+            return _blocked_domains_cache
+        raise RuntimeError(f"Critical Security Failure: Blocked domains list configured at '{path}' but file does not exist.")
+
+    # If path is not set at all
     if _blocked_domains_cache is not None:
         return _blocked_domains_cache
     return set()
