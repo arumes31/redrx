@@ -32,6 +32,8 @@ _redis_client = None
 
 _blocked_domains_cache = None
 _blocked_domains_mtime = 0
+_blocked_domains_path = None
+_blocked_domains_ino = 0
 
 def update_phishing_list():
     """Downloads the latest phishing domain lists."""
@@ -131,16 +133,34 @@ def get_blocked_domains():
 
     path = current_app.config.get('BLOCKED_DOMAINS_PATH')
     if path and os.path.exists(path):
-        global _blocked_domains_cache, _blocked_domains_mtime
+        global _blocked_domains_cache, _blocked_domains_mtime, _blocked_domains_path, _blocked_domains_ino
         try:
-            mtime = os.path.getmtime(path)
-            if _blocked_domains_cache is None or mtime > _blocked_domains_mtime:
+            stat_info = os.stat(path)
+            mtime = stat_info.st_mtime
+            ino = stat_info.st_ino
+
+            if (_blocked_domains_cache is None or
+                path != _blocked_domains_path or
+                mtime != _blocked_domains_mtime or
+                ino != _blocked_domains_ino):
                 with open(path, 'r', encoding='utf-8') as f:
                     _blocked_domains_cache = {line.strip().lower() for line in f if line.strip()}
                 _blocked_domains_mtime = mtime
+                _blocked_domains_path = path
+                _blocked_domains_ino = ino
             return _blocked_domains_cache
-        except Exception: # nosec B110
-            pass
+        except Exception as e:
+            current_app.logger.error(f"Failed to load blocked domains list: {e}")
+            if _blocked_domains_cache is not None:
+                return _blocked_domains_cache
+            # Fail closed if we cannot read the list and have no cache
+            raise RuntimeError(f"Critical Security Failure: Unable to load blocked domains list: {e}")
+
+    # If path is not set or file doesn't exist, check if we have a cache.
+    # Otherwise, it might be safer to fail closed here too, but it depends on if the file is optional initially.
+    # We will return the cache if available, else empty set (assuming file is not created yet).
+    if _blocked_domains_cache is not None:
+        return _blocked_domains_cache
     return set()
 
 def is_safe_url(target_url, blocked_domains_cache=None):
