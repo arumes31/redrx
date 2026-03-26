@@ -31,6 +31,11 @@ def _get_redis_client():
 
 _redis_client = None
 
+_blocked_domains_cache = None
+_blocked_domains_mtime = 0
+_blocked_domains_path = None
+_blocked_domains_ino = 0
+
 def update_phishing_list():
     """Downloads the latest phishing domain lists."""
     if not current_app.config.get('ENABLE_PHISHING_CHECK'):
@@ -122,14 +127,58 @@ def cleanup_phishing_urls():
     except Exception: # nosec B110
         pass
 
-def is_safe_url(target_url):
+def get_blocked_domains():
+    """Returns the set of blocked domains using the in-process cache."""
+    if not current_app.config.get('ENABLE_PHISHING_CHECK'):
+        return set()
+
+    path = current_app.config.get('BLOCKED_DOMAINS_PATH')
+    global _blocked_domains_cache, _blocked_domains_mtime, _blocked_domains_path, _blocked_domains_ino
+
+    if path and os.path.exists(path):
+        try:
+            stat_info = os.stat(path)
+            mtime = stat_info.st_mtime
+            ino = stat_info.st_ino
+
+            if (_blocked_domains_cache is None or
+                path != _blocked_domains_path or
+                mtime != _blocked_domains_mtime or
+                ino != _blocked_domains_ino):
+                with open(path, 'r', encoding='utf-8') as f:
+                    _blocked_domains_cache = {line.strip().lower() for line in f if line.strip()}
+                _blocked_domains_mtime = mtime
+                _blocked_domains_path = path
+                _blocked_domains_ino = ino
+            return _blocked_domains_cache
+        except Exception as e:
+            current_app.logger.error(f"Failed to load blocked domains list: {e}")
+            if _blocked_domains_cache is not None:
+                return _blocked_domains_cache
+            # Fail closed if we cannot read the list and have no cache
+            raise RuntimeError(f"Critical Security Failure: Unable to load blocked domains list: {e}")
+
+    elif path:
+        if _blocked_domains_cache is not None:
+            return _blocked_domains_cache
+        raise RuntimeError(f"Critical Security Failure: Blocked domains list configured at '{path}' but file does not exist.")
+
+    # If path is not set at all
+    if _blocked_domains_cache is not None:
+        return _blocked_domains_cache
+    return set()
+
+def is_safe_url(target_url, blocked_domains_cache=None):
     """Checks if the URL is not in the blocked domains list."""
+    if not isinstance(target_url, str):
+        return False
+
     # 0. Check URL scheme
     try:
         parsed = urlparse(target_url)
         if parsed.scheme.lower() not in ['http', 'https']:
             return False
-    except ValueError:
+    except (ValueError, TypeError):
         return False
 
     # 1. Check manual overrides from ENV
@@ -150,20 +199,13 @@ def is_safe_url(target_url):
     if not current_app.config.get('ENABLE_PHISHING_CHECK'):
         return True
 
-    path = current_app.config.get('BLOCKED_DOMAINS_PATH')
-    if path and os.path.exists(path):
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                blocked_domains = {line.strip().lower() for line in f if line.strip()}
-                
-                # Check exact or parent domains
-                parts = domain.split('.')
-                for i in range(len(parts)):
-                    check_domain = '.'.join(parts[i:])
-                    if check_domain in blocked_domains:
-                        return False
-        except Exception: # nosec B110
-            pass
+    blocked_domains = blocked_domains_cache if blocked_domains_cache is not None else get_blocked_domains()
+    if blocked_domains:
+        parts = domain.split('.')
+        for i in range(len(parts)):
+            check_domain = '.'.join(parts[i:])
+            if check_domain in blocked_domains:
+                return False
             
     return True
 

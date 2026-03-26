@@ -98,6 +98,22 @@ def index():
         # Prepare Data
         rotate_list = [u.strip() for u in form.rotate_targets.data.split(',') if u.strip()] if form.rotate_targets.data else None
         
+        if rotate_list:
+            if len(rotate_list) > 50:
+                flash("Maximum 50 rotate targets allowed.", 'danger')
+                return render_template('index.html', form=form)
+            if not all(is_safe_url(u) for u in rotate_list):
+                flash("One or more rotate target URLs are blocked or invalid.", 'danger')
+                return render_template('index.html', form=form)
+
+        if form.ios_target_url.data and not is_safe_url(form.ios_target_url.data):
+            flash("iOS target URL is blocked or invalid.", 'danger')
+            return render_template('index.html', form=form)
+
+        if form.android_target_url.data and not is_safe_url(form.android_target_url.data):
+            flash("Android target URL is blocked or invalid.", 'danger')
+            return render_template('index.html', form=form)
+
         password_hash = generate_password_hash(form.password.data) if form.password.data else None
         
         start_at = None
@@ -206,11 +222,16 @@ def redirect_to_url(short_code):
         target_url = url_entry.android_target_url
         device_match = True
 
+    cached_domains = get_blocked_domains()
     if not device_match and url_entry.rotate_targets:
-        alt = select_rotate_target(url_entry.rotate_targets)
+        safe_rotate_targets = [alt for alt in url_entry.rotate_targets if is_safe_url(alt, cached_domains)]
+        alt = select_rotate_target(safe_rotate_targets)
         if alt:
             target_url = alt
             
+    if not is_safe_url(target_url, cached_domains):
+        abort(403)
+
     # Update last accessed
     url_entry.last_accessed_at = datetime.datetime.now(datetime.timezone.utc)
     db.session.commit()
@@ -425,6 +446,16 @@ def edit_url(short_code):
         form.expiry_hours.data = max(0, hours)
     
     if form.validate_on_submit():
+        if not is_safe_url(form.long_url.data):
+            flash("That destination URL is blocked or invalid.", 'danger')
+            return render_template('edit_url.html', form=form, short_code=short_code)
+        if form.ios_target_url.data and not is_safe_url(form.ios_target_url.data):
+            flash("iOS target URL is blocked or invalid.", 'danger')
+            return render_template('edit_url.html', form=form, short_code=short_code)
+        if form.android_target_url.data and not is_safe_url(form.android_target_url.data):
+            flash("Android target URL is blocked or invalid.", 'danger')
+            return render_template('edit_url.html', form=form, short_code=short_code)
+
         url_entry.long_url = form.long_url.data
         url_entry.ios_target_url = form.ios_target_url.data
         url_entry.android_target_url = form.android_target_url.data
