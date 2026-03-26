@@ -12,6 +12,7 @@ import time
 
 import os
 from urllib.parse import urlparse
+from flask import request
 import redis
 
 # Redis cache configuration for GeoIP lookups
@@ -325,3 +326,13 @@ def get_qr_data_url(data, color='black', bg='white', logo_img=None):
     """Returns a base64 encoded data URL for the QR code."""
     img_buffer = generate_qr(data, color, bg, logo_img)
     return base64.b64encode(img_buffer.read()).decode()
+
+def is_safe_redirect_url(target):
+    """Checks if a URL is safe for redirection (i.e., it's a relative URL or matches the base domain)."""
+    if not target:
+        return False
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(target)
+    if test_url.scheme or test_url.netloc:
+        return test_url.scheme == ref_url.scheme and test_url.netloc == ref_url.netloc
+    return True
