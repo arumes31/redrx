@@ -29,24 +29,41 @@ def shorten():
     if not data or 'long_url' not in data:
         return jsonify({'error': 'Missing long_url'}), 400
 
+    if not isinstance(data['long_url'], str):
+        return jsonify({'error': 'long_url must be a string'}), 400
+
     long_url = data['long_url'].strip()
     
     if not is_safe_url(long_url):
         return jsonify({'error': 'Destination URL is blocked'}), 403
 
     custom_code = data.get('custom_code')
-    code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
+    if custom_code is not None and not isinstance(custom_code, str):
+        return jsonify({'error': 'custom_code must be a string'}), 400
+
+    try:
+        code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'code_length must be an integer'}), 400
     
     # Optional parameters
     rotate_targets = data.get('rotate_targets')  # Expecting a list of strings
     password = data.get('password')
-    expiry_hours = data.get('expiry_hours', current_app.config['EXPIRY_HOURS'])
+    try:
+        expiry_hours = int(data.get('expiry_hours', current_app.config['EXPIRY_HOURS']))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'expiry_hours must be an integer'}), 400
     
     preview_mode = data.get('preview_mode', True)
     stats_enabled = data.get('stats_enabled', True)
     
     start_at_str = data.get('start_at')
+    if start_at_str is not None and not isinstance(start_at_str, str):
+        return jsonify({'error': 'start_at must be a string (ISO 8601)'}), 400
+
     end_at_str = data.get('end_at')
+    if end_at_str is not None and not isinstance(end_at_str, str):
+        return jsonify({'error': 'end_at must be a string (ISO 8601)'}), 400
 
     if custom_code:
         custom_code = custom_code.strip().upper()
@@ -60,22 +77,22 @@ def shorten():
 
     # Expiry logic
     expires_at = None
-    if int(expiry_hours) != 0:
-        expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(expiry_hours))
+    if expiry_hours != 0:
+        expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=expiry_hours)
 
     # Parse datetime strings if provided (ISO 8601 expected)
     start_at = None
     if start_at_str:
         try:
             start_at = datetime.datetime.fromisoformat(start_at_str.replace('Z', '+00:00'))
-        except ValueError:
+        except (ValueError, TypeError):
             return jsonify({'error': 'Invalid start_at format. Use ISO 8601'}), 400
 
     end_at = None
     if end_at_str:
         try:
             end_at = datetime.datetime.fromisoformat(end_at_str.replace('Z', '+00:00'))
-        except ValueError:
+        except (ValueError, TypeError):
             return jsonify({'error': 'Invalid end_at format. Use ISO 8601'}), 400
 
     # Password hashing
