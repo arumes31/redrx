@@ -26,10 +26,13 @@ def shorten():
         return jsonify({'error': 'Valid API Key required. Access denied.'}), 401
 
     data = request.get_json()
-    if not data or 'long_url' not in data:
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Request payload must be a JSON object'}), 400
+
+    if 'long_url' not in data:
         return jsonify({'error': 'Missing long_url'}), 400
 
-    if not isinstance(data['long_url'], str):
+    if not isinstance(data.get('long_url'), str):
         return jsonify({'error': 'long_url must be a string'}), 400
 
     long_url = data['long_url'].strip()
@@ -38,13 +41,22 @@ def shorten():
         return jsonify({'error': 'Destination URL is blocked'}), 403
 
     custom_code = data.get('custom_code')
-    if custom_code is not None and not isinstance(custom_code, str):
-        return jsonify({'error': 'custom_code must be a string'}), 400
+    if custom_code is not None:
+        if not isinstance(custom_code, str):
+            return jsonify({'error': 'custom_code must be a string'}), 400
+        custom_code = custom_code.strip().upper()
+        if not custom_code:
+            return jsonify({'error': 'custom_code cannot be empty after stripping'}), 400
+        if len(custom_code) > 20:
+             return jsonify({'error': 'custom_code must be at most 20 characters'}), 400
 
     try:
         code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
     except (ValueError, TypeError):
         return jsonify({'error': 'code_length must be an integer'}), 400
+
+    if code_length < 3 or code_length > 20:
+        return jsonify({'error': 'code_length must be between 3 and 20'}), 400
     
     # Optional parameters
     rotate_targets = data.get('rotate_targets')  # Expecting a list of strings
@@ -54,6 +66,9 @@ def shorten():
     except (ValueError, TypeError):
         return jsonify({'error': 'expiry_hours must be an integer'}), 400
     
+    if expiry_hours < 0 or expiry_hours > 876000: # 100 years
+        return jsonify({'error': 'expiry_hours must be between 0 and 876,000 (100 years)'}), 400
+
     preview_mode = data.get('preview_mode', True)
     stats_enabled = data.get('stats_enabled', True)
     
@@ -66,7 +81,6 @@ def shorten():
         return jsonify({'error': 'end_at must be a string (ISO 8601)'}), 400
 
     if custom_code:
-        custom_code = custom_code.strip().upper()
         if URL.query.filter_by(short_code=custom_code).first():
             return jsonify({'error': 'Custom code already taken'}), 409
         short_code = custom_code
@@ -78,7 +92,10 @@ def shorten():
     # Expiry logic
     expires_at = None
     if expiry_hours != 0:
-        expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=expiry_hours)
+        try:
+            expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=expiry_hours)
+        except (OverflowError, OSError):
+             return jsonify({'error': 'expiry_hours results in a date that is out of range'}), 400
 
     # Parse datetime strings if provided (ISO 8601 expected)
     start_at = None
