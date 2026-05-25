@@ -8,6 +8,7 @@ from PIL import Image
 import requests
 import geoip2.database
 from flask import current_app
+from concurrent.futures import ThreadPoolExecutor
 import time
 
 import os
@@ -54,18 +55,26 @@ def update_phishing_list():
             if file_age < (interval * 3600):
                 return
 
+        def fetch_url(url):
+            url = url.strip()
+            if not url:
+                return None
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    return response.text
+            except Exception: # nosec B112
+                pass
+            return None
+
+        with ThreadPoolExecutor(max_workers=min(len(urls), 10)) as executor:
+            results = list(executor.map(fetch_url, urls))
+
         with open(path, 'w', encoding='utf-8') as f:
-            for url in urls:
-                url = url.strip()
-                if not url:
-                    continue
-                try:
-                    response = requests.get(url, timeout=10)
-                    if response.status_code == 200:
-                        f.write(response.text)
-                        f.write('\n') # Ensure newline between lists
-                except Exception: # nosec B112
-                    continue
+            for content in results:
+                if content:
+                    f.write(content)
+                    f.write('\n') # Ensure newline between lists
     except Exception: # nosec B110
         pass
 
