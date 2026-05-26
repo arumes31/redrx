@@ -1,6 +1,5 @@
 import io
 import csv
-import json
 import datetime
 import uuid
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify, send_from_directory
