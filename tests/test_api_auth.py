@@ -1,6 +1,6 @@
 import pytest
 from app.api import get_user_from_api_key
-from app.models import db, URL
+from app.models import db, URL, User
 
 def test_get_user_from_api_key_valid(app, test_user):
     with app.test_request_context(headers={'X-API-KEY': 'test-api-key'}):
@@ -38,8 +38,12 @@ def test_api_shorten_auth_invalid(client):
     assert response.status_code == 401
 
 def test_api_get_info_auth_success(app, client, test_user):
-    # Create a URL first
+    # Fetch user in context
     with app.app_context():
+        # Ensure user exists in this session
+        db.session.add(test_user)
+        # Re-attach if it was detached
+        test_user = db.session.merge(test_user)
         url = URL(short_code='TESTCODE', long_url='https://google.com', user_id=test_user.id)
         db.session.add(url)
         db.session.commit()

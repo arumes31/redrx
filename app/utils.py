@@ -34,6 +34,31 @@ _blocked_domains_cache = None
 _blocked_domains_mtime = 0
 _blocked_domains_path = None
 _blocked_domains_ino = 0
+_blocked_env_domains = None
+
+def _get_blocked_env_domains():
+    """Lazily parses and caches the BLOCKED_DOMAINS environment variable."""
+    global _blocked_env_domains
+    if _blocked_env_domains is None:
+        raw_env = os.environ.get("BLOCKED_DOMAINS", "")
+        _blocked_env_domains = {b.strip().lower() for b in raw_env.split(",") if b.strip()}
+    return _blocked_env_domains
+def _is_domain_blocked(domain, blocked_set):
+    """Checks if the domain or any of its parent domains are in the blocked set."""
+    if not domain or not blocked_set:
+        return False
+
+    check_domain = domain
+    while True:
+        if check_domain in blocked_set:
+            return True
+        dot_idx = check_domain.find(".")
+        if dot_idx == -1:
+            break
+        check_domain = check_domain[dot_idx + 1:]
+        if not check_domain:
+            break
+    return False
 
 def update_phishing_list():
     """Downloads the latest phishing domain lists."""
@@ -181,16 +206,15 @@ def is_safe_url(target_url, blocked_domains_cache=None):
         return False
 
     # 1. Check manual overrides from ENV
-    blocked_env = os.environ.get('BLOCKED_DOMAINS', '').split(',')
+    blocked_env = _get_blocked_env_domains()
     domain = ""
     try:
         domain = urlparse(target_url).netloc.lower()
         if not domain: # For relative or malformed URLs
              return False
              
-        for b in blocked_env:
-            if b.strip() and b.strip().lower() in domain:
-                return False
+        if _is_domain_blocked(domain, blocked_env):
+            return False
     except Exception:
         return False
 
@@ -200,12 +224,8 @@ def is_safe_url(target_url, blocked_domains_cache=None):
 
     blocked_domains = blocked_domains_cache if blocked_domains_cache is not None else get_blocked_domains()
     if blocked_domains:
-        parts = domain.split('.')
-        for i in range(len(parts)):
-            check_domain = '.'.join(parts[i:])
-            if check_domain in blocked_domains:
-                return False
-            
+        if _is_domain_blocked(domain, blocked_domains):
+            return False
     return True
 
 def get_client_ip(request):
