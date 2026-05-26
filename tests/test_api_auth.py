@@ -1,13 +1,15 @@
 import pytest
 from app.api import get_user_from_api_key
-from app.models import db, URL
+from app.models import db, URL, User
 
 def test_get_user_from_api_key_valid(app, test_user):
-    with app.test_request_context(headers={'X-API-KEY': 'test-api-key'}):
-        user = get_user_from_api_key()
-        assert user is not None
-        assert user.api_key == 'test-api-key'
-        assert user.username == 'testuser'
+    with app.app_context():
+        # Using the hardcoded 'test-api-key' instead of accessing test_user.api_key
+        with app.test_request_context(headers={'X-API-KEY': 'test-api-key'}):
+            fetched_user = get_user_from_api_key()
+            assert fetched_user is not None
+            assert fetched_user.api_key == 'test-api-key'
+            assert fetched_user.username == 'testuser'
 
 def test_get_user_from_api_key_missing(app, test_user):
     with app.test_request_context():
@@ -40,7 +42,9 @@ def test_api_shorten_auth_invalid(client):
 def test_api_get_info_auth_success(app, client, test_user):
     # Create a URL first
     with app.app_context():
-        url = URL(short_code='TESTCODE', long_url='https://google.com', user_id=test_user.id)
+        # Fetching the user ID from the DB to avoid DetachedInstanceError
+        u = User.query.filter_by(username='testuser').first()
+        url = URL(short_code='TESTCODE', long_url='https://google.com', user_id=u.id)
         db.session.add(url)
         db.session.commit()
 

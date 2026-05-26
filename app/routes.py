@@ -497,57 +497,80 @@ def stats(short_code):
     now = datetime.datetime.now(datetime.timezone.utc)
     
     # Process Analytics
-    clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.asc()).all()
-    
-    # 1. Clicks over time (Hybrid logic based on range_type)
+    # 1. Initialize time series data container
     time_data = {}
-    if range_type == '24h':
+    if range_type == "24h":
         cutoff = now - datetime.timedelta(hours=24)
         for i in range(24, -1, -1):
-            time_data[(now - datetime.timedelta(hours=i)).strftime('%H:00')] = 0
-    elif range_type == '7d':
+            time_data[(now - datetime.timedelta(hours=i)).strftime("%H:00")] = 0
+    elif range_type == "7d":
         cutoff = now - datetime.timedelta(days=7)
         for i in range(7, -1, -1):
-            time_data[(now - datetime.timedelta(days=i)).strftime('%Y-%m-%d')] = 0
+            time_data[(now - datetime.timedelta(days=i)).strftime("%Y-%m-%d")] = 0
     else: # 30d
         cutoff = now - datetime.timedelta(days=30)
         for i in range(30, -1, -1):
-            time_data[(now - datetime.timedelta(days=i)).strftime('%Y-%m-%d')] = 0
+            time_data[(now - datetime.timedelta(days=i)).strftime("%Y-%m-%d")] = 0
 
-    # Filter clicks by range and populate time_data
-    filtered_clicks = []
+    # 2. Optimized Database Aggregations
+    # Country Stats
+    country_stats = db.session.query(
+        Click.country, func.count(Click.id)
+    ).filter(Click.url_id == url_entry.id).group_by(Click.country).all()
+    country_data = {c or "Unknown": count for c, count in country_stats}
+
+    # Browser Stats
+    browser_stats = db.session.query(
+        Click.browser, func.count(Click.id)
+    ).filter(Click.url_id == url_entry.id).group_by(Click.browser).all()
+    browser_data = {b or "Unknown": count for b, count in browser_stats}
+
+    # Platform Stats
+    platform_stats = db.session.query(
+        Click.platform, func.count(Click.id)
+    ).filter(Click.url_id == url_entry.id).group_by(Click.platform).all()
+    platform_data = {p or "Unknown": count for p, count in platform_stats}
+
+    # Referrer Stats (Netloc aggregation in Python after DB grouping)
+    referrer_stats = db.session.query(
+        Click.referrer, func.count(Click.id)
+    ).filter(Click.url_id == url_entry.id).group_by(Click.referrer).all()
     referrer_data = {}
-    country_data = {}
-    browser_data = {}
-    platform_data = {}
-
-    for click in clicks:
-        click_time = click.timestamp.replace(tzinfo=datetime.timezone.utc) if click.timestamp.tzinfo is None else click.timestamp
-        
-        # Global stats (all time)
-        country_data[click.country] = country_data.get(click.country, 0) + 1
-        browser_data[click.browser or "Unknown"] = browser_data.get(click.browser or "Unknown", 0) + 1
-        platform_data[click.platform or "Unknown"] = platform_data.get(click.platform or "Unknown", 0) + 1
-        
-        # Referrer (Step 1)
-        ref = click.referrer or "Direct"
+    for ref_raw, count in referrer_stats:
+        ref = ref_raw or "Direct"
         if "://" in ref:
             ref = urlparse(ref).netloc or ref
-        referrer_data[ref] = referrer_data.get(ref, 0) + 1
+        referrer_data[ref] = referrer_data.get(ref, 0) + count
 
-        # Range-specific trend data (Step 3)
-        if click_time >= cutoff:
-            filtered_clicks.append(click)
-            if range_type == '24h':
-                key = click_time.strftime('%H:00')
-            else:
-                key = click_time.strftime('%Y-%m-%d')
-            if key in time_data:
-                time_data[key] += 1
+    # 3. Time-Series Aggregation (Dialect-specific)
+    try:
+        if db.engine.name == "postgresql":
+            time_format = "HH24:00" if range_type == "24h" else "YYYY-MM-DD"
+            time_label = func.to_char(Click.timestamp, time_format)
+        else: # Default to SQLite
+            time_format = "%H:00" if range_type == "24h" else "%Y-%m-%d"
+            time_label = func.strftime(time_format, Click.timestamp)
 
-    # Step 6: Momentum (Average clicks per day in range)
-    days_in_range = 1 if range_type == '24h' else (7 if range_type == '7d' else 30)
-    avg_daily = round(len(filtered_clicks) / days_in_range, 1)
+        time_stats = db.session.query(
+            time_label, func.count(Click.id)
+        ).filter(
+            Click.url_id == url_entry.id,
+            Click.timestamp >= cutoff.replace(tzinfo=None)
+        ).group_by(time_label).all()
+
+        for label, count in time_stats:
+            if label in time_data:
+                time_data[label] = count
+    except Exception as e:
+        current_app.logger.error(f"Time-series aggregation failed: {e}")
+
+    # 4. Momentum (Average clicks per day in range)
+    total_range_clicks = db.session.query(func.count(Click.id)).filter(
+        Click.url_id == url_entry.id,
+        Click.timestamp >= cutoff.replace(tzinfo=None)
+    ).scalar() or 0
+    days_in_range = 1 if range_type == "24h" else (7 if range_type == "7d" else 30)
+    avg_daily = round(total_range_clicks / days_in_range, 1)
 
     # Step 4: IP Anonymization and Relative Time for recent activity (last 10)
     recent_clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.desc()).limit(10).all()
