@@ -325,3 +325,16 @@ def get_qr_data_url(data, color='black', bg='white', logo_img=None):
     """Returns a base64 encoded data URL for the QR code."""
     img_buffer = generate_qr(data, color, bg, logo_img)
     return base64.b64encode(img_buffer.read()).decode()
+
+def sanitize_csv_field(value):
+    """
+    Escapes fields starting with =, +, -, or @ to prevent CSV injection.
+    Prepend a single quote ' if the value starts with one of these characters.
+    """
+    if value is None:
+        return ""
+
+    str_val = str(value)
+    if str_val and str_val[0] in ('=', '+', '-', '@'):
+        return "'" + str_val
+    return str_val

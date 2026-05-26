@@ -44,5 +44,9 @@ def test_user(app):
         )
         db.session.add(user)
         db.session.commit()
+        # Access attributes to ensure they are loaded before expunging
+        _ = user.id
+        _ = user.api_key
+        _ = user.username
         db.session.expunge(user) # Detach it so it can be used outside
         return user
