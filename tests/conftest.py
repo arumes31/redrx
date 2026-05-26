@@ -43,6 +43,6 @@ def test_user(app):
             api_key='test-api-key'
         )
         db.session.add(user)
-        db.session.commit()
+        db.session.commit(); _ = user.id; _ = user.api_key
         db.session.expunge(user) # Detach it so it can be used outside
         return user
