@@ -57,3 +57,9 @@ def test_api_get_info_auth_invalid(client):
     response = client.get('/api/v1/TESTCODE',
                           headers={'X-API-KEY': 'invalid-key'})
     assert response.status_code == 401
+
+def test_api_get_info_not_found(client, test_user):
+    response = client.get('/api/v1/NONEXISTENT',
+                          headers={'X-API-KEY': 'test-api-key'})
+    assert response.status_code == 404
+    assert response.get_json()['error'] == 'URL not found'

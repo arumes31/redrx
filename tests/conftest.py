@@ -44,5 +44,7 @@ def test_user(app):
         )
         db.session.add(user)
         db.session.commit()
+        # Ensure ID is loaded before expunging to avoid DetachedInstanceError
+        _ = user.id
         db.session.expunge(user) # Detach it so it can be used outside
         return user
