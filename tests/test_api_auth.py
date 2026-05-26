@@ -39,8 +39,9 @@ def test_api_shorten_auth_invalid(client):
 
 def test_api_get_info_auth_success(app, client, test_user):
     # Create a URL first
+    user_id = test_user.id
     with app.app_context():
-        url = URL(short_code='TESTCODE', long_url='https://google.com', user_id=test_user.id)
+        url = URL(short_code='TESTCODE', long_url='https://google.com', user_id=user_id)
         db.session.add(url)
         db.session.commit()
 
