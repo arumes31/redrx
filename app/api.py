@@ -20,7 +20,7 @@ def _get_or_generate_short_code(custom_code, code_length):
     if custom_code:
         custom_code = custom_code.strip().upper()
         if URL.query.filter_by(short_code=custom_code).first():
-            return None, jsonify({'error': 'Custom code already taken'}), 409
+            return None, 'Custom code already taken', 409
         return custom_code, None, None
 
     short_code = generate_short_code(code_length)
@@ -34,21 +34,21 @@ def _parse_timing_and_expiry(expiry_hours, start_at_str, end_at_str):
         if int(expiry_hours) != 0:
             expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(expiry_hours))
     except (ValueError, TypeError):
-         return None, None, None, jsonify({'error': 'Invalid expiry_hours'}), 400
+         return None, None, None, 'Invalid expiry_hours', 400
 
     start_at = None
     if start_at_str:
         try:
             start_at = datetime.datetime.fromisoformat(start_at_str.replace('Z', '+00:00'))
         except ValueError:
-            return None, None, None, jsonify({'error': 'Invalid start_at format. Use ISO 8601'}), 400
+            return None, None, None, 'Invalid start_at format. Use ISO 8601', 400
 
     end_at = None
     if end_at_str:
         try:
             end_at = datetime.datetime.fromisoformat(end_at_str.replace('Z', '+00:00'))
         except ValueError:
-            return None, None, None, jsonify({'error': 'Invalid end_at format. Use ISO 8601'}), 400
+            return None, None, None, 'Invalid end_at format. Use ISO 8601', 400
 
     return expires_at, start_at, end_at, None, None
 
@@ -57,14 +57,14 @@ def _validate_rotate_targets(rotate_targets):
         return None, None, None
 
     if not isinstance(rotate_targets, list) or not all(isinstance(u, str) for u in rotate_targets):
-         return None, jsonify({'error': 'rotate_targets must be a list of strings'}), 400
+         return None, 'rotate_targets must be a list of strings', 400
 
     if len(rotate_targets) > 50:
-         return None, jsonify({'error': 'Maximum 50 rotate targets allowed'}), 400
+         return None, 'Maximum 50 rotate targets allowed', 400
 
     rotate_targets = [u.strip() for u in rotate_targets]
     if not all(is_safe_url(u) for u in rotate_targets):
-         return None, jsonify({'error': 'One or more rotate target URLs are blocked or invalid.'}), 403
+         return None, 'One or more rotate target URLs are blocked or invalid.', 403
 
     return rotate_targets, None, None
 
@@ -87,23 +87,27 @@ def shorten():
 
     # Short code logic
     custom_code = data.get('custom_code')
-    code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
-    short_code, err_resp, status = _get_or_generate_short_code(custom_code, code_length)
-    if err_resp:
-        return err_resp, status
+    try:
+        code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid code_length'}), 400
+
+    short_code, err_msg, status = _get_or_generate_short_code(custom_code, code_length)
+    if err_msg:
+        return jsonify({'error': err_msg}), status
 
     # Timing and Expiry logic
     expiry_hours = data.get('expiry_hours', current_app.config['EXPIRY_HOURS'])
-    expires_at, start_at, end_at, err_resp, status = _parse_timing_and_expiry(
+    expires_at, start_at, end_at, err_msg, status = _parse_timing_and_expiry(
         expiry_hours, data.get('start_at'), data.get('end_at')
     )
-    if err_resp:
-        return err_resp, status
+    if err_msg:
+        return jsonify({'error': err_msg}), status
 
     # Rotate targets logic
-    rotate_targets, err_resp, status = _validate_rotate_targets(data.get('rotate_targets'))
-    if err_resp:
-        return err_resp, status
+    rotate_targets, err_msg, status = _validate_rotate_targets(data.get('rotate_targets'))
+    if err_msg:
+        return jsonify({'error': err_msg}), status
 
     # Password hashing
     password = data.get('password')
