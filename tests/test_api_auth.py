@@ -57,3 +57,30 @@ def test_api_get_info_auth_invalid(client):
     response = client.get('/api/v1/TESTCODE',
                           headers={'X-API-KEY': 'invalid-key'})
     assert response.status_code == 401
+
+def test_get_user_from_api_key_empty_string(app, test_user):
+    with app.test_request_context(headers={'X-API-KEY': ''}):
+        user = get_user_from_api_key()
+        assert user is None
+
+def test_get_user_from_api_key_whitespace(app, test_user):
+    with app.test_request_context(headers={'X-API-KEY': '   '}):
+        user = get_user_from_api_key()
+        assert user is None
+
+def test_get_user_from_api_key_very_long(app, test_user):
+    with app.test_request_context(headers={'X-API-KEY': 'a' * 100}):
+        user = get_user_from_api_key()
+        assert user is None
+
+def test_api_shorten_auth_empty_key(client):
+    response = client.post('/api/v1/shorten',
+                           headers={'X-API-KEY': ''},
+                           json={'long_url': 'https://google.com'})
+    assert response.status_code == 401
+
+def test_api_shorten_auth_whitespace_key(client):
+    response = client.post('/api/v1/shorten',
+                           headers={'X-API-KEY': '   '},
+                           json={'long_url': 'https://google.com'})
+    assert response.status_code == 401
