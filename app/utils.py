@@ -19,6 +19,8 @@ _REDIS_URL = os.environ.get('RATELIMIT_STORAGE_URL', 'redis://localhost:6379')
 _GEO_CACHE_TTL = 300  # 5 minutes
 _GEO_PREFIX = "geo:"
 
+_blocked_env_domains = None
+
 def _get_redis_client():
     """Lazily initialize Redis client."""
     if _REDIS_URL.startswith('redis://'):
@@ -29,26 +31,24 @@ def _get_redis_client():
     return None
 
 _redis_client = None
-
 _blocked_domains_cache = None
 _blocked_domains_mtime = 0
 _blocked_domains_path = None
 _blocked_domains_ino = 0
 
 def update_phishing_list():
-    """Downloads the latest phishing domain lists."""
+    """Downloads phishing lists and merges them into a local file."""
     if not current_app.config.get('ENABLE_PHISHING_CHECK'):
         return
 
-    urls = current_app.config.get('PHISHING_LIST_URLS')
+    urls = current_app.config.get('PHISHING_LIST_URLS', [])
     path = current_app.config.get('BLOCKED_DOMAINS_PATH')
-    interval = current_app.config.get('PHISHING_CHECK_INTERVAL', 24)
-    
-    if not urls or not path:
+    interval = current_app.config.get('PHISHING_LIST_UPDATE_INTERVAL', 24)
+
+    if not path or not urls:
         return
-    
+
     try:
-        # Check if file is old (e.g. older than interval hours)
         if os.path.exists(path):
             file_age = time.time() - os.path.getmtime(path)
             if file_age < (interval * 3600):
@@ -181,18 +181,20 @@ def is_safe_url(target_url, blocked_domains_cache=None):
         return False
 
     # 1. Check manual overrides from ENV
-    blocked_env = os.environ.get('BLOCKED_DOMAINS', '').split(',')
-    domain = ""
-    try:
-        domain = urlparse(target_url).netloc.lower()
-        if not domain: # For relative or malformed URLs
-             return False
+    global _blocked_env_domains
+    if _blocked_env_domains is None:
+        env_val = os.environ.get('BLOCKED_DOMAINS', '')
+        _blocked_env_domains = {b.strip().lower() for b in env_val.split(',') if b.strip()}
+
+    domain = parsed.netloc.lower()
+    if not domain: # For relative or malformed URLs
+         return False
              
-        for b in blocked_env:
-            if b.strip() and b.strip().lower() in domain:
+    if _blocked_env_domains:
+        parts = domain.split('.')
+        for i in range(len(parts)):
+            if '.'.join(parts[i:]) in _blocked_env_domains:
                 return False
-    except Exception:
-        return False
 
     # 2. Check downloaded list
     if not current_app.config.get('ENABLE_PHISHING_CHECK'):
@@ -317,6 +319,20 @@ def select_rotate_target(rotate_targets):
     """Selects an alternate URL based on a simple rotation (hash of timestamp)."""
     if not rotate_targets:
         return None
+
+    if isinstance(rotate_targets, str):
+        return rotate_targets
+
+    # Ensure it is a list for subscripting (handles sets, generators, etc.)
+    if not isinstance(rotate_targets, (list, tuple)):
+        try:
+            rotate_targets = list(rotate_targets)
+        except (TypeError, ValueError):
+            return None
+
+    if not rotate_targets:
+        return None
+
     # Using microsecond for more "random" feel on rapid refreshes
     idx = hash(str(datetime.datetime.now().microsecond)) % len(rotate_targets)
     return rotate_targets[idx]
