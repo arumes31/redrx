@@ -69,6 +69,39 @@ def update_phishing_list():
     except Exception: # nosec B110
         pass
 
+def _is_domain_blocked(domain, blocked_domains):
+    """Helper to check if a domain or its parent domains are blocked."""
+    if not domain or not blocked_domains:
+        return False
+
+    check_domain = domain
+    while True:
+        if check_domain in blocked_domains:
+            return True
+        idx = check_domain.find(".")
+        if idx == -1:
+            break
+        check_domain = check_domain[idx + 1:]
+    return False
+
+def _is_url_entry_phishing(url_entry, blocked_domains):
+    """Checks if a URL entry is phishing by checking long_url and rotate_targets."""
+    try:
+        # Check main long_url
+        domain = urlparse(url_entry.long_url).netloc.lower()
+        if _is_domain_blocked(domain, blocked_domains):
+            return True
+
+        # Check rotate_targets
+        if url_entry.rotate_targets:
+            for target in url_entry.rotate_targets:
+                target_domain = urlparse(target).netloc.lower()
+                if _is_domain_blocked(target_domain, blocked_domains):
+                    return True
+    except Exception: # nosec B112
+        pass
+    return False
+
 def cleanup_phishing_urls():
     """Removes URLs from database that are found in the phishing lists."""
     if not current_app.config.get('ENABLE_AUTO_REMOVE_PHISHING'):
@@ -87,38 +120,12 @@ def cleanup_phishing_urls():
         if not blocked_domains:
             return
 
-        urls = URL.query.all()
+        # Use yield_per for memory efficiency with large datasets
         removed_count = 0
-        
-        for url_entry in urls:
-            # Check main long_url
-            try:
-                domain = urlparse(url_entry.long_url).netloc.lower()
-                is_phishing = False
-                if domain:
-                    parts = domain.split('.')
-                    for i in range(len(parts)):
-                        if '.'.join(parts[i:]) in blocked_domains:
-                            is_phishing = True
-                            break
-                
-                # Check rotate_targets if main is clean
-                if not is_phishing and url_entry.rotate_targets:
-                    for target in url_entry.rotate_targets:
-                        target_domain = urlparse(target).netloc.lower()
-                        if target_domain:
-                            parts = target_domain.split('.')
-                            for i in range(len(parts)):
-                                if '.'.join(parts[i:]) in blocked_domains:
-                                    is_phishing = True
-                                    break
-                        if is_phishing: break
-
-                if is_phishing:
-                    db.session.delete(url_entry)
-                    removed_count += 1
-            except Exception: # nosec B112
-                continue
+        for url_entry in URL.query.yield_per(100):
+            if _is_url_entry_phishing(url_entry, blocked_domains):
+                db.session.delete(url_entry)
+                removed_count += 1
         
         if removed_count > 0:
             db.session.commit()
@@ -200,11 +207,8 @@ def is_safe_url(target_url, blocked_domains_cache=None):
 
     blocked_domains = blocked_domains_cache if blocked_domains_cache is not None else get_blocked_domains()
     if blocked_domains:
-        parts = domain.split('.')
-        for i in range(len(parts)):
-            check_domain = '.'.join(parts[i:])
-            if check_domain in blocked_domains:
-                return False
+        if _is_domain_blocked(domain, blocked_domains):
+            return False
             
     return True
 

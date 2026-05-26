@@ -1,3 +1,4 @@
+from sqlalchemy.orm import make_transient
 import pytest
 import os
 import tempfile
@@ -44,5 +45,5 @@ def test_user(app):
         )
         db.session.add(user)
         db.session.commit()
-        db.session.expunge(user) # Detach it so it can be used outside
+        make_transient(user) # Detach it so it can be used outside
         return user

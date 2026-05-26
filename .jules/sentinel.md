@@ -2,3 +2,8 @@
 **Vulnerability:** The link shortening API allowed shortening of non-HTTP(S) URLs like `javascript:` and `data:` schemes, leading to Stored XSS.
 **Learning:** Even if frontend forms (like WTForms) use URL validators, the API layer must independently strictly validate the URL scheme (allowlisting `http` and `https`) to prevent malicious payloads from bypassing the UI.
 **Prevention:** Always enforce a strict scheme allowlist (`['http', 'https']`) on user-provided URLs at the backend/API level before accepting and storing them as redirects.
+
+## [202X-XX-XX] Refactored Phishing Cleanup for Complexity and Performance
+- **Issue:** High cyclomatic complexity in `cleanup_phishing_urls` and inefficient database loading.
+- **Solution:** Extracted domain and URL phishing checks into helper functions (`_is_domain_blocked`, `_is_url_entry_phishing`). Used `yield_per(100)` for memory-efficient iteration.
+- **Benefit:** Improved maintainability, testability, and scalability for large URL datasets.
