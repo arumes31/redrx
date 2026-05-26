@@ -1,12 +1,10 @@
 import io
 import csv
-import json
 import datetime
 import uuid
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify, send_from_directory
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify
 from flask_login import login_user, logout_user, current_user, login_required
-from flask_limiter import Limiter
-from app import limiter, metrics # Import metrics
+from app import limiter
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 from user_agents import parse
@@ -482,24 +480,8 @@ def delete_url(short_code):
     flash('Link deleted successfully.', 'info')
     return redirect(url_for('main.dashboard'))
 
-@main.route('/<short_code>/stats')
-@limiter.limit("20 per minute")
-def stats(short_code):
-    url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
-    
-    # Check ownership: If the URL has an owner, only that owner can see stats.
-    # If it's anonymous (user_id is None), then anyone can see stats.
-    current_user_id = current_user.id if current_user.is_authenticated else None
-    if url_entry.user_id != current_user_id:
-        abort(403)
-        
-    range_type = request.args.get('range', '30d')
-    now = datetime.datetime.now(datetime.timezone.utc)
-    
-    # Process Analytics
-    clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.asc()).all()
-    
-    # 1. Clicks over time (Hybrid logic based on range_type)
+def _get_time_range_config(range_type, now):
+    """Initializes time_data based on range_type and returns cutoff."""
     time_data = {}
     if range_type == '24h':
         cutoff = now - datetime.timedelta(hours=24)
@@ -513,8 +495,36 @@ def stats(short_code):
         cutoff = now - datetime.timedelta(days=30)
         for i in range(30, -1, -1):
             time_data[(now - datetime.timedelta(days=i)).strftime('%Y-%m-%d')] = 0
+    return time_data, cutoff
 
-    # Filter clicks by range and populate time_data
+def _anonymize_ip(ip_address):
+    """Anonymizes IPv4 and IPv6 addresses."""
+    if not ip_address:
+        return "Unknown"
+    parts = ip_address.split('.')
+    if len(parts) == 4:
+        return f"{parts[0]}.{parts[1]}.xxx.xxx"
+    # IPv6
+    v6_parts = ip_address.split(':')
+    if len(v6_parts) >= 2:
+        return f"{v6_parts[0]}:{v6_parts[1]}:xxxx:xxxx"
+    return ip_address[:ip_address.find(':')+1] + "xxxx" if ':' in ip_address else "xxxx"
+
+def _get_relative_time(timestamp, now):
+    """Returns a human-readable relative time string."""
+    click_time = timestamp.replace(tzinfo=datetime.timezone.utc) if timestamp.tzinfo is None else timestamp
+    diff = now - click_time
+    if diff.days > 0:
+        return f"{diff.days}d ago"
+    elif diff.seconds >= 3600:
+        return f"{diff.seconds // 3600}h ago"
+    elif diff.seconds >= 60:
+        return f"{diff.seconds // 60}m ago"
+    else:
+        return "Just now"
+
+def _process_analytics(clicks, range_type, cutoff, time_data):
+    """Processes click data for analytics."""
     filtered_clicks = []
     referrer_data = {}
     country_data = {}
@@ -529,53 +539,52 @@ def stats(short_code):
         browser_data[click.browser or "Unknown"] = browser_data.get(click.browser or "Unknown", 0) + 1
         platform_data[click.platform or "Unknown"] = platform_data.get(click.platform or "Unknown", 0) + 1
         
-        # Referrer (Step 1)
+        # Referrer
         ref = click.referrer or "Direct"
         if "://" in ref:
             ref = urlparse(ref).netloc or ref
         referrer_data[ref] = referrer_data.get(ref, 0) + 1
 
-        # Range-specific trend data (Step 3)
+        # Range-specific trend data
         if click_time >= cutoff:
             filtered_clicks.append(click)
-            if range_type == '24h':
-                key = click_time.strftime('%H:00')
-            else:
-                key = click_time.strftime('%Y-%m-%d')
+            key = click_time.strftime('%H:00') if range_type == '24h' else click_time.strftime('%Y-%m-%d')
             if key in time_data:
                 time_data[key] += 1
 
-    # Step 6: Momentum (Average clicks per day in range)
+    return filtered_clicks, referrer_data, country_data, browser_data, platform_data
+
+@main.route('/<short_code>/stats')
+@limiter.limit("20 per minute")
+def stats(short_code):
+    url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
+
+    # Check ownership: If the URL has an owner, only that owner can see stats.
+    # If it's anonymous (user_id is None), then anyone can see stats.
+    current_user_id = current_user.id if current_user.is_authenticated else None
+    if url_entry.user_id != current_user_id:
+        abort(403)
+
+    range_type = request.args.get('range', '30d')
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    # Process Analytics
+    clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.asc()).all()
+    time_data, cutoff = _get_time_range_config(range_type, now)
+
+    filtered_clicks, referrer_data, country_data, browser_data, platform_data = _process_analytics(
+        clicks, range_type, cutoff, time_data
+    )
+
+    # Momentum (Average clicks per day in range)
     days_in_range = 1 if range_type == '24h' else (7 if range_type == '7d' else 30)
     avg_daily = round(len(filtered_clicks) / days_in_range, 1)
 
-    # Step 4: IP Anonymization and Relative Time for recent activity (last 10)
+    # Recent activity (last 10)
     recent_clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.desc()).limit(10).all()
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
     for rc in recent_clicks:
-        # Relative time
-        diff = now_utc - rc.timestamp.replace(tzinfo=datetime.timezone.utc)
-        if diff.days > 0:
-            rc.relative_time = f"{diff.days}d ago"
-        elif diff.seconds >= 3600:
-            rc.relative_time = f"{diff.seconds // 3600}h ago"
-        elif diff.seconds >= 60:
-            rc.relative_time = f"{diff.seconds // 60}m ago"
-        else:
-            rc.relative_time = "Just now"
-
-        if rc.ip_address:
-            parts = rc.ip_address.split('.')
-            if len(parts) == 4:
-                rc.ip_anonymized = f"{parts[0]}.{parts[1]}.xxx.xxx"
-            else: # IPv6
-                v6_parts = rc.ip_address.split(':')
-                if len(v6_parts) >= 2:
-                    rc.ip_anonymized = f"{v6_parts[0]}:{v6_parts[1]}:xxxx:xxxx"
-                else:
-                    rc.ip_anonymized = rc.ip_address[:rc.ip_address.find(':')+1] + "xxxx" if ':' in rc.ip_address else "xxxx"
-        else:
-            rc.ip_anonymized = "Unknown"
+        rc.relative_time = _get_relative_time(rc.timestamp, now)
+        rc.ip_anonymized = _anonymize_ip(rc.ip_address)
 
     short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
     return render_template('stats.html', url=url_entry, short_url=short_url, 
@@ -592,7 +601,7 @@ def stats(short_code):
 @main.route('/<short_code>/qr')
 @limiter.limit("30 per minute")
 def qr_download(short_code):
-    url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
+    URL.query.filter_by(short_code=short_code).first_or_404()
     short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
     
     # Generate simple QR for download (black/white usually best for raw download, or use defaults)
