@@ -87,14 +87,15 @@ def cleanup_phishing_urls():
         if not blocked_domains:
             return
 
-        urls = URL.query.all()
+        # Use yield_per to stream results and avoid OOM
+        urls = URL.query.yield_per(100)
         removed_count = 0
         
         for url_entry in urls:
-            # Check main long_url
+            is_phishing = False
             try:
+                # Check main long_url
                 domain = urlparse(url_entry.long_url).netloc.lower()
-                is_phishing = False
                 if domain:
                     parts = domain.split('.')
                     for i in range(len(parts)):
@@ -117,7 +118,14 @@ def cleanup_phishing_urls():
                 if is_phishing:
                     db.session.delete(url_entry)
                     removed_count += 1
-            except Exception: # nosec B112
+                else:
+                    # Expunge from session to save memory
+                    db.session.expunge(url_entry)
+            except Exception:
+                try:
+                    db.session.expunge(url_entry)
+                except Exception:
+                    pass
                 continue
         
         if removed_count > 0:
