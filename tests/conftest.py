@@ -10,7 +10,6 @@ class TestConfig(Config):
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
     WTF_CSRF_ENABLED = False
     ENABLE_PHISHING_CHECK = False
-    # Use a real path in a temporary directory
     GEOIP_DB_PATH = os.path.join(tempfile.gettempdir(), 'test_geoip.mmdb')
 
 @pytest.fixture
@@ -33,8 +32,6 @@ def runner(app):
 
 @pytest.fixture
 def test_user(app):
-    # Returning a detached user object might still cause DetachedInstanceError.
-    # We'll return it and the tests will use its attributes.
     with app.app_context():
         user = User(
             username='testuser',
@@ -44,5 +41,10 @@ def test_user(app):
         )
         db.session.add(user)
         db.session.commit()
-        db.session.expunge(user) # Detach it so it can be used outside
+        # Access attributes to ensure they are loaded before expunging
+        _ = user.id
+        _ = user.username
+        _ = user.email
+        _ = user.api_key
+        db.session.expunge(user)
         return user
