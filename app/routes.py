@@ -5,8 +5,7 @@ import datetime
 import uuid
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify, send_from_directory
 from flask_login import login_user, logout_user, current_user, login_required
-from flask_limiter import Limiter
-from app import limiter, metrics # Import metrics
+from app import limiter
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 from user_agents import parse
