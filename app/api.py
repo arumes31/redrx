@@ -17,7 +17,7 @@ def get_user_from_api_key():
     return User.query.filter_by(api_key=api_key).first()
 
 @api.route('/shorten', methods=['POST'])
-@limiter.limit("60 per minute") # Higher limit for API
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_CREATE', '60 per minute')) # Higher limit for API
 def shorten():
     # Authenticate User - Mandatory
     user = get_user_from_api_key()

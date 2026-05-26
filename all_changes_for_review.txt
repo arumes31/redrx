@@ -1,3 +1,261 @@
+import os
+
+class Config:
+    SECRET_KEY = os.environ.get('SECRET_KEY') or os.urandom(24)
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
+        'sqlite:///' + os.path.join(basedir, 'db', 'shortener.db')
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    MAX_CONTENT_LENGTH = 1 * 1024 * 1024 # 1MB Limit
+
+    # App specific config
+    BASE_DOMAIN = os.environ.get('BASE_DOMAIN', 'short.example.com')
+    EXPIRY_HOURS = int(os.environ.get('EXPIRY_HOURS', 24))
+    SHORT_CODE_LENGTH = int(os.environ.get('SHORT_CODE_LENGTH', 6))
+    DEFAULT_QR_COLOR = os.environ.get('DEFAULT_QR_COLOR', 'black')
+    DEFAULT_QR_BG = os.environ.get('DEFAULT_QR_BACKGROUND', 'white')
+    GEOIP_DB_PATH = os.environ.get('GEOIP_DB_PATH', os.path.join(basedir, 'GeoLite2-Country.mmdb'))
+    PHISHING_LIST_URLS = os.environ.get('PHISHING_LIST_URLS', 'https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-domains-ACTIVE.txt').split(',')
+    BLOCKED_DOMAINS_PATH = os.environ.get('BLOCKED_DOMAINS_PATH', os.path.join(basedir, 'blocked_domains.txt'))
+    PHISHING_CHECK_INTERVAL = int(os.environ.get('PHISHING_CHECK_INTERVAL', 24))
+    ENABLE_PHISHING_CHECK = os.environ.get('ENABLE_PHISHING_CHECK', 'true').lower() in ['true', '1', 't']
+    ENABLE_AUTO_REMOVE_PHISHING = os.environ.get('ENABLE_AUTO_REMOVE_PHISHING', 'false').lower() in ['true', '1', 't']
+    PHISHING_REMOVE_INTERVAL = int(os.environ.get('PHISHING_REMOVE_INTERVAL', 24))
+    DISABLE_ANONYMOUS_CREATE = os.environ.get('DISABLE_ANONYMOUS_CREATE', 'false').lower() in ['true', '1', 't']
+    DISABLE_REGISTRATION = os.environ.get('DISABLE_REGISTRATION', 'false').lower() in ['true', '1', 't']
+    USE_CLOUDFLARE = os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']
+    ANONYMIZE_LOGS = os.environ.get('ANONYMIZE_LOGS', 'false').lower() in ['true', '1', 't']
+    ENABLE_SEO = os.environ.get('ENABLE_SEO', 'false').lower() in ['true', '1', 't']
+    SEO_DOMAIN = os.environ.get('SEO_DOMAIN', 'redrx.eu')
+    DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() in ['true', '1', 't']
+
+    # Rate Limiting
+    RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")
+    RATELIMIT_CREATE = os.environ.get('RATELIMIT_CREATE', "10 per minute")
+    RATELIMIT_REDIRECT = os.environ.get('RATELIMIT_REDIRECT', "100 per minute")
+    RATELIMIT_HEALTH = os.environ.get('RATELIMIT_HEALTH', "10 per minute")
+    RATELIMIT_METRICS = os.environ.get('RATELIMIT_METRICS', "10 per minute")
+    RATELIMIT_LOGIN = os.environ.get('RATELIMIT_LOGIN', "10 per minute")
+    RATELIMIT_REGISTER = os.environ.get('RATELIMIT_REGISTER', "5 per hour")
+    RATELIMIT_AUTH = os.environ.get('RATELIMIT_AUTH', "10 per minute")
+    RATELIMIT_DASHBOARD = os.environ.get('RATELIMIT_DASHBOARD', "60 per minute")
+    RATELIMIT_API_KEY = os.environ.get('RATELIMIT_API_KEY', "5 per hour")
+    RATELIMIT_EXPORT = os.environ.get('RATELIMIT_EXPORT', "5 per minute")
+    RATELIMIT_STATS = os.environ.get('RATELIMIT_STATS', "20 per minute")
+    RATELIMIT_QR = os.environ.get('RATELIMIT_QR', "30 per minute")
+    RATELIMIT_PAGES = os.environ.get('RATELIMIT_PAGES', "30 per minute")
+    RATELIMIT_STORAGE_URL = os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
+import os
+import logging
+import re
+import uuid
+import datetime
+from flask import Flask, request, redirect, url_for, flash, Response, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, current_user
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import CSRFProtect
+from prometheus_flask_exporter import PrometheusMetrics
+from prometheus_client import Counter
+from werkzeug.middleware.proxy_fix import ProxyFix
+from urllib.parse import urlparse
+from app.models import db
+
+login_manager = LoginManager()
+login_manager.login_view = 'main.login'
+login_manager.login_message_category = 'info'
+csrf = CSRFProtect()
+
+def get_client_ip(request):
+    if os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']:
+        cf_ip = request.headers.get('CF-Connecting-IP')
+        if cf_ip:
+            return cf_ip
+    return get_remote_address()
+
+def get_actual_ip():
+    if os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']:
+        cf_ip = request.headers.get('CF-Connecting-IP')
+        if cf_ip:
+            return cf_ip
+    return get_remote_address()
+
+limiter = Limiter(
+    key_func=get_actual_ip
+)
+
+metrics = PrometheusMetrics.for_app_factory(path=None)
+
+class AnonymizeFilter(logging.Filter):
+    def filter(self, record):
+        if not os.environ.get('ANONYMIZE_LOGS', 'false').lower() in ['true', '1', 't']:
+            return True
+
+        # Mask IPv4
+        ip_pattern = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
+        if isinstance(record.msg, str):
+            record.msg = re.sub(ip_pattern, 'xxx.xxx.xxx.xxx', record.msg)
+
+        if record.args:
+            new_args = []
+            for arg in record.args:
+                if isinstance(arg, str):
+                    new_args.append(re.sub(ip_pattern, 'xxx.xxx.xxx.xxx', arg))
+                else:
+                    new_args.append(arg)
+            record.args = tuple(new_args)
+        return True
+
+from config import Config
+
+def create_app(config_class=Config):
+    app = Flask(__name__)
+    app.config.from_object(config_class)
+
+    # Apply anonymization filter if enabled
+    if app.config.get('ANONYMIZE_LOGS'):
+        for handler in app.logger.handlers:
+            handler.addFilter(AnonymizeFilter())
+        logging.getLogger('werkzeug').addFilter(AnonymizeFilter())
+
+    # Reverse Proxy Support
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+
+    db.init_app(app)
+    login_manager.init_app(app)
+
+    # Configure Limiter
+    limiter.init_app(app)
+    limiter._default_limits = [app.config.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")]
+    limiter._storage_uri = app.config.get('RATELIMIT_STORAGE_URL', 'memory://')
+
+    metrics.init_app(app)
+    csrf.init_app(app)
+
+    from flask_wtf.csrf import generate_csrf
+    @app.context_processor
+    def inject_csrf_token():
+        return dict(csrf_token=generate_csrf)
+
+    @app.route('/metrics')
+    @limiter.limit(lambda: app.config.get('RATELIMIT_METRICS', '10 per minute')) # Configurable limit
+    def custom_metrics():
+        data, content_type = metrics.generate_metrics()
+        return Response(data, mimetype=content_type)
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        from app.models import User
+        return User.query.get(int(user_id))
+
+    @app.before_request
+    def ensure_canonical_domain():
+        # Skip if running in debug mode or localhost to avoid breaking dev env
+        if app.debug or request.host.startswith('localhost') or request.host.startswith('127.0.0.1'):
+            return
+
+        base_domain = app.config.get('BASE_DOMAIN')
+        if not base_domain:
+            return
+
+        # Clean base_domain in case it includes scheme
+        if '://' in base_domain:
+            base_domain = urlparse(base_domain).netloc
+
+        if request.host != base_domain:
+            # Reconstruct URL with canonical host
+            # 301 Moved Permanently
+            return redirect(request.url.replace(request.host, base_domain, 1), code=301)
+
+    @app.after_request
+    def set_security_headers(response):
+        response.headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://fonts.gstatic.com data:;"
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
+
+    from app.routes import main as main_blueprint
+    app.register_blueprint(main_blueprint)
+
+    from app.api import api as api_blueprint
+    app.register_blueprint(api_blueprint)
+
+    from app.utils import update_phishing_list, cleanup_phishing_urls
+    from sqlalchemy import text, inspect
+
+    with app.app_context():
+        db.create_all()
+
+        # Comprehensive schema verification
+        try:
+            inspector = inspect(db.engine)
+
+            # Map of Table Name -> List of (Column Name, Column Type/SQL)
+            required_schema = {
+                'users': [
+                    ('id', "INTEGER PRIMARY KEY"),
+                    ('username', "VARCHAR(80)"),
+                    ('email', "VARCHAR(120)"),
+                    ('password_hash', "VARCHAR(255)"),
+                    ('api_key', "VARCHAR(36)"),
+                    ('created_at', "TIMESTAMP")
+                ],
+                'urls': [
+                    ('id', "INTEGER PRIMARY KEY"),
+                    ('user_id', "INTEGER"),
+                    ('short_code', "VARCHAR(20)"),
+                    ('long_url', "TEXT"),
+                    ('rotate_targets', "TEXT"),
+                    ('ios_target_url', "TEXT"),
+                    ('android_target_url', "TEXT"),
+                    ('password_hash', "VARCHAR(255)"),
+                    ('preview_mode', "BOOLEAN DEFAULT TRUE"),
+                    ('stats_enabled', "BOOLEAN DEFAULT TRUE"),
+                    ('is_enabled', "BOOLEAN DEFAULT TRUE"),
+                    ('clicks', "INTEGER DEFAULT 0"),
+                    ('created_at', "TIMESTAMP"),
+                    ('expires_at', "TIMESTAMP"),
+                    ('start_at', "TIMESTAMP"),
+                    ('end_at', "TIMESTAMP"),
+                    ('last_accessed_at', "TIMESTAMP")
+                ],
+                'clicks': [
+                    ('id', "INTEGER PRIMARY KEY"),
+                    ('url_id', "INTEGER"),
+                    ('timestamp', "TIMESTAMP"),
+                    ('ip_address', "VARCHAR(45)"),
+                    ('country', "VARCHAR(100)"),
+                    ('browser', "VARCHAR(50)"),
+                    ('platform', "VARCHAR(50)"),
+                    ('referrer', "VARCHAR(255)")
+                ]
+            }
+
+            with db.engine.connect() as conn:
+                for table_name, columns in required_schema.items():
+                    if not inspector.has_table(table_name):
+                        app.logger.warning(f"Table '{table_name}' missing! create_all should have handled this.")
+                        continue
+
+                    existing_columns = [c['name'] for c in inspector.get_columns(table_name)]
+                    for col_name, col_def in columns:
+                        if col_name not in existing_columns:
+                            app.logger.info(f"Schema Sync: Adding missing column '{col_name}' to '{table_name}'...")
+                            # Note: For simple types, we just use the name and basic type in ALTER
+                            sql_type = col_def.replace("PRIMARY KEY", "") # Don't try to add PK via ALTER
+                            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {sql_type};"))
+                            conn.commit()
+                            app.logger.info(f"Schema Sync: Successfully added '{col_name}'.")
+
+        except Exception as e:
+            app.logger.error(f"Schema verification failed: {e}")
+
+        update_phishing_list()
+        cleanup_phishing_urls()
+
+    return app
 import io
 import csv
 import json
@@ -29,7 +287,7 @@ main = Blueprint('main', __name__)
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_HEALTH', '10 per minute'))
 def health_check():
     health = {"status": "healthy", "checks": {}}
-    
+
     # 1. Database Check
     try:
         db.session.execute(text('SELECT 1'))
@@ -58,27 +316,27 @@ def health_check():
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_DEFAULT', '200 per day'), methods=['GET'])
 def index():
     form = ShortenURLForm()
-    
+
     short_url = None
     qr_data = None
     stats_url = None
-    
-    # Handle Tab Switching Logic via Session or just context if needed, 
+
+    # Handle Tab Switching Logic via Session or just context if needed,
     # but strictly forms handle their own validation.
-    
+
     if form.validate_on_submit():
         if current_app.config.get('DISABLE_ANONYMOUS_CREATE') and not current_user.is_authenticated:
             flash("Please log in to shorten URLs.", 'warning')
             return redirect(url_for('main.login'))
 
         long_url = form.long_url.data
-        
+
         if not is_safe_url(long_url):
             flash("That destination URL is blocked for safety reasons.", 'danger')
             return render_template('index.html', form=form)
 
         custom_code = form.custom_code.data.strip().upper() if form.custom_code.data else None
-        
+
         # Check Custom Code Availability
         if custom_code:
             if URL.query.filter_by(short_code=custom_code).first():
@@ -91,10 +349,10 @@ def index():
             short_code = generate_short_code(length)
             while URL.query.filter_by(short_code=short_code).first():
                  short_code = generate_short_code(length)
-        
+
         # Prepare Data
         rotate_list = [u.strip() for u in form.rotate_targets.data.split(',') if u.strip()] if form.rotate_targets.data else None
-        
+
         if rotate_list:
             if len(rotate_list) > 50:
                 flash("Maximum 50 rotate targets allowed.", 'danger')
@@ -112,15 +370,15 @@ def index():
             return render_template('index.html', form=form)
 
         password_hash = generate_password_hash(form.password.data) if form.password.data else None
-        
+
         start_at = None
         if form.start_date.data and form.start_time.data:
             start_at = datetime.datetime.combine(form.start_date.data, form.start_time.data)
-            
+
         end_at = None
         if form.end_date.data and form.end_time.data:
             end_at = datetime.datetime.combine(form.end_date.data, form.end_time.data)
-            
+
         expires_at = None
         if form.expiry_hours.data is not None:
             if form.expiry_hours.data == 0 or form.expiry_hours.data > 8760:
@@ -128,7 +386,7 @@ def index():
                     msg = "Please log in to create links longer than 1 year or permanent links."
                     flash(msg, 'warning')
                     return render_template('index.html', form=form)
-                
+
                 if form.expiry_hours.data == 0:
                     expires_at = None
                 else:
@@ -153,10 +411,10 @@ def index():
         )
         db.session.add(new_url)
         db.session.commit()
-        
+
         # Increment Prometheus Counter
         shortened_links_total.inc()
-        
+
         # Generate QR
         logo_img = None
         if form.logo_file.data:
@@ -173,44 +431,44 @@ def index():
             bg=form.qr_bg.data,
             logo_img=logo_img
         )
-        
+
         stats_url = url_for('main.stats', short_code=short_code, _external=True)
-        
+
         flash("URL Shortened Successfully!", 'success')
-        
-    return render_template('index.html', form=form, 
+
+    return render_template('index.html', form=form,
                            short_url=short_url, qr_data=qr_data, stats_url=stats_url)
 
 @main.route('/<short_code>')
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_REDIRECT', '100 per minute'))
 def redirect_to_url(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first()
-    
+
     if not url_entry:
         abort(404)
-        
+
     if not url_entry.is_active():
         abort(410)
-        
+
     if url_entry.password_hash:
         # Check session
         auth_key = f"auth_{short_code}"
         if not session.get(auth_key):
              return redirect(url_for('main.link_password_auth', short_code=short_code))
-             
+
     # Select destination
     target_url = url_entry.long_url
-    
+
     # Device Targeting (overrides main URL, but rotate logic is complex with this - let's keep it simple: Device > Rotate > Main)
     # However, user might want to rotate AND target.
-    # Logic: 
+    # Logic:
     # 1. Check Device specific URL
     # 2. If no device match or no device URL, check Rotate
     # 3. Else Main
-    
+
     ua_string = request.headers.get('User-Agent')
     user_agent = parse(ua_string)
-    
+
     device_match = False
     if url_entry.ios_target_url and (user_agent.os.family == 'iOS'):
         target_url = url_entry.ios_target_url
@@ -225,7 +483,7 @@ def redirect_to_url(short_code):
         alt = select_rotate_target(safe_rotate_targets)
         if alt:
             target_url = alt
-            
+
     if not is_safe_url(target_url, cached_domains):
         abort(403)
 
@@ -239,11 +497,11 @@ def redirect_to_url(short_code):
     # Stats
     if url_entry.stats_enabled:
         url_entry.clicks_count += 1
-        
+
         # Record detailed click
         # Note: We already parsed UA above, reuse it
         client_ip = get_client_ip(request)
-        
+
         # Mask IP for privacy (e.g. 1.2.3.4 -> 1.2.x.x)
         masked_ip = client_ip
         parts = client_ip.split('.')
@@ -264,7 +522,7 @@ def redirect_to_url(short_code):
         )
         db.session.add(new_click)
         db.session.commit()
-    
+
     # If preview mode is enabled
     if url_entry.preview_mode:
         return render_template('preview.html', target_url=target_url, short_code=short_code)
@@ -276,14 +534,14 @@ def redirect_to_url(short_code):
 def link_password_auth(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
     form = LinkPasswordForm()
-    
+
     if form.validate_on_submit():
         if check_password_hash(url_entry.password_hash, form.password.data):
             session[f"auth_{short_code}"] = True
             return redirect(url_for('main.redirect_to_url', short_code=short_code))
         else:
             flash("Invalid Password", 'danger')
-            
+
     return render_template('login.html', form=form, short_code=short_code)
 
 @main.route('/register', methods=['GET', 'POST'])
@@ -332,34 +590,34 @@ def logout():
 def dashboard():
     page = request.args.get('page', 1, type=int)
     per_page = 10
-    
+
     # Efficient stats via SQL aggregations
     stats_query = db.session.query(
         func.count(URL.id).label('total_links'),
         func.sum(URL.clicks_count).label('total_clicks')
     ).filter(URL.user_id == current_user.id).first()
-    
+
     active_links = URL.query.filter_by(user_id=current_user.id, is_enabled=True).count()
-    
+
     # Pagination
     pagination = URL.query.filter_by(user_id=current_user.id)\
         .order_by(URL.created_at.desc())\
         .paginate(page=page, per_page=per_page, error_out=False)
-        
+
     urls = pagination.items
-    
+
     # Top performer (separate query, efficient)
     top_performer = URL.query.filter_by(user_id=current_user.id)\
         .order_by(URL.clicks_count.desc())\
         .first()
-    
+
     stats = {
         'total_links': stats_query.total_links or 0,
         'total_clicks': stats_query.total_clicks or 0,
         'active_links': active_links,
         'top_performer': top_performer
     }
-    
+
     return render_template('dashboard.html', urls=urls, stats=stats, pagination=pagination)
 
 @main.route('/regenerate-api-key', methods=['POST'])
@@ -387,21 +645,21 @@ def toggle_status(short_code):
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_EXPORT', '5 per minute'))
 def export_links():
     urls = URL.query.filter_by(user_id=current_user.id).all()
-    
+
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['Short Code', 'Long URL', 'Clicks', 'Created At', 'Last Accessed', 'Expires At'])
-    
+
     for u in urls:
         writer.writerow([
-            u.short_code, 
-            u.long_url, 
-            u.clicks_count, 
+            u.short_code,
+            u.long_url,
+            u.clicks_count,
             u.created_at.isoformat(),
             u.last_accessed_at.isoformat() if u.last_accessed_at else 'Never',
             u.expires_at.isoformat() if u.expires_at else 'Never'
         ])
-    
+
     output.seek(0)
     return send_file(
         io.BytesIO(output.getvalue().encode('utf-8')),
@@ -418,7 +676,7 @@ def bulk_delete():
     if not ids:
         flash('No links selected.', 'warning')
         return redirect(url_for('main.dashboard'))
-        
+
     URL.query.filter(URL.id.in_(ids), URL.user_id == current_user.id).delete(synchronize_session=False)
     db.session.commit()
     flash(f'Successfully deleted {len(ids)} links.', 'info')
@@ -428,18 +686,18 @@ def bulk_delete():
 @login_required
 def edit_url(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
-    
+
     if url_entry.user_id != current_user.id:
         abort(403)
-        
+
     form = EditURLForm(obj=url_entry)
-    
+
     if request.method == 'GET' and url_entry.expires_at:
         now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
         diff = url_entry.expires_at - now
         hours = int(diff.total_seconds() / 3600)
         form.expiry_hours.data = max(0, hours)
-    
+
     if form.validate_on_submit():
         if not is_safe_url(form.long_url.data):
             flash("That destination URL is blocked or invalid.", 'danger')
@@ -456,27 +714,27 @@ def edit_url(short_code):
         url_entry.android_target_url = form.android_target_url.data
         url_entry.preview_mode = form.preview_mode.data
         url_entry.stats_enabled = form.stats_enabled.data
-        
+
         if form.expiry_hours.data is not None:
             if form.expiry_hours.data == 0:
                 url_entry.expires_at = None
             else:
                 url_entry.expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
-                
+
         db.session.commit()
         flash('Link updated successfully.', 'success')
         return redirect(url_for('main.dashboard'))
-        
+
     return render_template('edit_url.html', form=form, short_code=short_code)
 
 @main.route('/delete/<short_code>', methods=['POST'])
 @login_required
 def delete_url(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
-    
+
     if url_entry.user_id != current_user.id:
         abort(403)
-        
+
     db.session.delete(url_entry)
     db.session.commit()
     flash('Link deleted successfully.', 'info')
@@ -486,19 +744,19 @@ def delete_url(short_code):
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_STATS', '20 per minute'))
 def stats(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
-    
+
     # Check ownership: If the URL has an owner, only that owner can see stats.
     # If it's anonymous (user_id is None), then anyone can see stats.
     current_user_id = current_user.id if current_user.is_authenticated else None
     if url_entry.user_id != current_user_id:
         abort(403)
-        
+
     range_type = request.args.get('range', '30d')
     now = datetime.datetime.now(datetime.timezone.utc)
-    
+
     # Process Analytics
     clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.asc()).all()
-    
+
     # 1. Clicks over time (Hybrid logic based on range_type)
     time_data = {}
     if range_type == '24h':
@@ -523,12 +781,12 @@ def stats(short_code):
 
     for click in clicks:
         click_time = click.timestamp.replace(tzinfo=datetime.timezone.utc) if click.timestamp.tzinfo is None else click.timestamp
-        
+
         # Global stats (all time)
         country_data[click.country] = country_data.get(click.country, 0) + 1
         browser_data[click.browser or "Unknown"] = browser_data.get(click.browser or "Unknown", 0) + 1
         platform_data[click.platform or "Unknown"] = platform_data.get(click.platform or "Unknown", 0) + 1
-        
+
         # Referrer (Step 1)
         ref = click.referrer or "Direct"
         if "://" in ref:
@@ -578,7 +836,7 @@ def stats(short_code):
             rc.ip_anonymized = "Unknown"
 
     short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
-    return render_template('stats.html', url=url_entry, short_url=short_url, 
+    return render_template('stats.html', url=url_entry, short_url=short_url,
                            active=url_entry.is_active(),
                            time_data=time_data,
                            country_data=country_data,
@@ -594,7 +852,7 @@ def stats(short_code):
 def qr_download(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
     short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
-    
+
     # Generate simple QR for download (black/white usually best for raw download, or use defaults)
     img_buffer = generate_qr(short_url)
     return send_file(img_buffer, mimetype='image/png', as_attachment=False, download_name=f'{short_code}.png')
@@ -619,7 +877,7 @@ def internal_error(e):
 def ratelimit_handler(e):
     # Increment Prometheus Counter
     ratelimit_hits_total.inc()
-    
+
     client_ip = get_client_ip(request)
     client_country = get_geo_info(client_ip, request)
     return render_template('429.html', client_ip=client_ip, client_country=client_country), 429
@@ -650,3 +908,233 @@ def data_usage():
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_PAGES', '30 per minute'))
 def terms():
     return render_template('terms.html')
+from flask import Blueprint, request, jsonify, current_app
+from werkzeug.security import generate_password_hash
+from app.models import db, URL, User
+from app.utils import generate_short_code, generate_qr, is_safe_url
+from app import limiter, csrf
+from app.routes import shortened_links_total # Import the custom counter
+import datetime
+import base64
+
+api = Blueprint('api', __name__, url_prefix='/api/v1')
+csrf.exempt(api)
+
+def get_user_from_api_key():
+    api_key = request.headers.get('X-API-KEY')
+    if not api_key:
+        return None
+    return User.query.filter_by(api_key=api_key).first()
+
+@api.route('/shorten', methods=['POST'])
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_CREATE', '60 per minute')) # Higher limit for API
+def shorten():
+    # Authenticate User - Mandatory
+    user = get_user_from_api_key()
+
+    if not user:
+        return jsonify({'error': 'Valid API Key required. Access denied.'}), 401
+
+    data = request.get_json()
+    if not data or 'long_url' not in data:
+        return jsonify({'error': 'Missing long_url'}), 400
+
+    long_url = data['long_url'].strip()
+
+    if not is_safe_url(long_url):
+        return jsonify({'error': 'Destination URL is blocked'}), 403
+
+    custom_code = data.get('custom_code')
+    code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
+
+    # Optional parameters
+    rotate_targets = data.get('rotate_targets')  # Expecting a list of strings
+    password = data.get('password')
+    expiry_hours = data.get('expiry_hours', current_app.config['EXPIRY_HOURS'])
+
+    preview_mode = data.get('preview_mode', True)
+    stats_enabled = data.get('stats_enabled', True)
+
+    start_at_str = data.get('start_at')
+    end_at_str = data.get('end_at')
+
+    if custom_code:
+        custom_code = custom_code.strip().upper()
+        if URL.query.filter_by(short_code=custom_code).first():
+            return jsonify({'error': 'Custom code already taken'}), 409
+        short_code = custom_code
+    else:
+        short_code = generate_short_code(code_length)
+        while URL.query.filter_by(short_code=short_code).first():
+            short_code = generate_short_code(code_length)
+
+    # Expiry logic
+    expires_at = None
+    if int(expiry_hours) != 0:
+        expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(expiry_hours))
+
+    # Parse datetime strings if provided (ISO 8601 expected)
+    start_at = None
+    if start_at_str:
+        try:
+            start_at = datetime.datetime.fromisoformat(start_at_str.replace('Z', '+00:00'))
+        except ValueError:
+            return jsonify({'error': 'Invalid start_at format. Use ISO 8601'}), 400
+
+    end_at = None
+    if end_at_str:
+        try:
+            end_at = datetime.datetime.fromisoformat(end_at_str.replace('Z', '+00:00'))
+        except ValueError:
+            return jsonify({'error': 'Invalid end_at format. Use ISO 8601'}), 400
+
+    # Password hashing
+    password_hash = None
+    if password:
+        password_hash = generate_password_hash(password)
+
+    # Rotate targets
+    if rotate_targets is not None:
+        if not isinstance(rotate_targets, list):
+             return jsonify({'error': 'rotate_targets must be a list of strings'}), 400
+        if not all(isinstance(u, str) for u in rotate_targets):
+             return jsonify({'error': 'rotate_targets must be a list of strings'}), 400
+        if len(rotate_targets) > 50:
+             return jsonify({'error': 'Maximum 50 rotate targets allowed'}), 400
+
+        rotate_targets = [u.strip() for u in rotate_targets]
+        if not all(is_safe_url(u) for u in rotate_targets):
+             return jsonify({'error': 'One or more rotate target URLs are blocked or invalid.'}), 403
+
+    new_url = URL(
+        user_id=user.id if user else None,
+        short_code=short_code,
+        long_url=long_url,
+        rotate_targets=rotate_targets,
+        password_hash=password_hash,
+        preview_mode=preview_mode,
+        stats_enabled=stats_enabled,
+        expires_at=expires_at,
+        start_at=start_at,
+        end_at=end_at
+    )
+    db.session.add(new_url)
+    db.session.commit()
+
+    # Increment Prometheus Counter
+    shortened_links_total.inc()
+
+    short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
+    return jsonify({
+        'short_code': short_code,
+        'short_url': short_url,
+        'long_url': long_url,
+        'rotate_targets': rotate_targets,
+        'expires_at': expires_at.isoformat() if expires_at else None,
+        'start_at': start_at.isoformat() if start_at else None,
+        'end_at': end_at.isoformat() if end_at else None,
+        'password_protected': bool(password),
+        'preview_mode': preview_mode,
+        'stats_enabled': stats_enabled
+    }), 201
+
+@api.route('/<short_code>', methods=['GET'])
+def get_url_info(short_code):
+    # Authenticate User - Mandatory
+    user = get_user_from_api_key()
+    if not user:
+        return jsonify({'error': 'Valid API Key required. Access denied.'}), 401
+
+    url_entry = URL.query.filter_by(short_code=short_code.upper()).first()
+    if not url_entry:
+        return jsonify({'error': 'URL not found'}), 404
+
+    return jsonify({
+        'short_code': url_entry.short_code,
+        'long_url': url_entry.long_url,
+        'clicks': url_entry.clicks,
+        'created_at': url_entry.created_at.isoformat(),
+        'expires_at': url_entry.expires_at.isoformat() if url_entry.expires_at else None,
+        'active': url_entry.is_active()
+    })
+import pytest
+import os
+import tempfile
+from app import create_app
+from app.models import db, User
+from config import Config
+
+class TestConfig(Config):
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    WTF_CSRF_ENABLED = False
+    ENABLE_PHISHING_CHECK = False
+    # Use a real path in a temporary directory
+    GEOIP_DB_PATH = os.path.join(tempfile.gettempdir(), 'test_geoip.mmdb')
+
+@pytest.fixture
+def app():
+    app = create_app(TestConfig)
+
+    with app.app_context():
+        db.create_all()
+        yield app
+        db.session.remove()
+        db.drop_all()
+
+@pytest.fixture
+def client(app):
+    return app.test_client()
+
+@pytest.fixture
+def runner(app):
+    return app.test_cli_runner()
+
+@pytest.fixture
+def test_user(app):
+    with app.app_context():
+        user = User(
+            username='testuser',
+            email='test@example.com',
+            password_hash='pbkdf2:sha256:...', # dummy hash
+            api_key='test-api-key'
+        )
+        db.session.add(user)
+        db.session.commit()
+        # Refresh to ensure all attributes are loaded before we detach
+        db.session.refresh(user)
+        db.session.expunge(user)
+        return user
+import pytest
+import time
+from flask import url_for
+
+def test_login_rate_limiting(client, app):
+    # Set a very low limit for testing
+    app.config['RATELIMIT_LOGIN'] = '1 per minute'
+
+    # First request should pass
+    response = client.post('/login', data={'username': 'test', 'password': 'test'})
+    assert response.status_code != 429
+
+    # Second request should be rate limited
+    response = client.post('/login', data={'username': 'test', 'password': 'test'})
+    assert response.status_code == 429
+
+def test_register_rate_limiting(client, app):
+    app.config['RATELIMIT_REGISTER'] = '1 per minute'
+
+    response = client.post('/register', data={'username': 'test', 'email': 'test@example.com', 'password': 'test', 'confirm_password': 'test'})
+    assert response.status_code != 429
+
+    response = client.post('/register', data={'username': 'test', 'email': 'test@example.com', 'password': 'test', 'confirm_password': 'test'})
+    assert response.status_code == 429
+
+def test_auth_rate_limiting(client, app):
+    app.config['RATELIMIT_AUTH'] = '1 per minute'
+
+    response = client.post('/link-auth/NONEXISTENT', data={'password': 'test'})
+    assert response.status_code != 429
+
+    response = client.post('/link-auth/NONEXISTENT', data={'password': 'test'})
+    assert response.status_code == 429
