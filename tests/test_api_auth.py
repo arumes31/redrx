@@ -1,6 +1,6 @@
 import pytest
 from app.api import get_user_from_api_key
-from app.models import db, URL
+from app.models import db, URL, User
 
 def test_get_user_from_api_key_valid(app, test_user):
     with app.test_request_context(headers={'X-API-KEY': 'test-api-key'}):
@@ -40,7 +40,9 @@ def test_api_shorten_auth_invalid(client):
 def test_api_get_info_auth_success(app, client, test_user):
     # Create a URL first
     with app.app_context():
-        url = URL(short_code='TESTCODE', long_url='https://google.com', user_id=test_user.id)
+        # Query user to avoid DetachedInstanceError
+        user = User.query.filter_by(api_key='test-api-key').first()
+        url = URL(short_code='TESTCODE', long_url='https://google.com', user_id=user.id)
         db.session.add(url)
         db.session.commit()
 

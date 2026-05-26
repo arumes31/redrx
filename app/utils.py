@@ -81,8 +81,12 @@ def cleanup_phishing_urls():
     from app.models import db, URL
     
     try:
-        with open(path, 'r', encoding='utf-8') as f:
-            blocked_domains = {line.strip().lower() for line in f if line.strip()}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                blocked_domains = {line.strip().lower() for line in f if line.strip()}
+        except (IOError, OSError) as e:
+            current_app.logger.error(f"Failed to read blocked domains file: {e}")
+            return
 
         if not blocked_domains:
             return
@@ -96,9 +100,9 @@ def cleanup_phishing_urls():
                 domain = urlparse(url_entry.long_url).netloc.lower()
                 is_phishing = False
                 if domain:
-                    parts = domain.split('.')
+                    parts = domain.split(".")
                     for i in range(len(parts)):
-                        if '.'.join(parts[i:]) in blocked_domains:
+                        if ".".join(parts[i:]) in blocked_domains:
                             is_phishing = True
                             break
                 
@@ -107,9 +111,9 @@ def cleanup_phishing_urls():
                     for target in url_entry.rotate_targets:
                         target_domain = urlparse(target).netloc.lower()
                         if target_domain:
-                            parts = target_domain.split('.')
+                            parts = target_domain.split(".")
                             for i in range(len(parts)):
-                                if '.'.join(parts[i:]) in blocked_domains:
+                                if ".".join(parts[i:]) in blocked_domains:
                                     is_phishing = True
                                     break
                         if is_phishing: break
@@ -117,14 +121,20 @@ def cleanup_phishing_urls():
                 if is_phishing:
                     db.session.delete(url_entry)
                     removed_count += 1
-            except Exception: # nosec B112
+            except Exception as e:
+                current_app.logger.error(f"Error checking URL {url_entry.id} for phishing: {e}")
                 continue
         
         if removed_count > 0:
-            db.session.commit()
+            try:
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f"Failed to commit phishing removal: {e}")
             
-    except Exception: # nosec B110
-        pass
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Unexpected error in cleanup_phishing_urls: {e}")
 
 def get_blocked_domains():
     """Returns the set of blocked domains using the in-process cache."""
