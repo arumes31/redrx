@@ -96,22 +96,16 @@ def cleanup_phishing_urls():
                 domain = urlparse(url_entry.long_url).netloc.lower()
                 is_phishing = False
                 if domain:
-                    parts = domain.split('.')
-                    for i in range(len(parts)):
-                        if '.'.join(parts[i:]) in blocked_domains:
-                            is_phishing = True
-                            break
+                    if _is_domain_blocked(domain, blocked_domains):
+                        is_phishing = True
                 
                 # Check rotate_targets if main is clean
                 if not is_phishing and url_entry.rotate_targets:
                     for target in url_entry.rotate_targets:
                         target_domain = urlparse(target).netloc.lower()
                         if target_domain:
-                            parts = target_domain.split('.')
-                            for i in range(len(parts)):
-                                if '.'.join(parts[i:]) in blocked_domains:
-                                    is_phishing = True
-                                    break
+                            if _is_domain_blocked(target_domain, blocked_domains):
+                                is_phishing = True
                         if is_phishing: break
 
                 if is_phishing:
@@ -125,6 +119,21 @@ def cleanup_phishing_urls():
             
     except Exception: # nosec B110
         pass
+def _is_domain_blocked(domain, blocked_set):
+    """Checks if a domain or any of its parent domains are in the blocked set."""
+    if not domain or not blocked_set:
+        return False
+
+    check_domain = domain
+    while True:
+        if check_domain in blocked_set:
+            return True
+        idx = check_domain.find(".")
+        if idx == -1:
+            break
+        check_domain = check_domain[idx + 1:]
+    return False
+
 
 def get_blocked_domains():
     """Returns the set of blocked domains using the in-process cache."""
@@ -200,12 +209,9 @@ def is_safe_url(target_url, blocked_domains_cache=None):
 
     blocked_domains = blocked_domains_cache if blocked_domains_cache is not None else get_blocked_domains()
     if blocked_domains:
-        parts = domain.split('.')
-        for i in range(len(parts)):
-            check_domain = '.'.join(parts[i:])
-            if check_domain in blocked_domains:
-                return False
-            
+        if _is_domain_blocked(domain, blocked_domains):
+            return False
+
     return True
 
 def get_client_ip(request):
