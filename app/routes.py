@@ -1,12 +1,10 @@
 import io
 import csv
-import json
 import datetime
 import uuid
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify, send_from_directory
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify
 from flask_login import login_user, logout_user, current_user, login_required
-from flask_limiter import Limiter
-from app import limiter, metrics # Import metrics
+from app import limiter # Import metrics
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 from user_agents import parse
@@ -21,7 +19,7 @@ ratelimit_hits_total = Counter('redrx_ratelimit_hits_total', 'Total number of re
 
 from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
-from app.utils import generate_short_code, get_qr_data_url, generate_qr, select_rotate_target, get_geo_info, is_safe_url, get_client_ip, _get_redis_client, get_blocked_domains
+from app.utils import is_safe_redirect_url, generate_short_code, get_qr_data_url, generate_qr, select_rotate_target, get_geo_info, is_safe_url, get_client_ip, _get_redis_client, get_blocked_domains
 
 main = Blueprint('main', __name__)
 
@@ -316,7 +314,9 @@ def login():
         if user and check_password_hash(user.password_hash, form.password.data):
             login_user(user)
             next_page = request.args.get('next')
-            return redirect(next_page) if next_page else redirect(url_for('main.index'))
+            if not is_safe_redirect_url(next_page):
+                next_page = url_for('main.index')
+            return redirect(next_page)
         else:
             flash('Login Unsuccessful. Please check username/email and password', 'danger')
     return render_template('login_user.html', form=form)

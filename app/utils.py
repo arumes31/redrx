@@ -325,3 +325,10 @@ def get_qr_data_url(data, color='black', bg='white', logo_img=None):
     """Returns a base64 encoded data URL for the QR code."""
     img_buffer = generate_qr(data, color, bg, logo_img)
     return base64.b64encode(img_buffer.read()).decode()
+
+def is_safe_redirect_url(target):
+    """Ensures that the redirect target is safe (not an open redirect)."""
+    if not target:
+        return False
+    # Ensure it's a relative URL and not a protocol-relative one
+    return target.startswith('/') and not target.startswith('//')
