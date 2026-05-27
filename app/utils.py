@@ -69,6 +69,21 @@ def update_phishing_list():
     except Exception: # nosec B110
         pass
 
+def _is_domain_suffix_blocked(domain, blocked_domains):
+    """Checks if a domain or any of its suffixes are in the blocked set."""
+    if not domain:
+        return False
+
+    curr = domain
+    while True:
+        if curr in blocked_domains:
+            return True
+        dot_idx = curr.find('.')
+        if dot_idx == -1:
+            break
+        curr = curr[dot_idx + 1:]
+    return False
+
 def cleanup_phishing_urls():
     """Removes URLs from database that are found in the phishing lists."""
     if not current_app.config.get('ENABLE_AUTO_REMOVE_PHISHING'):
@@ -94,25 +109,15 @@ def cleanup_phishing_urls():
             # Check main long_url
             try:
                 domain = urlparse(url_entry.long_url).netloc.lower()
-                is_phishing = False
-                if domain:
-                    parts = domain.split('.')
-                    for i in range(len(parts)):
-                        if '.'.join(parts[i:]) in blocked_domains:
-                            is_phishing = True
-                            break
+                is_phishing = _is_domain_suffix_blocked(domain, blocked_domains)
                 
                 # Check rotate_targets if main is clean
                 if not is_phishing and url_entry.rotate_targets:
                     for target in url_entry.rotate_targets:
                         target_domain = urlparse(target).netloc.lower()
-                        if target_domain:
-                            parts = target_domain.split('.')
-                            for i in range(len(parts)):
-                                if '.'.join(parts[i:]) in blocked_domains:
-                                    is_phishing = True
-                                    break
-                        if is_phishing: break
+                        if _is_domain_suffix_blocked(target_domain, blocked_domains):
+                            is_phishing = True
+                            break
 
                 if is_phishing:
                     db.session.delete(url_entry)
@@ -200,11 +205,8 @@ def is_safe_url(target_url, blocked_domains_cache=None):
 
     blocked_domains = blocked_domains_cache if blocked_domains_cache is not None else get_blocked_domains()
     if blocked_domains:
-        parts = domain.split('.')
-        for i in range(len(parts)):
-            check_domain = '.'.join(parts[i:])
-            if check_domain in blocked_domains:
-                return False
+        if _is_domain_suffix_blocked(domain, blocked_domains):
+            return False
             
     return True
 
