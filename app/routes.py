@@ -25,6 +25,59 @@ from app.utils import generate_short_code, get_qr_data_url, generate_qr, select_
 
 main = Blueprint('main', __name__)
 
+def _anonymize_ip(ip_address):
+    """Anonymize an IP address (IPv4 or IPv6)."""
+    if not ip_address:
+        return "Unknown"
+
+    parts = ip_address.split('.')
+    if len(parts) == 4:
+        # IPv4: Mask last two octets
+        return f'{parts[0]}.{parts[1]}.x.x'
+
+    v6_parts = ip_address.split(':')
+    if len(v6_parts) >= 2:
+        # IPv6: Mask segments
+        return f'{v6_parts[0]}:{v6_parts[1]}:x:x'
+
+    return "Unknown"
+
+def _get_target_url(url_entry, user_agent, cached_domains):
+    """Determine the target URL based on device targeting and rotation."""
+    target_url = url_entry.long_url
+    device_match = False
+
+    if url_entry.ios_target_url and (user_agent.os.family == 'iOS'):
+        target_url = url_entry.ios_target_url
+        device_match = True
+    elif url_entry.android_target_url and (user_agent.os.family == 'Android'):
+        target_url = url_entry.android_target_url
+        device_match = True
+
+    if not device_match and url_entry.rotate_targets:
+        safe_rotate_targets = [alt for alt in url_entry.rotate_targets if is_safe_url(alt, cached_domains)]
+        alt = select_rotate_target(safe_rotate_targets)
+        if alt:
+            target_url = alt
+
+    return target_url
+
+def _record_click(url_entry, user_agent, client_ip):
+    """Record a click with detailed statistics."""
+    url_entry.clicks_count += 1
+    masked_ip = _anonymize_ip(client_ip)
+
+    new_click = Click(
+        url_id=url_entry.id,
+        ip_address=masked_ip,
+        country=get_geo_info(client_ip, request),
+        browser=user_agent.browser.family,
+        platform=user_agent.os.family,
+        referrer=request.referrer or "Direct"
+    )
+    db.session.add(new_click)
+    db.session.commit()
+
 @main.route('/health')
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_HEALTH', '10 per minute'))
 def health_check():
@@ -199,33 +252,12 @@ def redirect_to_url(short_code):
              return redirect(url_for('main.link_password_auth', short_code=short_code))
              
     # Select destination
-    target_url = url_entry.long_url
-    
-    # Device Targeting (overrides main URL, but rotate logic is complex with this - let's keep it simple: Device > Rotate > Main)
-    # However, user might want to rotate AND target.
-    # Logic: 
-    # 1. Check Device specific URL
-    # 2. If no device match or no device URL, check Rotate
-    # 3. Else Main
-    
-    ua_string = request.headers.get('User-Agent')
+    ua_string = request.headers.get("User-Agent")
     user_agent = parse(ua_string)
-    
-    device_match = False
-    if url_entry.ios_target_url and (user_agent.os.family == 'iOS'):
-        target_url = url_entry.ios_target_url
-        device_match = True
-    elif url_entry.android_target_url and (user_agent.os.family == 'Android'):
-        target_url = url_entry.android_target_url
-        device_match = True
-
     cached_domains = get_blocked_domains()
-    if not device_match and url_entry.rotate_targets:
-        safe_rotate_targets = [alt for alt in url_entry.rotate_targets if is_safe_url(alt, cached_domains)]
-        alt = select_rotate_target(safe_rotate_targets)
-        if alt:
-            target_url = alt
-            
+
+    target_url = _get_target_url(url_entry, user_agent, cached_domains)
+
     if not is_safe_url(target_url, cached_domains):
         abort(403)
 
@@ -238,33 +270,9 @@ def redirect_to_url(short_code):
 
     # Stats
     if url_entry.stats_enabled:
-        url_entry.clicks_count += 1
-        
-        # Record detailed click
-        # Note: We already parsed UA above, reuse it
         client_ip = get_client_ip(request)
-        
-        # Mask IP for privacy (e.g. 1.2.3.4 -> 1.2.x.x)
-        masked_ip = client_ip
-        parts = client_ip.split('.')
-        if len(parts) == 4:
-            masked_ip = f"{parts[0]}.{parts[1]}.x.x"
-        else: # IPv6 support
-            v6_parts = client_ip.split(':')
-            if len(v6_parts) >= 2:
-                masked_ip = f"{v6_parts[0]}:{v6_parts[1]}:x:x"
+        _record_click(url_entry, user_agent, client_ip)
 
-        new_click = Click(
-            url_id=url_entry.id,
-            ip_address=masked_ip,
-            country=get_geo_info(client_ip, request),
-            browser=user_agent.browser.family,
-            platform=user_agent.os.family,
-            referrer=request.referrer or "Direct"
-        )
-        db.session.add(new_click)
-        db.session.commit()
-    
     # If preview mode is enabled
     if url_entry.preview_mode:
         return render_template('preview.html', target_url=target_url, short_code=short_code)
@@ -564,18 +572,7 @@ def stats(short_code):
         else:
             rc.relative_time = "Just now"
 
-        if rc.ip_address:
-            parts = rc.ip_address.split('.')
-            if len(parts) == 4:
-                rc.ip_anonymized = f"{parts[0]}.{parts[1]}.xxx.xxx"
-            else: # IPv6
-                v6_parts = rc.ip_address.split(':')
-                if len(v6_parts) >= 2:
-                    rc.ip_anonymized = f"{v6_parts[0]}:{v6_parts[1]}:xxxx:xxxx"
-                else:
-                    rc.ip_anonymized = rc.ip_address[:rc.ip_address.find(':')+1] + "xxxx" if ':' in rc.ip_address else "xxxx"
-        else:
-            rc.ip_anonymized = "Unknown"
+        rc.ip_anonymized = _anonymize_ip(rc.ip_address)
 
     short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
     return render_template('stats.html', url=url_entry, short_url=short_url, 
