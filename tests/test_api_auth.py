@@ -1,4 +1,3 @@
-import pytest
 from app.api import get_user_from_api_key
 from app.models import db, URL
 
