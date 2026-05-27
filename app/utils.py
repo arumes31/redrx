@@ -112,7 +112,8 @@ def cleanup_phishing_urls():
                                 if '.'.join(parts[i:]) in blocked_domains:
                                     is_phishing = True
                                     break
-                        if is_phishing: break
+                        if is_phishing:
+                            break
 
                 if is_phishing:
                     db.session.delete(url_entry)
@@ -317,10 +318,17 @@ def select_rotate_target(rotate_targets):
     """Selects an alternate URL based on a simple rotation (hash of timestamp)."""
     if not rotate_targets:
         return None
+
+    if isinstance(rotate_targets, str):
+        return rotate_targets
+
+    if not isinstance(rotate_targets, list):
+        rotate_targets = list(rotate_targets)
+
     # Using microsecond for more "random" feel on rapid refreshes
     idx = hash(str(datetime.datetime.now().microsecond)) % len(rotate_targets)
-    return rotate_targets[idx]
 
+    return rotate_targets[idx]
 def get_qr_data_url(data, color='black', bg='white', logo_img=None):
     """Returns a base64 encoded data URL for the QR code."""
     img_buffer = generate_qr(data, color, bg, logo_img)
