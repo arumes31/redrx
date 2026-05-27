@@ -1,0 +1,13 @@
+<<<<<<< SEARCH
+@main.route('/<short_code>/qr')
+@limiter.limit("30 per minute")
+def qr_download(short_code):
+    url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
+    short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
+=======
+@main.route('/<short_code>/qr')
+@limiter.limit("30 per minute")
+def qr_download(short_code):
+    URL.query.filter_by(short_code=short_code).first_or_404()
+    short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
+>>>>>>> REPLACE
