@@ -21,7 +21,7 @@ ratelimit_hits_total = Counter('redrx_ratelimit_hits_total', 'Total number of re
 
 from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
-from app.utils import generate_short_code, get_qr_data_url, generate_qr, select_rotate_target, get_geo_info, is_safe_url, get_client_ip, _get_redis_client, get_blocked_domains
+from app.utils import sanitize_csv_field, generate_short_code, get_qr_data_url, generate_qr, select_rotate_target, get_geo_info, is_safe_url, get_client_ip, _get_redis_client, get_blocked_domains
 
 main = Blueprint('main', __name__)
 
@@ -394,8 +394,8 @@ def export_links():
     
     for u in urls:
         writer.writerow([
-            u.short_code, 
-            u.long_url, 
+            sanitize_csv_field(u.short_code),
+            sanitize_csv_field(u.long_url),
             u.clicks_count, 
             u.created_at.isoformat(),
             u.last_accessed_at.isoformat() if u.last_accessed_at else 'Never',
