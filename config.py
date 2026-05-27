@@ -29,3 +29,15 @@ class Config:
     SEO_DOMAIN = os.environ.get('SEO_DOMAIN', 'redrx.eu')
     DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() in ['true', '1', 't']
 
+    # Rate Limiting Config
+    RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")
+    RATELIMIT_LOGIN = os.environ.get('RATELIMIT_LOGIN', "10 per minute")
+    RATELIMIT_REGISTER = os.environ.get('RATELIMIT_REGISTER', "5 per hour")
+    RATELIMIT_AUTH = os.environ.get('RATELIMIT_AUTH', "10 per minute")
+    RATELIMIT_CREATE = os.environ.get('RATELIMIT_CREATE', "10 per minute")
+    RATELIMIT_REDIRECT = os.environ.get('RATELIMIT_REDIRECT', "100 per minute")
+    RATELIMIT_HEALTH = os.environ.get('RATELIMIT_HEALTH', "10 per minute")
+    RATELIMIT_METRICS = os.environ.get('RATELIMIT_METRICS', "10 per minute")
+    RATELIMIT_DASHBOARD = os.environ.get('RATELIMIT_DASHBOARD', "60 per minute")
+    RATELIMIT_API = os.environ.get('RATELIMIT_API', "60 per minute")
+    RATELIMIT_STORAGE_URL = os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')

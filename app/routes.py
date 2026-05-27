@@ -272,7 +272,7 @@ def redirect_to_url(short_code):
     return render_template('redirect.html', target_url=target_url)
 
 @main.route('/link-auth/<short_code>', methods=['GET', 'POST'])
-@limiter.limit("10 per minute")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_AUTH', '10 per minute'))
 def link_password_auth(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
     form = LinkPasswordForm()
@@ -287,7 +287,7 @@ def link_password_auth(short_code):
     return render_template('login.html', form=form, short_code=short_code)
 
 @main.route('/register', methods=['GET', 'POST'])
-@limiter.limit("5 per hour") # Prevent spam accounts
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_REGISTER', '5 per hour')) # Prevent spam accounts
 def register():
     if current_app.config.get('DISABLE_REGISTRATION'):
         flash("Registration is currently disabled.", 'info')
@@ -306,7 +306,7 @@ def register():
     return render_template('register.html', form=form)
 
 @main.route('/login', methods=['GET', 'POST'])
-@limiter.limit("10 per minute") # Prevent brute force
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_LOGIN', '10 per minute')) # Prevent brute force
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('main.index'))
@@ -328,7 +328,7 @@ def logout():
 
 @main.route('/dashboard')
 @login_required
-@limiter.limit("60 per minute") # High limit for dashboard usage
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_DASHBOARD', '60 per minute')) # High limit for dashboard usage
 def dashboard():
     page = request.args.get('page', 1, type=int)
     per_page = 10
@@ -364,7 +364,7 @@ def dashboard():
 
 @main.route('/regenerate-api-key', methods=['POST'])
 @login_required
-@limiter.limit("5 per hour")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_AUTH', '5 per hour'))
 def regenerate_api_key():
     current_user.api_key = str(uuid.uuid4())
     db.session.commit()
@@ -373,7 +373,7 @@ def regenerate_api_key():
 
 @main.route('/toggle-status/<short_code>', methods=['POST'])
 @login_required
-@limiter.limit("60 per minute")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_DASHBOARD', '60 per minute'))
 def toggle_status(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
     if url_entry.user_id != current_user.id:
@@ -384,7 +384,7 @@ def toggle_status(short_code):
 
 @main.route('/export-links')
 @login_required
-@limiter.limit("5 per minute")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_DASHBOARD', '5 per minute'))
 def export_links():
     urls = URL.query.filter_by(user_id=current_user.id).all()
     
@@ -412,7 +412,7 @@ def export_links():
 
 @main.route('/bulk-delete', methods=['POST'])
 @login_required
-@limiter.limit("10 per minute")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_DASHBOARD', '10 per minute'))
 def bulk_delete():
     ids = request.form.getlist('link_ids')
     if not ids:
@@ -483,7 +483,7 @@ def delete_url(short_code):
     return redirect(url_for('main.dashboard'))
 
 @main.route('/<short_code>/stats')
-@limiter.limit("20 per minute")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_DASHBOARD', '20 per minute'))
 def stats(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
     
@@ -590,7 +590,7 @@ def stats(short_code):
                            recent_clicks=recent_clicks)
 
 @main.route('/<short_code>/qr')
-@limiter.limit("30 per minute")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_DEFAULT', '30 per minute'))
 def qr_download(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
     short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
@@ -637,16 +637,16 @@ def sitemap():
     return render_template('sitemap.xml'), 200, {'Content-Type': 'application/xml'}
 
 @main.route('/api-docs')
-@limiter.limit("30 per minute")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_DEFAULT', '30 per minute'))
 def api_docs():
     return render_template('api_docs.html')
 
 @main.route('/data-usage')
-@limiter.limit("30 per minute")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_DEFAULT', '30 per minute'))
 def data_usage():
     return render_template('data_usage.html')
 
 @main.route('/terms')
-@limiter.limit("30 per minute")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_DEFAULT', '30 per minute'))
 def terms():
     return render_template('terms.html')

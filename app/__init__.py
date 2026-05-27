@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, Response
+from flask import Flask, request, redirect, Response, current_app
 from flask_login import LoginManager
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -20,25 +20,20 @@ csrf = CSRFProtect()
 
 def get_actual_ip():
     """Custom key function for Limiter that respects Cloudflare headers."""
-    # We check environment variable directly for the key function
-    if os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']:
+    # Use current_app.config if available, otherwise fallback to env
+    try:
+        use_cf = current_app.config.get('USE_CLOUDFLARE')
+    except RuntimeError:
+        use_cf = os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']
+
+    if use_cf:
         cf_ip = request.headers.get('CF-Connecting-IP')
         if cf_ip:
             return cf_ip
     return get_remote_address()
 
-# Rate limiting configuration from env
-limit_default = os.environ.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")
-limit_create = os.environ.get('RATELIMIT_CREATE', "10 per minute")
-limit_redirect = os.environ.get('RATELIMIT_REDIRECT', "100 per minute")
-limit_health = os.environ.get('RATELIMIT_HEALTH', "10 per minute")
-limit_metrics = os.environ.get('RATELIMIT_METRICS', "10 per minute")
-storage_url = os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
-
 limiter = Limiter(
-    key_func=get_actual_ip,
-    default_limits=[limit_default],
-    storage_uri=storage_url
+    key_func=get_actual_ip
 )
 
 metrics = PrometheusMetrics.for_app_factory(path=None)
@@ -66,6 +61,10 @@ class AnonymizeFilter(logging.Filter):
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+
+    # Map RATELIMIT_STORAGE_URL to RATELIMIT_STORAGE_URI for Flask-Limiter
+    if 'RATELIMIT_STORAGE_URL' in app.config and 'RATELIMIT_STORAGE_URI' not in app.config:
+        app.config['RATELIMIT_STORAGE_URI'] = app.config['RATELIMIT_STORAGE_URL']
 
     # Apply anonymization filter if enabled
     if app.config.get('ANONYMIZE_LOGS'):
