@@ -12,6 +12,7 @@ import time
 
 import os
 from urllib.parse import urlparse
+import ipaddress
 import redis
 
 # Redis cache configuration for GeoIP lookups
@@ -226,6 +227,9 @@ def get_client_country(request):
 
 def get_geo_info(ip, request=None):
     """Fetches country from IP using local MaxMind database or Cloudflare header with Redis cache."""
+    if not ip:
+        return "Unknown"
+
     global _redis_client
     if _redis_client is None:
         _redis_client = _get_redis_client()
@@ -251,8 +255,13 @@ def get_geo_info(ip, request=None):
                     pass
             return cf_country
 
-    if ip == '127.0.0.1' or ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
-        return "Local Network"
+    # Handle local/private networks
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+        if ip_obj.is_private or ip_obj.is_loopback:
+            return "Local Network"
+    except ValueError:
+        pass
     
     # 3. Check Local DB
     db_path = current_app.config.get('GEOIP_DB_PATH')
