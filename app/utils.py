@@ -13,6 +13,7 @@ import time
 import os
 from urllib.parse import urlparse
 import redis
+from sqlalchemy.exc import SQLAlchemyError
 
 # Redis cache configuration for GeoIP lookups
 _REDIS_URL = os.environ.get('RATELIMIT_STORAGE_URL', 'redis://localhost:6379')
@@ -123,8 +124,13 @@ def cleanup_phishing_urls():
         if removed_count > 0:
             db.session.commit()
             
-    except Exception: # nosec B110
-        pass
+    except (IOError, OSError) as e:
+        current_app.logger.error(f'File error during phishing cleanup: {e}')
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        current_app.logger.error(f'Database error during phishing cleanup: {e}')
+    except Exception as e:
+        current_app.logger.error(f'Unexpected error during phishing cleanup: {e}')
 
 def get_blocked_domains():
     """Returns the set of blocked domains using the in-process cache."""
