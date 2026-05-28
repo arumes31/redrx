@@ -112,7 +112,8 @@ def cleanup_phishing_urls():
                                 if '.'.join(parts[i:]) in blocked_domains:
                                     is_phishing = True
                                     break
-                        if is_phishing: break
+                        if is_phishing:
+                            break
 
                 if is_phishing:
                     db.session.delete(url_entry)
@@ -325,3 +326,13 @@ def get_qr_data_url(data, color='black', bg='white', logo_img=None):
     """Returns a base64 encoded data URL for the QR code."""
     img_buffer = generate_qr(data, color, bg, logo_img)
     return base64.b64encode(img_buffer.read()).decode()
+
+def sanitize_csv_field(value):
+    """Escapes CSV fields starting with characters that could trigger formula injection."""
+    if value is None:
+        return ""
+
+    str_value = str(value)
+    if str_value and str_value[0] in ('=', '+', '-', '@'):
+        return f"'{str_value}"
+    return str_value

@@ -1,12 +1,10 @@
 import io
 import csv
-import json
 import datetime
 import uuid
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify, send_from_directory
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify
 from flask_login import login_user, logout_user, current_user, login_required
-from flask_limiter import Limiter
-from app import limiter, metrics # Import metrics
+from app import limiter # Import metrics
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 from user_agents import parse
@@ -21,7 +19,7 @@ ratelimit_hits_total = Counter('redrx_ratelimit_hits_total', 'Total number of re
 
 from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
-from app.utils import generate_short_code, get_qr_data_url, generate_qr, select_rotate_target, get_geo_info, is_safe_url, get_client_ip, _get_redis_client, get_blocked_domains
+from app.utils import sanitize_csv_field, generate_short_code, get_qr_data_url, generate_qr, select_rotate_target, get_geo_info, is_safe_url, get_client_ip, _get_redis_client, get_blocked_domains
 
 main = Blueprint('main', __name__)
 
@@ -394,12 +392,12 @@ def export_links():
     
     for u in urls:
         writer.writerow([
-            u.short_code, 
-            u.long_url, 
-            u.clicks_count, 
-            u.created_at.isoformat(),
-            u.last_accessed_at.isoformat() if u.last_accessed_at else 'Never',
-            u.expires_at.isoformat() if u.expires_at else 'Never'
+            sanitize_csv_field(u.short_code),
+            sanitize_csv_field(u.long_url),
+            sanitize_csv_field(u.clicks_count),
+            sanitize_csv_field(u.created_at.isoformat()),
+            sanitize_csv_field(u.last_accessed_at.isoformat() if u.last_accessed_at else 'Never'),
+            sanitize_csv_field(u.expires_at.isoformat() if u.expires_at else 'Never')
         ])
     
     output.seek(0)
@@ -592,7 +590,7 @@ def stats(short_code):
 @main.route('/<short_code>/qr')
 @limiter.limit("30 per minute")
 def qr_download(short_code):
-    url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
+    URL.query.filter_by(short_code=short_code).first_or_404()
     short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
     
     # Generate simple QR for download (black/white usually best for raw download, or use defaults)
