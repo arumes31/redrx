@@ -21,7 +21,8 @@ from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
 from app.utils import (
     generate_short_code, get_qr_data_url, generate_qr, select_rotate_target,
-    get_geo_info, is_safe_url, get_client_ip, _get_redis_client, is_safe_redirect_url
+    get_geo_info, is_safe_url, get_client_ip, _get_redis_client, is_safe_redirect_url,
+    get_blocked_domains
 )
 
 main = Blueprint('main', __name__)

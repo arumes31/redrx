@@ -1,6 +1,12 @@
-import os
+import sys
 import importlib
 import pytest
+
+@pytest.fixture(autouse=True)
+def clear_config_module():
+    sys.modules.pop('config', None)
+    yield
+    sys.modules.pop('config', None)
 
 def test_secret_key_from_env(monkeypatch):
     # Setup environment
@@ -17,8 +23,8 @@ def test_secret_key_missing_production_raises_error(monkeypatch):
     monkeypatch.delenv('SECRET_KEY', raising=False)
     monkeypatch.setenv('FLASK_DEBUG', 'false')
 
-    import config
     with pytest.raises(RuntimeError) as excinfo:
+        import config
         importlib.reload(config)
     assert "SECRET_KEY must be set in production" in str(excinfo.value)
 

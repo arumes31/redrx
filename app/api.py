@@ -44,10 +44,11 @@ def shorten():
         if not isinstance(custom_code, str):
             return jsonify({'error': 'custom_code must be a string'}), 400
         custom_code = custom_code.strip().upper()
-        if not custom_code:
-            return jsonify({'error': 'custom_code cannot be empty after stripping'}), 400
-        if len(custom_code) > 20:
-             return jsonify({'error': 'custom_code must be at most 20 characters'}), 400
+        if len(custom_code) < 3 or len(custom_code) > 20:
+            return jsonify({'error': 'custom_code must be between 3 and 20 characters'}), 400
+        import re
+        if not re.match(r'^[A-Z0-9_-]+$', custom_code):
+            return jsonify({'error': 'custom_code must contain only alphanumeric characters, hyphens, or underscores'}), 400
 
     try:
         code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
@@ -110,6 +111,9 @@ def shorten():
             end_at = datetime.datetime.fromisoformat(end_at_str.replace('Z', '+00:00'))
         except (ValueError, TypeError):
             return jsonify({'error': 'Invalid end_at format. Use ISO 8601'}), 400
+
+    if start_at and end_at and end_at <= start_at:
+        return jsonify({'error': 'Invalid scheduling window: end_at must be after start_at'}), 400
 
     # Password hashing
     password_hash = None

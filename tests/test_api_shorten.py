@@ -4,10 +4,12 @@ from app.models import db, URL
 def test_api_shorten_custom_code_collision(client, test_user):
     # Setup: Create a URL with a known short code
     headers = {'X-API-KEY': 'test-api-key'}
-    client.post('/api/v1/shorten', headers=headers, json={
+    setup_response = client.post('/api/v1/shorten', headers=headers, json={
         'long_url': 'https://example.com/1',
         'custom_code': 'TAKEN'
     })
+    assert setup_response.status_code == 201
+    assert setup_response.get_json()['short_code'] == 'TAKEN'
 
     # Action: Try to use the same custom code
     response = client.post('/api/v1/shorten', headers=headers, json={

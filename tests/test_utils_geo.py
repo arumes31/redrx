@@ -49,7 +49,7 @@ def test_get_geo_info_db_lookup(app, mock_redis, mock_geoip):
 
     with patch('app.utils.current_app') as mock_app:
         mock_app.config = {'GEOIP_DB_PATH': '/tmp/test.mmdb'}
-        with patch('os.path.exists', return_value=True):
+        with patch('app.utils.os.path.exists', return_value=True):
             result = get_geo_info("8.8.8.8")
 
     assert result == "United States"
@@ -60,7 +60,7 @@ def test_get_geo_info_db_missing(app, mock_redis):
 
     with patch('app.utils.current_app') as mock_app:
         mock_app.config = {'GEOIP_DB_PATH': '/nonexistent.mmdb'}
-        with patch('os.path.exists', return_value=False):
+        with patch('app.utils.os.path.exists', return_value=False):
             result = get_geo_info("8.8.8.8")
 
     assert result == "Unknown (DB Missing)"
@@ -74,7 +74,7 @@ def test_get_geo_info_redis_error(app, mock_redis, mock_geoip):
 
     with patch('app.utils.current_app') as mock_app:
         mock_app.config = {'GEOIP_DB_PATH': '/tmp/test.mmdb'}
-        with patch('os.path.exists', return_value=True):
+        with patch('app.utils.os.path.exists', return_value=True):
             result = get_geo_info("8.8.8.8")
 
     assert result == "United Kingdom"

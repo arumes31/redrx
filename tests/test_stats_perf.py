@@ -39,3 +39,10 @@ def test_stats_data_consistency(client, app, test_user):
         assert "Chrome" in html
         assert "Windows" in html
         assert "google.com" in html
+        
+        if range_type == '24h':
+            assert "2.0" in html
+        elif range_type == '7d':
+            assert "0.4" in html
+        elif range_type == '30d':
+            assert "0.1" in html

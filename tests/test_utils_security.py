@@ -7,10 +7,10 @@ def test_is_safe_url_blocked_env(app, monkeypatch):
     monkeypatch.setenv('BLOCKED_DOMAINS', 'malicious.com,evil.org')
 
     with app.app_context():
-        # Current implementation uses substring matching
         assert is_safe_url('http://malicious.com') is False
         assert is_safe_url('http://sub.malicious.com') is False
         assert is_safe_url('http://evil.org/path') is False
+        assert is_safe_url('http://goodmalicious.com') is True
         assert is_safe_url('http://google.com') is True
 
 def test_is_safe_url_with_port(app, monkeypatch):

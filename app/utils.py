@@ -207,9 +207,11 @@ def is_safe_url(target_url, blocked_domains_cache=None):
         domain = urlparse(target_url).netloc.lower()
         if not domain: # For relative or malformed URLs
              return False
+        if ':' in domain:
+            domain = domain.split(':')[0]
              
         for b in _blocked_env_cache:
-            if b in domain:
+            if domain == b or domain.endswith('.' + b):
                 return False
     except Exception:
         return False

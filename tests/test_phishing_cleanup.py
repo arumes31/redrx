@@ -4,21 +4,17 @@ from app.models import db, URL
 from app.utils import cleanup_phishing_urls
 
 @pytest.fixture
-def phishing_setup(app):
+def phishing_setup(app, tmp_path):
     with app.app_context():
         # Create a temporary blocked domains file
-        blocked_path = os.path.join(os.path.dirname(__file__), 'blocked_test.txt')
-        with open(blocked_path, 'w') as f:
-            f.write("phishing.com\n")
-            f.write("evil.org\n")
+        blocked_file = tmp_path / 'blocked_test.txt'
+        blocked_file.write_text("phishing.com\nevil.org\n", encoding='utf-8')
+        blocked_path = str(blocked_file)
 
         app.config['ENABLE_AUTO_REMOVE_PHISHING'] = True
         app.config['BLOCKED_DOMAINS_PATH'] = blocked_path
 
         yield blocked_path
-
-        if os.path.exists(blocked_path):
-            os.remove(blocked_path)
 
 def test_cleanup_phishing_urls(app, phishing_setup):
     with app.app_context():

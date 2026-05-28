@@ -27,7 +27,8 @@ def test_url_rotate_targets(app):
 
         saved_url = URL.query.filter_by(short_code='rotate').first()
         assert saved_url.rotate_targets == targets
-        assert saved_url._rotate_targets == '["https://site1.com", "https://site2.com"]'
+        import json
+        assert json.loads(saved_url._rotate_targets) == targets
 
         # Test setting None
         url.rotate_targets = None
