@@ -130,19 +130,19 @@
                                     </td>
                                     <td class="small align-middle">
                                         <span class="text-light">
-                                            {% if 'Windows' in click.platform %}<i class="fab fa-windows me-1"></i>
-                                            {% elif 'Mac' in click.platform %}<i class="fab fa-apple me-1"></i>
-                                            {% elif 'Linux' in click.platform %}<i class="fab fa-linux me-1"></i>
-                                            {% elif 'Android' in click.platform %}<i class="fab fa-android me-1"></i>
-                                            {% elif 'iOS' in click.platform %}<i class="fab fa-apple me-1"></i>
+                                            {% if click.platform and 'Windows' in click.platform %}<i class="fab fa-windows me-1"></i>
+                                            {% elif click.platform and 'Mac' in click.platform %}<i class="fab fa-apple me-1"></i>
+                                            {% elif click.platform and 'Linux' in click.platform %}<i class="fab fa-linux me-1"></i>
+                                            {% elif click.platform and 'Android' in click.platform %}<i class="fab fa-android me-1"></i>
+                                            {% elif click.platform and 'iOS' in click.platform %}<i class="fab fa-apple me-1"></i>
                                             {% else %}<i class="fas fa-laptop me-1"></i>{% endif %}
                                             {{ click.platform }}
                                         </span>
                                         <div class="text-muted x-small">
-                                            {% if 'Chrome' in click.browser %}<i class="fab fa-chrome me-1"></i>
-                                            {% elif 'Firefox' in click.browser %}<i class="fab fa-firefox me-1"></i>
-                                            {% elif 'Safari' in click.browser %}<i class="fab fa-safari me-1"></i>
-                                            {% elif 'Edge' in click.browser %}<i class="fab fa-edge me-1"></i>
+                                            {% if click.browser and 'Chrome' in click.browser %}<i class="fab fa-chrome me-1"></i>
+                                            {% elif click.browser and 'Firefox' in click.browser %}<i class="fab fa-firefox me-1"></i>
+                                            {% elif click.browser and 'Safari' in click.browser %}<i class="fab fa-safari me-1"></i>
+                                            {% elif click.browser and 'Edge' in click.browser %}<i class="fab fa-edge me-1"></i>
                                             {% else %}<i class="fas fa-window-maximize me-1"></i>{% endif %}
                                             {{ click.browser }}
                                         </div>
