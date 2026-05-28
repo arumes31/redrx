@@ -44,5 +44,6 @@ def test_user(app):
         )
         db.session.add(user)
         db.session.commit()
-        db.session.refresh(user); db.session.expunge(user) # Detach it so it can be used outside
+        db.session.refresh(user) # Refresh attributes before expunging
+        db.session.expunge(user) # Detach it so it can be used outside
         return user
