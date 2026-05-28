@@ -87,7 +87,7 @@ def cleanup_phishing_urls():
         if not blocked_domains:
             return
 
-        urls = URL.query.all()
+        urls = URL.query.yield_per(100)
         removed_count = 0
         
         for url_entry in urls:
@@ -112,7 +112,8 @@ def cleanup_phishing_urls():
                                 if '.'.join(parts[i:]) in blocked_domains:
                                     is_phishing = True
                                     break
-                        if is_phishing: break
+                        if is_phishing:
+                            break
 
                 if is_phishing:
                     db.session.delete(url_entry)
