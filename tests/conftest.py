@@ -44,5 +44,10 @@ def test_user(app):
         )
         db.session.add(user)
         db.session.commit()
+        # Pre-load scalar attributes to prevent DetachedInstanceError after expunging
+        _ = user.id
+        _ = user.username
+        _ = user.email
+        _ = user.api_key
         db.session.expunge(user) # Detach it so it can be used outside
         return user
