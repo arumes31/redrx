@@ -1,12 +1,10 @@
 import io
 import csv
-import json
 import datetime
 import uuid
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify, send_from_directory
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify
 from flask_login import login_user, logout_user, current_user, login_required
-from flask_limiter import Limiter
-from app import limiter, metrics # Import metrics
+from app import limiter # Import metrics
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 from user_agents import parse
@@ -287,7 +285,7 @@ def link_password_auth(short_code):
     return render_template('login.html', form=form, short_code=short_code)
 
 @main.route('/register', methods=['GET', 'POST'])
-@limiter.limit("5 per hour") # Prevent spam accounts
+@limiter.limit(lambda: current_app.config.get("RATELIMIT_REGISTER", "5 per hour")) # Prevent spam accounts
 def register():
     if current_app.config.get('DISABLE_REGISTRATION'):
         flash("Registration is currently disabled.", 'info')
@@ -306,7 +304,7 @@ def register():
     return render_template('register.html', form=form)
 
 @main.route('/login', methods=['GET', 'POST'])
-@limiter.limit("10 per minute") # Prevent brute force
+@limiter.limit(lambda: current_app.config.get("RATELIMIT_LOGIN", "10 per minute")) # Prevent brute force
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('main.index'))

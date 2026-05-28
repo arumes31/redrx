@@ -29,3 +29,7 @@ class Config:
     SEO_DOMAIN = os.environ.get('SEO_DOMAIN', 'redrx.eu')
     DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() in ['true', '1', 't']
 
+    # Rate Limiting
+    RATELIMIT_LOGIN = os.environ.get('RATELIMIT_LOGIN', '10 per minute')
+    RATELIMIT_REGISTER = os.environ.get('RATELIMIT_REGISTER', '5 per hour')
+
