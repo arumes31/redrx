@@ -1,11 +1,10 @@
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.security import generate_password_hash
 from app.models import db, URL, User
-from app.utils import generate_short_code, generate_qr, is_safe_url
+from app.utils import generate_short_code, is_safe_url
 from app import limiter, csrf
 from app.routes import shortened_links_total # Import the custom counter
 import datetime
-import base64
 
 api = Blueprint('api', __name__, url_prefix='/api/v1')
 csrf.exempt(api)
@@ -15,6 +14,41 @@ def get_user_from_api_key():
     if not api_key:
         return None
     return User.query.filter_by(api_key=api_key).first()
+
+def _parse_iso_datetime(dt_str, field_name):
+    if not dt_str:
+        return None, None
+    try:
+        return datetime.datetime.fromisoformat(dt_str.replace("Z", "+00:00")), None
+    except ValueError:
+        return None, (jsonify({"error": f"Invalid {field_name} format. Use ISO 8601"}), 400)
+
+def _resolve_short_code(custom_code, code_length):
+    if custom_code:
+        custom_code = custom_code.strip().upper()
+        if URL.query.filter_by(short_code=custom_code).first():
+            return None, (jsonify({"error": "Custom code already taken"}), 409)
+        return custom_code, None
+    else:
+        short_code = generate_short_code(code_length)
+        while URL.query.filter_by(short_code=short_code).first():
+            short_code = generate_short_code(code_length)
+        return short_code, None
+
+def _validate_rotate_targets(rotate_targets):
+    if rotate_targets is None:
+        return None, None
+    if not isinstance(rotate_targets, list):
+        return None, (jsonify({"error": "rotate_targets must be a list of strings"}), 400)
+    if not all(isinstance(u, str) for u in rotate_targets):
+        return None, (jsonify({"error": "rotate_targets must be a list of strings"}), 400)
+    if len(rotate_targets) > 50:
+        return None, (jsonify({"error": "Maximum 50 rotate targets allowed"}), 400)
+
+    rotate_targets = [u.strip() for u in rotate_targets]
+    if not all(is_safe_url(u) for u in rotate_targets):
+        return None, (jsonify({"error": "One or more rotate target URLs are blocked or invalid."}), 403)
+    return rotate_targets, None
 
 @api.route('/shorten', methods=['POST'])
 @limiter.limit("60 per minute") # Higher limit for API
@@ -48,15 +82,9 @@ def shorten():
     start_at_str = data.get('start_at')
     end_at_str = data.get('end_at')
 
-    if custom_code:
-        custom_code = custom_code.strip().upper()
-        if URL.query.filter_by(short_code=custom_code).first():
-            return jsonify({'error': 'Custom code already taken'}), 409
-        short_code = custom_code
-    else:
-        short_code = generate_short_code(code_length)
-        while URL.query.filter_by(short_code=short_code).first():
-            short_code = generate_short_code(code_length)
+    short_code, error_response = _resolve_short_code(custom_code, code_length)
+    if error_response:
+        return error_response
 
     # Expiry logic
     expires_at = None
@@ -64,19 +92,13 @@ def shorten():
         expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(expiry_hours))
 
     # Parse datetime strings if provided (ISO 8601 expected)
-    start_at = None
-    if start_at_str:
-        try:
-            start_at = datetime.datetime.fromisoformat(start_at_str.replace('Z', '+00:00'))
-        except ValueError:
-            return jsonify({'error': 'Invalid start_at format. Use ISO 8601'}), 400
+    start_at, error_response = _parse_iso_datetime(start_at_str, 'start_at')
+    if error_response:
+        return error_response
 
-    end_at = None
-    if end_at_str:
-        try:
-            end_at = datetime.datetime.fromisoformat(end_at_str.replace('Z', '+00:00'))
-        except ValueError:
-            return jsonify({'error': 'Invalid end_at format. Use ISO 8601'}), 400
+    end_at, error_response = _parse_iso_datetime(end_at_str, 'end_at')
+    if error_response:
+        return error_response
 
     # Password hashing
     password_hash = None
@@ -84,17 +106,9 @@ def shorten():
         password_hash = generate_password_hash(password)
 
     # Rotate targets
-    if rotate_targets is not None:
-        if not isinstance(rotate_targets, list):
-             return jsonify({'error': 'rotate_targets must be a list of strings'}), 400
-        if not all(isinstance(u, str) for u in rotate_targets):
-             return jsonify({'error': 'rotate_targets must be a list of strings'}), 400
-        if len(rotate_targets) > 50:
-             return jsonify({'error': 'Maximum 50 rotate targets allowed'}), 400
-
-        rotate_targets = [u.strip() for u in rotate_targets]
-        if not all(is_safe_url(u) for u in rotate_targets):
-             return jsonify({'error': 'One or more rotate target URLs are blocked or invalid.'}), 403
+    rotate_targets, error_response = _validate_rotate_targets(rotate_targets)
+    if error_response:
+        return error_response
 
     new_url = URL(
         user_id=user.id if user else None,
