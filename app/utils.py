@@ -35,6 +35,9 @@ _blocked_domains_mtime = 0
 _blocked_domains_path = None
 _blocked_domains_ino = 0
 
+_blocked_env_cache = None
+_blocked_env_raw = None
+
 def update_phishing_list():
     """Downloads the latest phishing domain lists."""
     if not current_app.config.get('ENABLE_PHISHING_CHECK'):
@@ -112,7 +115,8 @@ def cleanup_phishing_urls():
                                 if '.'.join(parts[i:]) in blocked_domains:
                                     is_phishing = True
                                     break
-                        if is_phishing: break
+                        if is_phishing:
+                            break
 
                 if is_phishing:
                     db.session.delete(url_entry)
@@ -181,15 +185,20 @@ def is_safe_url(target_url, blocked_domains_cache=None):
         return False
 
     # 1. Check manual overrides from ENV
-    blocked_env = os.environ.get('BLOCKED_DOMAINS', '').split(',')
+    global _blocked_env_cache, _blocked_env_raw
+    current_raw = os.environ.get('BLOCKED_DOMAINS', '')
+    if _blocked_env_cache is None or current_raw != _blocked_env_raw:
+        _blocked_env_cache = [b.strip().lower() for b in current_raw.split(',') if b.strip()]
+        _blocked_env_raw = current_raw
+
     domain = ""
     try:
         domain = urlparse(target_url).netloc.lower()
         if not domain: # For relative or malformed URLs
              return False
              
-        for b in blocked_env:
-            if b.strip() and b.strip().lower() in domain:
+        for b in _blocked_env_cache:
+            if b in domain:
                 return False
     except Exception:
         return False
