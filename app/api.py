@@ -175,7 +175,7 @@ def get_url_info(short_code):
     return jsonify({
         'short_code': url_entry.short_code,
         'long_url': url_entry.long_url,
-        'clicks': url_entry.clicks_count,
+        'clicks_count': url_entry.clicks_count,
         'created_at': url_entry.created_at.isoformat(),
         'expires_at': url_entry.expires_at.isoformat() if url_entry.expires_at else None,
         'active': url_entry.is_active()

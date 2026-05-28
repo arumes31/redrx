@@ -13,7 +13,7 @@ def test_api_get_info_success(app, client, test_user):
     data = response.get_json()
     assert data['short_code'] == 'TESTCODE'
     assert data['long_url'] == 'https://google.com'
-    assert data['clicks'] == 0
+    assert data['clicks_count'] == 0
     assert 'created_at' in data
     assert data['active'] is True
 

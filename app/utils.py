@@ -275,8 +275,7 @@ def _is_local_ip(ip):
         ip_obj = ipaddress.ip_address(ip)
         return ip_obj.is_private or ip_obj.is_loopback
     except ValueError:
-        # Fallback to string-based checks if ipaddress fails
-        return ip == '127.0.0.1' or ip.startswith(('192.168.', '10.', '172.'))
+        return False
 
 def _get_db_geo(ip):
     """Fetches country from local MaxMind database."""

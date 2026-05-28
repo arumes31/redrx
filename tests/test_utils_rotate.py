@@ -8,8 +8,6 @@ def test_select_rotate_target_empty():
 
 def test_select_rotate_target_single_string():
     url = "https://example.com"
-    # Current buggy behavior: returns a character
-    # Desired behavior: returns the string itself
     assert select_rotate_target(url) == url
 
 def test_select_rotate_target_list():

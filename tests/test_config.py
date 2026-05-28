@@ -2,32 +2,30 @@ import os
 import importlib
 import pytest
 
-def test_secret_key_from_env():
+def test_secret_key_from_env(monkeypatch):
     # Setup environment
-    os.environ['SECRET_KEY'] = 'test-secret-key'
-    os.environ['FLASK_DEBUG'] = 'false'
+    monkeypatch.setenv('SECRET_KEY', 'test-secret-key')
+    monkeypatch.setenv('FLASK_DEBUG', 'false')
 
     import config
     importlib.reload(config)
 
     assert config.Config.SECRET_KEY == 'test-secret-key'
 
-def test_secret_key_missing_production_raises_error():
+def test_secret_key_missing_production_raises_error(monkeypatch):
     # Setup environment: remove SECRET_KEY and ensure production mode
-    if 'SECRET_KEY' in os.environ:
-        del os.environ['SECRET_KEY']
-    os.environ['FLASK_DEBUG'] = 'false'
+    monkeypatch.delenv('SECRET_KEY', raising=False)
+    monkeypatch.setenv('FLASK_DEBUG', 'false')
 
     import config
     with pytest.raises(RuntimeError) as excinfo:
         importlib.reload(config)
     assert "SECRET_KEY must be set in production" in str(excinfo.value)
 
-def test_secret_key_dev_fallback():
+def test_secret_key_dev_fallback(monkeypatch):
     # Setup environment: remove SECRET_KEY and ensure debug mode
-    if 'SECRET_KEY' in os.environ:
-        del os.environ['SECRET_KEY']
-    os.environ['FLASK_DEBUG'] = 'true'
+    monkeypatch.delenv('SECRET_KEY', raising=False)
+    monkeypatch.setenv('FLASK_DEBUG', 'true')
 
     import config
     importlib.reload(config)
