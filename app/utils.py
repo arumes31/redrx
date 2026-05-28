@@ -328,6 +328,13 @@ def select_rotate_target(rotate_targets):
     """Selects an alternate URL based on a simple rotation (hash of timestamp)."""
     if not rotate_targets:
         return None
+
+    if isinstance(rotate_targets, str):
+        return rotate_targets
+
+    if not isinstance(rotate_targets, list):
+        rotate_targets = list(rotate_targets)
+
     # Using microsecond for more "random" feel on rapid refreshes
     idx = hash(str(datetime.datetime.now().microsecond)) % len(rotate_targets)
     return rotate_targets[idx]
