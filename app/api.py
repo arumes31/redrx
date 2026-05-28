@@ -1,11 +1,10 @@
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.security import generate_password_hash
 from app.models import db, URL, User
-from app.utils import generate_short_code, generate_qr, is_safe_url
+from app.utils import generate_short_code, is_safe_url
 from app import limiter, csrf
 from app.routes import shortened_links_total # Import the custom counter
 import datetime
-import base64
 
 api = Blueprint('api', __name__, url_prefix='/api/v1')
 csrf.exempt(api)
@@ -142,7 +141,7 @@ def get_url_info(short_code):
     return jsonify({
         'short_code': url_entry.short_code,
         'long_url': url_entry.long_url,
-        'clicks': url_entry.clicks,
+        'clicks': url_entry.clicks_count,
         'created_at': url_entry.created_at.isoformat(),
         'expires_at': url_entry.expires_at.isoformat() if url_entry.expires_at else None,
         'active': url_entry.is_active()
