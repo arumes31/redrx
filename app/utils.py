@@ -1,3 +1,4 @@
+import ipaddress
 import uuid
 import qrcode
 import io
@@ -112,7 +113,8 @@ def cleanup_phishing_urls():
                                 if '.'.join(parts[i:]) in blocked_domains:
                                     is_phishing = True
                                     break
-                        if is_phishing: break
+                        if is_phishing:
+                            break
 
                 if is_phishing:
                     db.session.delete(url_entry)
@@ -226,6 +228,9 @@ def get_client_country(request):
 
 def get_geo_info(ip, request=None):
     """Fetches country from IP using local MaxMind database or Cloudflare header with Redis cache."""
+    if not ip:
+        return "Unknown"
+
     global _redis_client
     if _redis_client is None:
         _redis_client = _get_redis_client()
@@ -246,13 +251,17 @@ def get_geo_info(ip, request=None):
             # Update Cache if Redis is available
             if _redis_client:
                 try:
-                    _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, cf_country)
+                    _redis_client.set(f"{_GEO_PREFIX}{ip}", cf_country, ex=_GEO_CACHE_TTL)
                 except Exception:
                     pass
             return cf_country
 
-    if ip == '127.0.0.1' or ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
-        return "Local Network"
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+        if ip_obj.is_loopback or ip_obj.is_private:
+            return "Local Network"
+    except ValueError:
+        return "Unknown"
     
     # 3. Check Local DB
     db_path = current_app.config.get('GEOIP_DB_PATH')
@@ -270,7 +279,7 @@ def get_geo_info(ip, request=None):
     # 4. Update Redis Cache
     if _redis_client:
         try:
-            _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, country)
+            _redis_client.set(f"{_GEO_PREFIX}{ip}", country, ex=_GEO_CACHE_TTL)
         except Exception:
             pass
 
