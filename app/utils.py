@@ -1,4 +1,5 @@
 import uuid
+import ipaddress
 import qrcode
 import io
 import datetime
@@ -243,55 +244,77 @@ def get_client_country(request):
             return cf_country
     return None
 
-def get_geo_info(ip, request=None):
-    """Fetches country from IP using local MaxMind database or Cloudflare header with Redis cache."""
+def _get_cached_geo(ip):
+    """Retrieves geo info from Redis cache."""
     global _redis_client
     if _redis_client is None:
         _redis_client = _get_redis_client()
 
-    # 1. Check Redis Cache
     if _redis_client:
         try:
-            cached_val = _redis_client.get(f"{_GEO_PREFIX}{ip}")
-            if cached_val:
-                return cached_val
+            return _redis_client.get(f"{_GEO_PREFIX}{ip}")
         except Exception:
-            pass # Fallback to lookup on Redis error
+            pass
+    return None
+
+def _set_cached_geo(ip, country):
+    """Updates Redis cache with geo info."""
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = _get_redis_client()
+
+    if _redis_client and country:
+        try:
+            _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, country)
+        except Exception:
+            pass
+
+def _is_local_ip(ip):
+    """Checks if an IP address is part of a local or private network."""
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+        return ip_obj.is_private or ip_obj.is_loopback
+    except ValueError:
+        # Fallback to string-based checks if ipaddress fails
+        return ip == '127.0.0.1' or ip.startswith(('192.168.', '10.', '172.'))
+
+def _get_db_geo(ip):
+    """Fetches country from local MaxMind database."""
+    db_path = current_app.config.get('GEOIP_DB_PATH')
+    if not db_path or not os.path.exists(db_path):
+        return "Unknown (DB Missing)"
+
+    try:
+        with geoip2.database.Reader(db_path) as reader:
+            response = reader.country(ip)
+            return response.country.name or "Unknown"
+    except Exception:
+        return "Unknown"
+
+def get_geo_info(ip, request=None):
+    """Fetches country from IP using local MaxMind database or Cloudflare header with Redis cache."""
+    # 1. Check Redis Cache
+    cached_val = _get_cached_geo(ip)
+    if cached_val:
+        return cached_val
 
     # 2. Check Cloudflare
     if request:
         cf_country = get_client_country(request)
         if cf_country:
-            # Update Cache if Redis is available
-            if _redis_client:
-                try:
-                    _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, cf_country)
-                except Exception:
-                    pass
+            _set_cached_geo(ip, cf_country)
             return cf_country
 
-    if ip == '127.0.0.1' or ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
+    # 3. Check Local Network
+    if _is_local_ip(ip):
         return "Local Network"
     
-    # 3. Check Local DB
-    db_path = current_app.config.get('GEOIP_DB_PATH')
-    if not db_path or not os.path.exists(db_path):
-        return "Unknown (DB Missing)"
+    # 4. Check Local DB
+    country = _get_db_geo(ip)
 
-    country = "Unknown"
-    try:
-        with geoip2.database.Reader(db_path) as reader:
-            response = reader.country(ip)
-            country = response.country.name or "Unknown"
-    except Exception: # nosec B110
-        pass
-    
-    # 4. Update Redis Cache
-    if _redis_client:
-        try:
-            _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, country)
-        except Exception:
-            pass
+    # 5. Update Redis Cache (if not Unknown/Missing)
+    if country and "Unknown" not in country:
+        _set_cached_geo(ip, country)
 
     return country
 
