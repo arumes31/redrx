@@ -1,12 +1,10 @@
 import io
 import csv
-import json
 import datetime
 import uuid
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify, send_from_directory
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify
 from flask_login import login_user, logout_user, current_user, login_required
-from flask_limiter import Limiter
-from app import limiter, metrics # Import metrics
+from app import limiter # Import metrics
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 from user_agents import parse
@@ -592,7 +590,7 @@ def stats(short_code):
 @main.route('/<short_code>/qr')
 @limiter.limit("30 per minute")
 def qr_download(short_code):
-    url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
+    URL.query.filter_by(short_code=short_code).first_or_404()
     short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
     
     # Generate simple QR for download (black/white usually best for raw download, or use defaults)

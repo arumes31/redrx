@@ -1,8 +1,21 @@
 import os
 
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or os.urandom(24)
     basedir = os.path.abspath(os.path.dirname(__file__))
+
+    # Environment mode
+    DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() in ['true', '1', 't']
+
+    # Secret Key Security
+    SECRET_KEY = os.environ.get('SECRET_KEY')
+    if not SECRET_KEY:
+        if DEBUG:
+            # Fallback for development only
+            SECRET_KEY = 'dev-secret-key-do-not-use-in-production'
+        else:
+            # Enforce security in production
+            raise RuntimeError("SECRET_KEY must be set in production environments for security.")
+
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         'sqlite:///' + os.path.join(basedir, 'db', 'shortener.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -27,5 +40,3 @@ class Config:
     ANONYMIZE_LOGS = os.environ.get('ANONYMIZE_LOGS', 'false').lower() in ['true', '1', 't']
     ENABLE_SEO = os.environ.get('ENABLE_SEO', 'false').lower() in ['true', '1', 't']
     SEO_DOMAIN = os.environ.get('SEO_DOMAIN', 'redrx.eu')
-    DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() in ['true', '1', 't']
-
