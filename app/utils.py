@@ -1,55 +1,51 @@
-import uuid
-import qrcode
+import os
 import io
 import datetime
+import uuid
+import qrcode
 import base64
-from PIL import Image
-
 import requests
 import geoip2.database
 from flask import current_app
-import time
-
-import os
 from urllib.parse import urlparse
-import redis
-
-# Redis cache configuration for GeoIP lookups
-_REDIS_URL = os.environ.get('RATELIMIT_STORAGE_URL', 'redis://localhost:6379')
-_GEO_CACHE_TTL = 300  # 5 minutes
-_GEO_PREFIX = "geo:"
-
-def _get_redis_client():
-    """Lazily initialize Redis client."""
-    if _REDIS_URL.startswith('redis://'):
-        try:
-            return redis.from_url(_REDIS_URL, decode_responses=True)
-        except Exception:
-            return None
-    return None
-
-_redis_client = None
+from PIL import Image
 
 _blocked_domains_cache = None
 _blocked_domains_mtime = 0
 _blocked_domains_path = None
 _blocked_domains_ino = 0
 
+_redis_client = None
+_GEO_PREFIX = "geo:"
+_GEO_CACHE_TTL = 86400 # 24 hours
+
+def _get_redis_client():
+    """Initializes and returns a Redis client if configured."""
+    redis_url = current_app.config.get('REDIS_URL')
+    if not redis_url:
+        return None
+    try:
+        import redis
+        return redis.from_url(redis_url, decode_responses=True)
+    except (ImportError, Exception):
+        return None
+
 def update_phishing_list():
-    """Downloads the latest phishing domain lists."""
+    """Downloads phishing domain lists and saves them to a local file."""
     if not current_app.config.get('ENABLE_PHISHING_CHECK'):
         return
 
-    urls = current_app.config.get('PHISHING_LIST_URLS')
+    urls = current_app.config.get('PHISHING_LIST_URLS', [])
     path = current_app.config.get('BLOCKED_DOMAINS_PATH')
-    interval = current_app.config.get('PHISHING_CHECK_INTERVAL', 24)
-    
+    interval = current_app.config.get('PHISHING_LIST_UPDATE_INTERVAL', 24)
+
     if not urls or not path:
         return
-    
+
     try:
-        # Check if file is old (e.g. older than interval hours)
+        # Check if update is needed
         if os.path.exists(path):
+            import time
             file_age = time.time() - os.path.getmtime(path)
             if file_age < (interval * 3600):
                 return
@@ -207,6 +203,24 @@ def is_safe_url(target_url, blocked_domains_cache=None):
                 return False
             
     return True
+
+def is_safe_redirect_url(target, host):
+    """Checks if a redirect target is safe (on the same host or a relative path)."""
+    if not target:
+        return False
+
+    # Relative path check
+    if target.startswith('/') and not target.startswith('//'):
+        return True
+
+    try:
+        parsed_target = urlparse(target)
+        if parsed_target.netloc == host:
+            return True
+    except Exception:
+        pass
+
+    return False
 
 def get_client_ip(request):
     """Returns the client IP, preferring Cloudflare header if enabled."""

@@ -33,16 +33,15 @@ def runner(app):
 
 @pytest.fixture
 def test_user(app):
-    # Returning a detached user object might still cause DetachedInstanceError.
-    # We'll return it and the tests will use its attributes.
     with app.app_context():
         user = User(
             username='testuser',
             email='test@example.com',
-            password_hash='pbkdf2:sha256:...', # dummy hash
+            password_hash='pbkdf2:sha256:260000$Q0f8p9P1$5e3e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e',
             api_key='test-api-key'
         )
         db.session.add(user)
         db.session.commit()
-        db.session.expunge(user) # Detach it so it can be used outside
+        db.session.refresh(user)
+        db.session.expunge(user)
         return user
