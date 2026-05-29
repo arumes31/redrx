@@ -1,3 +1,5 @@
+import re
+from urllib.parse import urlparse
 import pytest
 from app.models import db, URL, Click
 from datetime import datetime, timedelta, timezone
@@ -38,7 +40,8 @@ def test_stats_data_consistency(client, app, test_user):
         assert "US" in html
         assert "Chrome" in html
         assert "Windows" in html
-        assert "google.com" in html
+        urls_in_html = re.findall(r'https?://[^\s"\'<>]+', html)
+        assert any(urlparse(u).hostname == "google.com" for u in urls_in_html)
         
         if range_type == '24h':
             assert "2.0" in html
