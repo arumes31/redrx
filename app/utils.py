@@ -1,4 +1,5 @@
 import uuid
+import ipaddress
 import qrcode
 import io
 import datetime
@@ -8,10 +9,12 @@ from PIL import Image
 import requests
 import geoip2.database
 from flask import current_app
+from concurrent.futures import ThreadPoolExecutor
 import time
 
 import os
 from urllib.parse import urlparse
+from flask import request
 import redis
 
 # Redis cache configuration for GeoIP lookups
@@ -35,6 +38,9 @@ _blocked_domains_mtime = 0
 _blocked_domains_path = None
 _blocked_domains_ino = 0
 
+_blocked_env_cache = None
+_blocked_env_raw = None
+
 def update_phishing_list():
     """Downloads the latest phishing domain lists."""
     if not current_app.config.get('ENABLE_PHISHING_CHECK'):
@@ -54,18 +60,26 @@ def update_phishing_list():
             if file_age < (interval * 3600):
                 return
 
+        def fetch_url(url):
+            url = url.strip()
+            if not url:
+                return None
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    return response.text
+            except Exception: # nosec B112
+                pass
+            return None
+
+        with ThreadPoolExecutor(max_workers=min(len(urls), 10)) as executor:
+            results = list(executor.map(fetch_url, urls))
+
         with open(path, 'w', encoding='utf-8') as f:
-            for url in urls:
-                url = url.strip()
-                if not url:
-                    continue
-                try:
-                    response = requests.get(url, timeout=10)
-                    if response.status_code == 200:
-                        f.write(response.text)
-                        f.write('\n') # Ensure newline between lists
-                except Exception: # nosec B112
-                    continue
+            for content in results:
+                if content:
+                    f.write(content)
+                    f.write('\n') # Ensure newline between lists
     except Exception: # nosec B110
         pass
 
@@ -87,7 +101,7 @@ def cleanup_phishing_urls():
         if not blocked_domains:
             return
 
-        urls = URL.query.all()
+        urls = URL.query.yield_per(100)
         removed_count = 0
         
         for url_entry in urls:
@@ -112,7 +126,8 @@ def cleanup_phishing_urls():
                                 if '.'.join(parts[i:]) in blocked_domains:
                                     is_phishing = True
                                     break
-                        if is_phishing: break
+                        if is_phishing:
+                            break
 
                 if is_phishing:
                     db.session.delete(url_entry)
@@ -181,15 +196,22 @@ def is_safe_url(target_url, blocked_domains_cache=None):
         return False
 
     # 1. Check manual overrides from ENV
-    blocked_env = os.environ.get('BLOCKED_DOMAINS', '').split(',')
+    global _blocked_env_cache, _blocked_env_raw
+    current_raw = os.environ.get('BLOCKED_DOMAINS', '')
+    if _blocked_env_cache is None or current_raw != _blocked_env_raw:
+        _blocked_env_cache = [b.strip().lower() for b in current_raw.split(',') if b.strip()]
+        _blocked_env_raw = current_raw
+
     domain = ""
     try:
         domain = urlparse(target_url).netloc.lower()
         if not domain: # For relative or malformed URLs
              return False
+        if ':' in domain:
+            domain = domain.split(':')[0]
              
-        for b in blocked_env:
-            if b.strip() and b.strip().lower() in domain:
+        for b in _blocked_env_cache:
+            if domain == b or domain.endswith('.' + b):
                 return False
     except Exception:
         return False
@@ -224,55 +246,76 @@ def get_client_country(request):
             return cf_country
     return None
 
-def get_geo_info(ip, request=None):
-    """Fetches country from IP using local MaxMind database or Cloudflare header with Redis cache."""
+def _get_cached_geo(ip):
+    """Retrieves geo info from Redis cache."""
     global _redis_client
     if _redis_client is None:
         _redis_client = _get_redis_client()
 
-    # 1. Check Redis Cache
     if _redis_client:
         try:
-            cached_val = _redis_client.get(f"{_GEO_PREFIX}{ip}")
-            if cached_val:
-                return cached_val
+            return _redis_client.get(f"{_GEO_PREFIX}{ip}")
         except Exception:
-            pass # Fallback to lookup on Redis error
+            pass
+    return None
+
+def _set_cached_geo(ip, country):
+    """Updates Redis cache with geo info."""
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = _get_redis_client()
+
+    if _redis_client and country:
+        try:
+            _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, country)
+        except Exception:
+            pass
+
+def _is_local_ip(ip):
+    """Checks if an IP address is part of a local or private network."""
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+        return ip_obj.is_private or ip_obj.is_loopback
+    except ValueError:
+        return False
+
+def _get_db_geo(ip):
+    """Fetches country from local MaxMind database."""
+    db_path = current_app.config.get('GEOIP_DB_PATH')
+    if not db_path or not os.path.exists(db_path):
+        return "Unknown (DB Missing)"
+
+    try:
+        with geoip2.database.Reader(db_path) as reader:
+            response = reader.country(ip)
+            return response.country.name or "Unknown"
+    except Exception:
+        return "Unknown"
+
+def get_geo_info(ip, request=None):
+    """Fetches country from IP using local MaxMind database or Cloudflare header with Redis cache."""
+    # 1. Check Redis Cache
+    cached_val = _get_cached_geo(ip)
+    if cached_val:
+        return cached_val
 
     # 2. Check Cloudflare
     if request:
         cf_country = get_client_country(request)
         if cf_country:
-            # Update Cache if Redis is available
-            if _redis_client:
-                try:
-                    _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, cf_country)
-                except Exception:
-                    pass
+            _set_cached_geo(ip, cf_country)
             return cf_country
 
-    if ip == '127.0.0.1' or ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
+    # 3. Check Local Network
+    if _is_local_ip(ip):
         return "Local Network"
     
-    # 3. Check Local DB
-    db_path = current_app.config.get('GEOIP_DB_PATH')
-    if not db_path or not os.path.exists(db_path):
-        return "Unknown (DB Missing)"
+    # 4. Check Local DB
+    country = _get_db_geo(ip)
 
-    country = "Unknown"
-    try:
-        with geoip2.database.Reader(db_path) as reader:
-            response = reader.country(ip)
-            country = response.country.name or "Unknown"
-    except Exception: # nosec B110
-        pass
-    
-    # 4. Update Redis Cache
-    if _redis_client:
-        try:
-            _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, country)
-        except Exception:
-            pass
+    # 5. Update Redis Cache (if not Unknown/Missing)
+    if country and "Unknown" not in country:
+        _set_cached_geo(ip, country)
 
     return country
 
@@ -317,6 +360,13 @@ def select_rotate_target(rotate_targets):
     """Selects an alternate URL based on a simple rotation (hash of timestamp)."""
     if not rotate_targets:
         return None
+
+    if isinstance(rotate_targets, str):
+        return rotate_targets
+
+    if not isinstance(rotate_targets, list):
+        rotate_targets = list(rotate_targets)
+
     # Using microsecond for more "random" feel on rapid refreshes
     idx = hash(str(datetime.datetime.now().microsecond)) % len(rotate_targets)
     return rotate_targets[idx]
@@ -325,3 +375,13 @@ def get_qr_data_url(data, color='black', bg='white', logo_img=None):
     """Returns a base64 encoded data URL for the QR code."""
     img_buffer = generate_qr(data, color, bg, logo_img)
     return base64.b64encode(img_buffer.read()).decode()
+
+def is_safe_redirect_url(target):
+    """Checks if a URL is safe for redirection (i.e., it's a relative URL or matches the base domain)."""
+    if not target:
+        return False
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(target)
+    if test_url.scheme or test_url.netloc:
+        return test_url.scheme == ref_url.scheme and test_url.netloc == ref_url.netloc
+    return True

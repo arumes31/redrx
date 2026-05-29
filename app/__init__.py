@@ -45,7 +45,7 @@ metrics = PrometheusMetrics.for_app_factory(path=None)
 
 class AnonymizeFilter(logging.Filter):
     def filter(self, record):
-        if not os.environ.get('ANONYMIZE_LOGS', 'false').lower() in ['true', '1', 't']:
+        if os.environ.get('ANONYMIZE_LOGS', 'false').lower() not in ['true', '1', 't']:
             return True
         
         # Mask IPv4
@@ -95,7 +95,10 @@ def create_app(config_class=Config):
 
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        try:
+            return db.session.get(User, int(user_id))
+        except (ValueError, TypeError):
+            return None
 
     @app.before_request
     def ensure_canonical_domain():

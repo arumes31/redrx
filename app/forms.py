@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed
-from wtforms import StringField, PasswordField, BooleanField, IntegerField, DateField, TimeField, TextAreaField, SubmitField
+from wtforms import StringField, PasswordField, BooleanField, IntegerField, DateField, TimeField, SubmitField
 from wtforms.validators import DataRequired, URL, Optional, Length, Email, NumberRange
 
 class ShortenURLForm(FlaskForm):
@@ -8,7 +8,7 @@ class ShortenURLForm(FlaskForm):
     preview_mode = BooleanField('Enable Preview Mode', default=True)
     stats_enabled = BooleanField('Enable Statistics', default=True)
     custom_code = StringField('Custom Code', validators=[Optional(), Length(min=3, max=20)])
-    code_length = IntegerField('Auto-gen Length', default=6, validators=[Optional()])
+    code_length = IntegerField('Auto-gen Length', default=6, validators=[Optional(), NumberRange(min=3, max=20)])
     rotate_targets = StringField('Rotate Targets', validators=[Optional()], description="Comma-separated URLs")
     ios_target_url = StringField('iOS Target URL', validators=[Optional(), URL()], description="Optional redirect for iOS devices")
     android_target_url = StringField('Android Target URL', validators=[Optional(), URL()], description="Optional redirect for Android devices")

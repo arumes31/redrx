@@ -1,11 +1,10 @@
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.security import generate_password_hash
 from app.models import db, URL, User
-from app.utils import generate_short_code, generate_qr, is_safe_url
+from app.utils import generate_short_code, is_safe_url
 from app import limiter, csrf
 from app.routes import shortened_links_total # Import the custom counter
 import datetime
-import base64
 
 api = Blueprint('api', __name__, url_prefix='/api/v1')
 csrf.exempt(api)
@@ -26,8 +25,14 @@ def shorten():
         return jsonify({'error': 'Valid API Key required. Access denied.'}), 401
 
     data = request.get_json()
-    if not data or 'long_url' not in data:
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Request payload must be a JSON object'}), 400
+
+    if 'long_url' not in data:
         return jsonify({'error': 'Missing long_url'}), 400
+
+    if not isinstance(data.get('long_url'), str):
+        return jsonify({'error': 'long_url must be a string'}), 400
 
     long_url = data['long_url'].strip()
     
@@ -35,21 +40,47 @@ def shorten():
         return jsonify({'error': 'Destination URL is blocked'}), 403
 
     custom_code = data.get('custom_code')
-    code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
+    if custom_code is not None:
+        if not isinstance(custom_code, str):
+            return jsonify({'error': 'custom_code must be a string'}), 400
+        custom_code = custom_code.strip().upper()
+        if len(custom_code) < 3 or len(custom_code) > 20:
+            return jsonify({'error': 'custom_code must be between 3 and 20 characters'}), 400
+        import re
+        if not re.match(r'^[A-Z0-9_-]+$', custom_code):
+            return jsonify({'error': 'custom_code must contain only alphanumeric characters, hyphens, or underscores'}), 400
+
+    try:
+        code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'code_length must be an integer'}), 400
+
+    if code_length < 3 or code_length > 20:
+        return jsonify({'error': 'code_length must be between 3 and 20'}), 400
     
     # Optional parameters
     rotate_targets = data.get('rotate_targets')  # Expecting a list of strings
     password = data.get('password')
-    expiry_hours = data.get('expiry_hours', current_app.config['EXPIRY_HOURS'])
+    try:
+        expiry_hours = int(data.get('expiry_hours', current_app.config['EXPIRY_HOURS']))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'expiry_hours must be an integer'}), 400
     
+    if expiry_hours < 0 or expiry_hours > 876000: # 100 years
+        return jsonify({'error': 'expiry_hours must be between 0 and 876,000 (100 years)'}), 400
+
     preview_mode = data.get('preview_mode', True)
     stats_enabled = data.get('stats_enabled', True)
     
     start_at_str = data.get('start_at')
+    if start_at_str is not None and not isinstance(start_at_str, str):
+        return jsonify({'error': 'start_at must be a string (ISO 8601)'}), 400
+
     end_at_str = data.get('end_at')
+    if end_at_str is not None and not isinstance(end_at_str, str):
+        return jsonify({'error': 'end_at must be a string (ISO 8601)'}), 400
 
     if custom_code:
-        custom_code = custom_code.strip().upper()
         if URL.query.filter_by(short_code=custom_code).first():
             return jsonify({'error': 'Custom code already taken'}), 409
         short_code = custom_code
@@ -60,23 +91,29 @@ def shorten():
 
     # Expiry logic
     expires_at = None
-    if int(expiry_hours) != 0:
-        expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(expiry_hours))
+    if expiry_hours != 0:
+        try:
+            expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=expiry_hours)
+        except (OverflowError, OSError):
+             return jsonify({'error': 'expiry_hours results in a date that is out of range'}), 400
 
     # Parse datetime strings if provided (ISO 8601 expected)
     start_at = None
     if start_at_str:
         try:
             start_at = datetime.datetime.fromisoformat(start_at_str.replace('Z', '+00:00'))
-        except ValueError:
+        except (ValueError, TypeError):
             return jsonify({'error': 'Invalid start_at format. Use ISO 8601'}), 400
 
     end_at = None
     if end_at_str:
         try:
             end_at = datetime.datetime.fromisoformat(end_at_str.replace('Z', '+00:00'))
-        except ValueError:
+        except (ValueError, TypeError):
             return jsonify({'error': 'Invalid end_at format. Use ISO 8601'}), 400
+
+    if start_at and end_at and end_at <= start_at:
+        return jsonify({'error': 'Invalid scheduling window: end_at must be after start_at'}), 400
 
     # Password hashing
     password_hash = None
@@ -142,7 +179,7 @@ def get_url_info(short_code):
     return jsonify({
         'short_code': url_entry.short_code,
         'long_url': url_entry.long_url,
-        'clicks': url_entry.clicks,
+        'clicks_count': url_entry.clicks_count,
         'created_at': url_entry.created_at.isoformat(),
         'expires_at': url_entry.expires_at.isoformat() if url_entry.expires_at else None,
         'active': url_entry.is_active()
