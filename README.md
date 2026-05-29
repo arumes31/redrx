@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="app/static/img/logo.svg" alt="Redrx Logo" width="120" />
+  <img src="app/static/img/logo.png" alt="Redrx Logo" width="120" />
 </p>
 
-<h1 align="center">Redrx 🚀</h1>
+<h1 align="center">Redrx</h1>
 
 <p align="center">
   A modern, high-performance, and feature-rich self-hosted URL shortener built with Python (Flask), PostgreSQL/SQLite, Redis, and SQLAlchemy. It features a stunning dark UI with interactive animations, robust security protocols, and real-time geographical analytics.
