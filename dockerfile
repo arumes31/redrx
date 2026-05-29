@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.lock.txt .
-RUN pip install --no-cache-dir -r requirements.lock.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock.txt
 
 # Copy the application code
 COPY app/ ./app/
