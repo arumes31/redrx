@@ -13,7 +13,7 @@
     <meta property="og:url" content="{{ request.base_url }}">
     <meta property="og:title" content="{% block og_title %}{{ self.title() }}{% endblock %}">
     <meta property="og:description" content="{% block og_description %}{{ self.meta_description() }}{% endblock %}">
-    <meta property="og:image" content="{{ url_for('static', filename='img/logo.svg', _external=True) }}">
+    <meta property="og:image" content="{{ url_for('static', filename='img/logo.png', _external=True) }}">
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
@@ -40,7 +40,7 @@
     {% endif %}
 
     <title>{% block title %}Redrx | Fast & Secure URL Shortener{% endblock %}</title>
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/logo.svg') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
     <link href="{{ url_for('static', filename='css/lib/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/fontawesome.min.css') }}" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -52,7 +52,7 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-transparent">
         <div class="container">
             <a class="navbar-brand fw-bold d-flex align-items-center" href="{{ url_for('main.index') }}">
-                <img src="{{ url_for('static', filename='img/logo.svg') }}" alt="Redrx Logo - Fast and Secure URL Shortener" width="30" height="30" class="me-2">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Redrx Logo - Fast and Secure URL Shortener" width="30" height="30" class="me-2">
                 Redrx
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">

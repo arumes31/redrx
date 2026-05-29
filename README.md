@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="app/static/img/logo.svg" alt="Redrx Logo" width="120" />
+  <img src="app/static/img/logo.png" alt="Redrx Logo" width="120" />
 </p>
 
 <h1 align="center">Redrx 🚀</h1>
