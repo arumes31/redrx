@@ -22,16 +22,6 @@
 
 ---
 
-## 📸 Sneak Peek
-
-Below is the sleek, responsive dark user interface featuring full dynamic canvases and analytics dashboards:
-
-<p align="center">
-  <img src="screenshot.png" alt="Redrx Web Dashboard" width="90%" style="border-radius: 10px; border: 1px solid #30363d; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
-</p>
-
----
-
 ## 📖 Table of Contents
 
 1. [✨ Features](#-features)
