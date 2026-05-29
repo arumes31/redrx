@@ -2,3 +2,4 @@ db/
 TODO.md
 __pycache__/
 .pytest_cache
+temp/
