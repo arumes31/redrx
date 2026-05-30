@@ -1,5 +1,9 @@
-db/
-TODO.md
 __pycache__/
-.pytest_cache
-temp/
+*.py[cod]
+*.class
+.pytest_cache/
+.coverage
+htmlcov/
+*.db
+*.mmdb
+blocked_domains.txt
