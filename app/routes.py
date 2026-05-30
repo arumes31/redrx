@@ -198,35 +198,13 @@ def redirect_to_url(short_code):
         # Check session
         auth_key = f"auth_{short_code}"
         if not session.get(auth_key):
-             return redirect(url_for('main.link_password_auth', short_code=short_code))
+             return redirect(url_for("main.link_password_auth", short_code=short_code))
              
-    # Select destination
-    target_url = url_entry.long_url
-    
-    # Device Targeting (overrides main URL, but rotate logic is complex with this - let's keep it simple: Device > Rotate > Main)
-    # However, user might want to rotate AND target.
-    # Logic: 
-    # 1. Check Device specific URL
-    # 2. If no device match or no device URL, check Rotate
-    # 3. Else Main
-    
-    ua_string = request.headers.get('User-Agent')
+    ua_string = request.headers.get("User-Agent")
     user_agent = parse(ua_string)
-    
-    device_match = False
-    if url_entry.ios_target_url and (user_agent.os.family == 'iOS'):
-        target_url = url_entry.ios_target_url
-        device_match = True
-    elif url_entry.android_target_url and (user_agent.os.family == 'Android'):
-        target_url = url_entry.android_target_url
-        device_match = True
-
     cached_domains = get_blocked_domains()
-    if not device_match and url_entry.rotate_targets:
-        safe_rotate_targets = [alt for alt in url_entry.rotate_targets if is_safe_url(alt, cached_domains)]
-        alt = select_rotate_target(safe_rotate_targets)
-        if alt:
-            target_url = alt
+
+    target_url = _get_target_url(url_entry, user_agent, cached_domains)
             
     if not is_safe_url(target_url, cached_domains):
         abort(403)
@@ -240,38 +218,14 @@ def redirect_to_url(short_code):
 
     # Stats
     if url_entry.stats_enabled:
-        url_entry.clicks_count += 1
-        
-        # Record detailed click
-        # Note: We already parsed UA above, reuse it
         client_ip = get_client_ip(request)
-        
-        # Mask IP for privacy (e.g. 1.2.3.4 -> 1.2.x.x)
-        masked_ip = client_ip
-        parts = client_ip.split('.')
-        if len(parts) == 4:
-            masked_ip = f"{parts[0]}.{parts[1]}.x.x"
-        else: # IPv6 support
-            v6_parts = client_ip.split(':')
-            if len(v6_parts) >= 2:
-                masked_ip = f"{v6_parts[0]}:{v6_parts[1]}:x:x"
-
-        new_click = Click(
-            url_id=url_entry.id,
-            ip_address=masked_ip,
-            country=get_geo_info(client_ip, request),
-            browser=user_agent.browser.family,
-            platform=user_agent.os.family,
-            referrer=request.referrer or "Direct"
-        )
-        db.session.add(new_click)
-        db.session.commit()
+        _record_click(url_entry, user_agent, client_ip)
     
     # If preview mode is enabled
     if url_entry.preview_mode:
-        return render_template('preview.html', target_url=target_url, short_code=short_code)
+        return render_template("preview.html", target_url=target_url, short_code=short_code)
 
-    return render_template('redirect.html', target_url=target_url)
+    return render_template("redirect.html", target_url=target_url)
 
 @main.route('/link-auth/<short_code>', methods=['GET', 'POST'])
 @limiter.limit("10 per minute")
@@ -487,6 +441,42 @@ def delete_url(short_code):
     return redirect(url_for('main.dashboard'))
 
 
+def _get_target_url(url_entry, user_agent, cached_domains):
+    """Determines the target URL based on device and rotation settings."""
+    target_url = url_entry.long_url
+    device_match = False
+
+    if url_entry.ios_target_url and (user_agent.os.family == "iOS"):
+        target_url = url_entry.ios_target_url
+        device_match = True
+    elif url_entry.android_target_url and (user_agent.os.family == "Android"):
+        target_url = url_entry.android_target_url
+        device_match = True
+
+    if not device_match and url_entry.rotate_targets:
+        safe_rotate_targets = [alt for alt in url_entry.rotate_targets if is_safe_url(alt, cached_domains)]
+        alt = select_rotate_target(safe_rotate_targets)
+        if alt:
+            target_url = alt
+
+    return target_url
+
+def _record_click(url_entry, user_agent, client_ip):
+    """Records a click with detailed statistics."""
+    url_entry.clicks_count += 1
+    masked_ip = _anonymize_ip(client_ip)
+
+    new_click = Click(
+        url_id=url_entry.id,
+        ip_address=masked_ip,
+        country=get_geo_info(client_ip, request),
+        browser=user_agent.browser.family,
+        platform=user_agent.os.family,
+        referrer=request.referrer or "Direct"
+    )
+    db.session.add(new_click)
+    db.session.commit()
+
 def _get_time_range_config(range_type, now):
     import datetime
     if range_type == '24h':
@@ -543,8 +533,6 @@ def _get_relative_time(ts, now):
 def _process_analytics(url_id, range_type, now):
     from sqlalchemy import func
     from app.models import db, Click
-    from urllib.parse import urlparse
-    import datetime
 
     cutoff, sqlite_format, pg_format, time_data, days_in_range = _get_time_range_config(range_type, now)
 
