@@ -4,13 +4,29 @@ import os
 DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() in ['true', '1', 't']
 SECRET_KEY = os.environ.get('SECRET_KEY')
 
+# Robustly handle empty or whitespace-only SECRET_KEY
+if SECRET_KEY:
+    SECRET_KEY = SECRET_KEY.strip()
+
+# SECURITY RATIONALE:
+# Using a dynamic fallback like os.urandom(24) is insecure because it invalidates
+# all session tokens (cookies) every time the application restarts. This leads to
+# poor user experience and makes it difficult to maintain persistent sessions.
+# Furthermore, it allows the application to run in production without an explicitly
+# set, static, and secure key. Production environments must strictly enforce the
+# presence of a static SECRET_KEY via environment variables to ensure security,
+# predictability, and session stability.
 if not SECRET_KEY:
     if DEBUG:
-        # Fallback for development only
+        # Fallback for development only to maintain session consistency across restarts.
+        # This is NOT suitable for production.
         SECRET_KEY = 'dev-secret-key-do-not-use-in-production'
     else:
-        # Enforce security in production
-        raise RuntimeError("SECRET_KEY must be set in production environments for security.")
+        # Enforce security in production by raising an error if the key is missing.
+        raise RuntimeError(
+            "SECRET_KEY must be set in production environments for security. "
+            "Set the SECRET_KEY environment variable to a static, secure value."
+        )
 
 class Config:
     basedir = os.path.abspath(os.path.dirname(__file__))
