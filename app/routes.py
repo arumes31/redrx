@@ -60,93 +60,37 @@ def health_check():
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_DEFAULT', '200 per day'), methods=['GET'])
 def index():
     form = ShortenURLForm()
-    
-    short_url = None
-    qr_data = None
-    stats_url = None
-    
-    # Handle Tab Switching Logic via Session or just context if needed, 
-    # but strictly forms handle their own validation.
+    short_url, qr_data, stats_url = None, None, None
     
     if form.validate_on_submit():
         if current_app.config.get('DISABLE_ANONYMOUS_CREATE') and not current_user.is_authenticated:
             flash("Please log in to shorten URLs.", 'warning')
             return redirect(url_for('main.login'))
 
-        long_url = form.long_url.data
-        
-        if not is_safe_url(long_url):
+        if not is_safe_url(form.long_url.data):
             flash("That destination URL is blocked for safety reasons.", 'danger')
             return render_template('index.html', form=form)
 
-        custom_code = form.custom_code.data.strip().upper() if form.custom_code.data else None
-        
-        # Check Custom Code Availability
-        if custom_code:
-            if URL.query.filter_by(short_code=custom_code).first():
-                flash(f"Code '{custom_code}' is already taken.", 'danger')
-                return render_template('index.html', form=form)
-            short_code = custom_code
-        else:
-            # Generate unique code
-            length = form.code_length.data or current_app.config['SHORT_CODE_LENGTH']
-            short_code = generate_short_code(length)
-            while URL.query.filter_by(short_code=short_code).first():
-                 short_code = generate_short_code(length)
-        
-        # Prepare Data
-        rotate_list = [u.strip() for u in form.rotate_targets.data.split(',') if u.strip()] if form.rotate_targets.data else None
-        
-        if rotate_list:
-            if len(rotate_list) > 50:
-                flash("Maximum 50 rotate targets allowed.", 'danger')
-                return render_template('index.html', form=form)
-            if not all(is_safe_url(u) for u in rotate_list):
-                flash("One or more rotate target URLs are blocked or invalid.", 'danger')
-                return render_template('index.html', form=form)
-
-        if form.ios_target_url.data and not is_safe_url(form.ios_target_url.data):
-            flash("iOS target URL is blocked or invalid.", 'danger')
+        short_code = _handle_short_code(form)
+        if not short_code:
             return render_template('index.html', form=form)
 
-        if form.android_target_url.data and not is_safe_url(form.android_target_url.data):
-            flash("Android target URL is blocked or invalid.", 'danger')
+        success_urls, rotate_list = _validate_additional_urls(form)
+        if not success_urls:
             return render_template('index.html', form=form)
 
-        password_hash = generate_password_hash(form.password.data) if form.password.data else None
-        
-        start_at = None
-        if form.start_date.data and form.start_time.data:
-            start_at = datetime.datetime.combine(form.start_date.data, form.start_time.data)
-            
-        end_at = None
-        if form.end_date.data and form.end_time.data:
-            end_at = datetime.datetime.combine(form.end_date.data, form.end_time.data)
-            
-        expires_at = None
-        if form.expiry_hours.data is not None:
-            if form.expiry_hours.data == 0 or form.expiry_hours.data > 8760:
-                if not current_user.is_authenticated:
-                    msg = "Please log in to create links longer than 1 year or permanent links."
-                    flash(msg, 'warning')
-                    return render_template('index.html', form=form)
-                
-                if form.expiry_hours.data == 0:
-                    expires_at = None
-                else:
-                    expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
-            else:
-                expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
+        success_ts, start_at, end_at, expires_at = _process_url_timestamps(form)
+        if not success_ts:
+            return render_template('index.html', form=form)
 
-        # Create Record
         new_url = URL(
             user_id=current_user.id if current_user.is_authenticated else None,
             short_code=short_code,
-            long_url=long_url,
+            long_url=form.long_url.data,
             rotate_targets=rotate_list,
             ios_target_url=form.ios_target_url.data,
             android_target_url=form.android_target_url.data,
-            password_hash=password_hash,
+            password_hash=generate_password_hash(form.password.data) if form.password.data else None,
             preview_mode=form.preview_mode.data,
             stats_enabled=form.stats_enabled.data,
             start_at=start_at,
@@ -155,33 +99,14 @@ def index():
         )
         db.session.add(new_url)
         db.session.commit()
-        
-        # Increment Prometheus Counter
         shortened_links_total.inc()
-        
-        # Generate QR
-        logo_img = None
-        if form.logo_file.data:
-             try:
-                logo_img = Image.open(form.logo_file.data)
-             except Exception:
-                 flash("Invalid Logo Image", 'warning')
 
         short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
-
-        qr_data = get_qr_data_url(
-            short_url,
-            color=form.qr_color.data,
-            bg=form.qr_bg.data,
-            logo_img=logo_img
-        )
-        
+        qr_data = _generate_qr_data_for_form(form, short_url)
         stats_url = url_for('main.stats', short_code=short_code, _external=True)
-        
         flash("URL Shortened Successfully!", 'success')
         
-    return render_template('index.html', form=form, 
-                           short_url=short_url, qr_data=qr_data, stats_url=stats_url)
+    return render_template('index.html', form=form, short_url=short_url, qr_data=qr_data, stats_url=stats_url)
 
 @main.route('/<short_code>')
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_REDIRECT', '100 per minute'))
@@ -487,6 +412,87 @@ def delete_url(short_code):
     return redirect(url_for('main.dashboard'))
 
 
+
+def _handle_short_code(form):
+    """Handles custom code validation and unique code generation."""
+    custom_code = form.custom_code.data.strip().upper() if form.custom_code.data else None
+
+    if custom_code:
+        if URL.query.filter_by(short_code=custom_code).first():
+            flash(f"Code '{custom_code}' is already taken.", 'danger')
+            return None
+        return custom_code
+
+    length = form.code_length.data or current_app.config['SHORT_CODE_LENGTH']
+    short_code = generate_short_code(length)
+    while URL.query.filter_by(short_code=short_code).first():
+        short_code = generate_short_code(length)
+    return short_code
+
+def _validate_additional_urls(form):
+    """Validates rotation targets and device-specific URLs."""
+    rotate_list = [u.strip() for u in form.rotate_targets.data.split(',') if u.strip()] if form.rotate_targets.data else None
+
+    if rotate_list:
+        if len(rotate_list) > 50:
+            flash("Maximum 50 rotate targets allowed.", 'danger')
+            return False, None
+        if not all(is_safe_url(u) for u in rotate_list):
+            flash("One or more rotate target URLs are blocked or invalid.", 'danger')
+            return False, None
+
+    if form.ios_target_url.data and not is_safe_url(form.ios_target_url.data):
+        flash("iOS target URL is blocked or invalid.", 'danger')
+        return False, None
+
+    if form.android_target_url.data and not is_safe_url(form.android_target_url.data):
+        flash("Android target URL is blocked or invalid.", 'danger')
+        return False, None
+
+    return True, rotate_list
+
+def _process_url_timestamps(form):
+    """Handles start/end dates and expiration calculation."""
+    start_at = None
+    if form.start_date.data and form.start_time.data:
+        start_at = datetime.datetime.combine(form.start_date.data, form.start_time.data)
+
+    end_at = None
+    if form.end_date.data and form.end_time.data:
+        end_at = datetime.datetime.combine(form.end_date.data, form.end_time.data)
+
+    expires_at = None
+    if form.expiry_hours.data is not None:
+        if form.expiry_hours.data == 0 or form.expiry_hours.data > 8760:
+            if not current_user.is_authenticated:
+                msg = "Please log in to create links longer than 1 year or permanent links."
+                flash(msg, 'warning')
+                return False, None, None, None
+
+            if form.expiry_hours.data == 0:
+                expires_at = None
+            else:
+                expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
+        else:
+            expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
+
+    return True, start_at, end_at, expires_at
+
+def _generate_qr_data_for_form(form, short_url):
+    """Handles logo processing and QR code generation."""
+    logo_img = None
+    if form.logo_file.data:
+        try:
+            logo_img = Image.open(form.logo_file.data)
+        except Exception:
+            flash("Invalid Logo Image", 'warning')
+
+    return get_qr_data_url(
+        short_url,
+        color=form.qr_color.data,
+        bg=form.qr_bg.data,
+        logo_img=logo_img
+    )
 def _get_time_range_config(range_type, now):
     import datetime
     if range_type == '24h':
