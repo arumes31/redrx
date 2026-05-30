@@ -543,8 +543,6 @@ def _get_relative_time(ts, now):
 def _process_analytics(url_id, range_type, now):
     from sqlalchemy import func
     from app.models import db, Click
-    from urllib.parse import urlparse
-    import datetime
 
     cutoff, sqlite_format, pg_format, time_data, days_in_range = _get_time_range_config(range_type, now)
 
