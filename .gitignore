@@ -3,3 +3,6 @@ TODO.md
 __pycache__/
 .pytest_cache
 temp/
+blocked_domains.txt
+pytest_output.log
+__pycache__/
