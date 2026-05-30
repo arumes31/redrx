@@ -67,3 +67,50 @@ def test_api_get_info_inactive_url(app, client, test_user):
     data = response.get_json()
     assert data['short_code'] == 'EXPIRED'
     assert data['active'] is False
+
+def test_api_get_info_with_clicks(app, client, test_user):
+    with app.app_context():
+        url = URL(short_code='CLICKS', long_url='https://google.com', user_id=test_user.id)
+        url.clicks_count = 15
+        db.session.add(url)
+        db.session.commit()
+
+    response = client.get('/api/v1/CLICKS', headers={'X-API-KEY': 'test-api-key'})
+    assert response.status_code == 200
+    assert response.get_json()['clicks_count'] == 15
+
+def test_api_get_info_disabled(app, client, test_user):
+    with app.app_context():
+        url = URL(short_code='DISABLED', long_url='https://google.com', user_id=test_user.id, is_enabled=False)
+        db.session.add(url)
+        db.session.commit()
+
+    response = client.get('/api/v1/DISABLED', headers={'X-API-KEY': 'test-api-key'})
+    assert response.status_code == 200
+    assert response.get_json()['active'] is False
+
+def test_api_get_info_scheduled_future(app, client, test_user):
+    import datetime
+    future = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+    future = future.replace(tzinfo=None)
+    with app.app_context():
+        url = URL(short_code='FUTURE', long_url='https://google.com', user_id=test_user.id, start_at=future)
+        db.session.add(url)
+        db.session.commit()
+
+    response = client.get('/api/v1/FUTURE', headers={'X-API-KEY': 'test-api-key'})
+    assert response.status_code == 200
+    assert response.get_json()['active'] is False
+
+def test_api_get_info_scheduled_past(app, client, test_user):
+    import datetime
+    past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)
+    past = past.replace(tzinfo=None)
+    with app.app_context():
+        url = URL(short_code='PAST', long_url='https://google.com', user_id=test_user.id, end_at=past)
+        db.session.add(url)
+        db.session.commit()
+
+    response = client.get('/api/v1/PAST', headers={'X-API-KEY': 'test-api-key'})
+    assert response.status_code == 200
+    assert response.get_json()['active'] is False

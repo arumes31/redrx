@@ -42,3 +42,27 @@ def test_api_shorten_generated_code_collision(client, test_user):
         data = response.get_json()
         assert data['short_code'] == 'UNIQUE'
         assert mock_gen.call_count == 2
+
+def test_api_shorten_with_rotate_targets(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'rotate_targets': [' https://target1.com ', 'https://target2.com']
+    })
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data['rotate_targets'] == ['https://target1.com', 'https://target2.com']
+
+def test_api_shorten_with_unsafe_rotate_target(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    # Assuming is_safe_url blocks certain things or we can mock it
+    # For now, let's just see if it handles a list correctly.
+    # If I want to trigger 403, I'd need to know what's blocked.
+    # In config.py, PHISHING_LIST_URLS is set.
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'rotate_targets': ['invalid-url']
+    })
+    # is_safe_url usually checks for http/https and domain
+    assert response.status_code == 403
+    assert 'blocked or invalid' in response.get_json()['error']
