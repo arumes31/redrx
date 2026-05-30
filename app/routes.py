@@ -2,21 +2,14 @@ import io
 import csv
 import datetime
 import uuid
+from urllib.parse import urlparse
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, current_app, session, jsonify
 from flask_login import login_user, logout_user, current_user, login_required
-from app import limiter
-from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 from user_agents import parse
-from urllib.parse import urlparse
 from sqlalchemy import func, text
 from prometheus_client import Counter
-
-# Custom Metrics
-shortened_links_total = Counter('redrx_shortened_links_total', 'Total number of shortened links created')
-redirections_total = Counter('redrx_redirections_total', 'Total number of link redirections')
-ratelimit_hits_total = Counter('redrx_ratelimit_hits_total', 'Total number of requests hitting the rate limit')
-
+from app import limiter
 from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
 from app.utils import (
@@ -24,10 +17,14 @@ from app.utils import (
     get_geo_info, is_safe_url, get_client_ip, _get_redis_client, is_safe_redirect_url,
     get_blocked_domains
 )
+from werkzeug.security import generate_password_hash, check_password_hash
+
+# Custom Metrics
+shortened_links_total = Counter('redrx_shortened_links_total', 'Total number of shortened links created')
+redirections_total = Counter('redrx_redirections_total', 'Total number of link redirections')
+ratelimit_hits_total = Counter('redrx_ratelimit_hits_total', 'Total number of requests hitting the rate limit')
 
 main = Blueprint('main', __name__)
-
-@main.route('/health')
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_HEALTH', '10 per minute'))
 def health_check():
     health = {"status": "healthy", "checks": {}}
@@ -488,7 +485,6 @@ def delete_url(short_code):
 
 
 def _get_time_range_config(range_type, now):
-    import datetime
     if range_type == '24h':
         cutoff = now - datetime.timedelta(hours=24)
         days = 1
@@ -529,7 +525,6 @@ def _anonymize_ip(ip):
     return 'xxxx'
 
 def _get_relative_time(ts, now):
-    import datetime
     ts_aware = ts.replace(tzinfo=datetime.timezone.utc) if ts.tzinfo is None else ts
     diff = now - ts_aware
     if diff.days > 0:
@@ -541,14 +536,8 @@ def _get_relative_time(ts, now):
     return 'Just now'
 
 def _process_analytics(url_id, range_type, now):
-    from sqlalchemy import func
-    from app.models import db, Click
-    from urllib.parse import urlparse
-    import datetime
-
-    cutoff, sqlite_format, pg_format, time_data, days_in_range = _get_time_range_config(range_type, now)
-
     # 1. Clicks over time
+    cutoff, sqlite_format, pg_format, time_data, days_in_range = _get_time_range_config(range_type, now)
     dialect = db.engine.dialect.name
     format_str = sqlite_format if dialect == 'sqlite' else pg_format
     if dialect == 'sqlite':
@@ -566,20 +555,20 @@ def _process_analytics(url_id, range_type, now):
         if key in time_data:
             time_data[key] = count
 
-    # 2. Country stats (all time)
-    country_counts = db.session.query(Click.country, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.country).all()
+    # 2. Country stats (in range)
+    country_counts = db.session.query(Click.country, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.country).all()
     country_data = {c or 'Unknown': count for c, count in country_counts}
 
-    # 3. Browser stats (all time)
-    browser_counts = db.session.query(Click.browser, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.browser).all()
+    # 3. Browser stats (in range)
+    browser_counts = db.session.query(Click.browser, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.browser).all()
     browser_data = {b or 'Unknown': count for b, count in browser_counts}
 
-    # 4. Platform stats (all time)
-    platform_counts = db.session.query(Click.platform, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.platform).all()
+    # 4. Platform stats (in range)
+    platform_counts = db.session.query(Click.platform, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.platform).all()
     platform_data = {p or 'Unknown': count for p, count in platform_counts}
 
-    # 5. Referrer stats (all time)
-    ref_counts = db.session.query(Click.referrer, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.referrer).all()
+    # 5. Referrer stats (in range)
+    ref_counts = db.session.query(Click.referrer, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.referrer).all()
     referrer_data = {}
     for ref, count in ref_counts:
         label = ref or 'Direct'
