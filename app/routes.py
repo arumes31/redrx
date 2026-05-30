@@ -20,6 +20,7 @@ ratelimit_hits_total = Counter('redrx_ratelimit_hits_total', 'Total number of re
 from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
 from app.utils import (
+    sanitize_csv_field,
     generate_short_code, get_qr_data_url, generate_qr, select_rotate_target,
     get_geo_info, is_safe_url, get_client_ip, _get_redis_client, is_safe_redirect_url,
     get_blocked_domains
@@ -396,15 +397,16 @@ def export_links():
     writer = csv.writer(output)
     writer.writerow(['Short Code', 'Long URL', 'Clicks', 'Created At', 'Last Accessed', 'Expires At'])
     
+
     for u in urls:
-        writer.writerow([
+        writer.writerow([sanitize_csv_field(f) for f in [
             u.short_code, 
             u.long_url, 
             u.clicks_count, 
             u.created_at.isoformat(),
             u.last_accessed_at.isoformat() if u.last_accessed_at else 'Never',
             u.expires_at.isoformat() if u.expires_at else 'Never'
-        ])
+        ]])
     
     output.seek(0)
     return send_file(

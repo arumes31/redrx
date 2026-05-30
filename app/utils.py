@@ -319,6 +319,15 @@ def get_geo_info(ip, request=None):
 
     return country
 
+def sanitize_csv_field(value):
+    """
+    Escapes a value for CSV export to prevent CSV injection.
+    Prepend a single quote if the value starts with =, +, -, or @.
+    """
+    if isinstance(value, str) and value and value[0] in ("=", "+", "-", "@"):
+        return f"'{value}"
+    return value
+
 def generate_short_code(length=6):
     """Generates a random short code."""
     return str(uuid.uuid4())[:length].upper()
