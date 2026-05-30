@@ -8,14 +8,8 @@ from app import limiter
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 from user_agents import parse
-from urllib.parse import urlparse
 from sqlalchemy import func, text
 from prometheus_client import Counter
-
-# Custom Metrics
-shortened_links_total = Counter('redrx_shortened_links_total', 'Total number of shortened links created')
-redirections_total = Counter('redrx_redirections_total', 'Total number of link redirections')
-ratelimit_hits_total = Counter('redrx_ratelimit_hits_total', 'Total number of requests hitting the rate limit')
 
 from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
@@ -24,6 +18,11 @@ from app.utils import (
     get_geo_info, is_safe_url, get_client_ip, _get_redis_client, is_safe_redirect_url,
     get_blocked_domains
 )
+# Custom Metrics
+shortened_links_total = Counter('redrx_shortened_links_total', 'Total number of shortened links created')
+redirections_total = Counter('redrx_redirections_total', 'Total number of link redirections')
+ratelimit_hits_total = Counter('redrx_ratelimit_hits_total', 'Total number of requests hitting the rate limit')
+
 
 main = Blueprint('main', __name__)
 
@@ -544,7 +543,6 @@ def _process_analytics(url_id, range_type, now):
     from sqlalchemy import func
     from app.models import db, Click
     from urllib.parse import urlparse
-    import datetime
 
     cutoff, sqlite_format, pg_format, time_data, days_in_range = _get_time_range_config(range_type, now)
 
