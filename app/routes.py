@@ -12,11 +12,6 @@ from urllib.parse import urlparse
 from sqlalchemy import func, text
 from prometheus_client import Counter
 
-# Custom Metrics
-shortened_links_total = Counter('redrx_shortened_links_total', 'Total number of shortened links created')
-redirections_total = Counter('redrx_redirections_total', 'Total number of link redirections')
-ratelimit_hits_total = Counter('redrx_ratelimit_hits_total', 'Total number of requests hitting the rate limit')
-
 from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
 from app.utils import (
@@ -24,6 +19,11 @@ from app.utils import (
     get_geo_info, is_safe_url, get_client_ip, _get_redis_client, is_safe_redirect_url,
     get_blocked_domains
 )
+
+# Custom Metrics
+shortened_links_total = Counter('redrx_shortened_links_total', 'Total number of shortened links created')
+redirections_total = Counter('redrx_redirections_total', 'Total number of link redirections')
+ratelimit_hits_total = Counter('redrx_ratelimit_hits_total', 'Total number of requests hitting the rate limit')
 
 main = Blueprint('main', __name__)
 
@@ -540,15 +540,7 @@ def _get_relative_time(ts, now):
         return f'{diff.seconds // 60}m ago'
     return 'Just now'
 
-def _process_analytics(url_id, range_type, now):
-    from sqlalchemy import func
-    from app.models import db, Click
-    from urllib.parse import urlparse
-    import datetime
-
-    cutoff, sqlite_format, pg_format, time_data, days_in_range = _get_time_range_config(range_type, now)
-
-    # 1. Clicks over time
+def _get_clicks_over_time(url_id, cutoff, sqlite_format, pg_format, time_data):
     dialect = db.engine.dialect.name
     format_str = sqlite_format if dialect == 'sqlite' else pg_format
     if dialect == 'sqlite':
@@ -565,20 +557,13 @@ def _process_analytics(url_id, range_type, now):
     for key, count in time_counts:
         if key in time_data:
             time_data[key] = count
+    return time_data
 
-    # 2. Country stats (all time)
-    country_counts = db.session.query(Click.country, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.country).all()
-    country_data = {c or 'Unknown': count for c, count in country_counts}
+def _get_categorical_stats(url_id, column):
+    counts = db.session.query(column, func.count(Click.id)).filter_by(url_id=url_id).group_by(column).all()
+    return {val or 'Unknown': count for val, count in counts}
 
-    # 3. Browser stats (all time)
-    browser_counts = db.session.query(Click.browser, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.browser).all()
-    browser_data = {b or 'Unknown': count for b, count in browser_counts}
-
-    # 4. Platform stats (all time)
-    platform_counts = db.session.query(Click.platform, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.platform).all()
-    platform_data = {p or 'Unknown': count for p, count in platform_counts}
-
-    # 5. Referrer stats (all time)
+def _get_referrer_stats(url_id):
     ref_counts = db.session.query(Click.referrer, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.referrer).all()
     referrer_data = {}
     for ref, count in ref_counts:
@@ -586,12 +571,47 @@ def _process_analytics(url_id, range_type, now):
         if '://' in label:
             label = urlparse(label).netloc or label
         referrer_data[label] = referrer_data.get(label, 0) + count
+    return referrer_data
 
-    # 6. Momentum
+def _process_analytics(url_id, range_type, now):
+    cutoff, sqlite_format, pg_format, time_data, days_in_range = _get_time_range_config(range_type, now)
+
+    time_data = _get_clicks_over_time(url_id, cutoff, sqlite_format, pg_format, time_data)
+    country_data = _get_categorical_stats(url_id, Click.country)
+    browser_data = _get_categorical_stats(url_id, Click.browser)
+    platform_data = _get_categorical_stats(url_id, Click.platform)
+    referrer_data = _get_referrer_stats(url_id)
+
     total_in_range = sum(time_data.values())
     avg_daily = round(total_in_range / days_in_range, 1)
 
     return time_data, country_data, browser_data, platform_data, referrer_data, avg_daily
+
+
+def _process_recent_activity(url_id, now):
+    recent_clicks = Click.query.filter_by(url_id=url_id).order_by(Click.timestamp.desc()).limit(10).all()
+    for rc in recent_clicks:
+        rc.relative_time = _get_relative_time(rc.timestamp, now)
+        rc.ip_anonymized = _anonymize_ip(rc.ip_address)
+    return recent_clicks
+
+
+def _prepare_stats_response_data(url_entry, time_data, country_data, browser_data, platform_data, referrer_data, avg_daily, range_type, recent_clicks):
+    short_url = f'https://{current_app.config["BASE_DOMAIN"]}/{url_entry.short_code}'
+    return dict(
+        url=url_entry,
+        short_url=short_url,
+        active=url_entry.is_active(),
+        time_data=time_data,
+        country_data=country_data,
+        browser_data=browser_data,
+        platform_data=platform_data,
+        referrer_data=referrer_data,
+        avg_daily=avg_daily,
+        range_type=range_type,
+        recent_clicks=recent_clicks
+    )
+
 
 @main.route('/<short_code>/stats')
 @limiter.limit("20 per minute")
@@ -599,7 +619,7 @@ def stats(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
     
     current_user_id = current_user.id if current_user.is_authenticated else None
-    if url_entry.user_id != current_user_id:
+    if url_entry.user_id is not None and url_entry.user_id != current_user_id:
         abort(403)
         
     range_type = request.args.get('range', '30d')
@@ -609,23 +629,12 @@ def stats(short_code):
     time_data, country_data, browser_data, platform_data, referrer_data, avg_daily = _process_analytics(url_entry.id, range_type, now)
 
     # Recent activity (last 10)
-    recent_clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.desc()).limit(10).all()
-    for rc in recent_clicks:
-        rc.relative_time = _get_relative_time(rc.timestamp, now)
-        rc.ip_anonymized = _anonymize_ip(rc.ip_address)
+    recent_clicks = _process_recent_activity(url_entry.id, now)
 
-    short_url = f'https://{current_app.config["BASE_DOMAIN"]}/{short_code}'
-    return render_template('stats.html', url=url_entry, short_url=short_url, 
-                           active=url_entry.is_active(),
-                           time_data=time_data,
-                           country_data=country_data,
-                           browser_data=browser_data,
-                           platform_data=platform_data,
-                           referrer_data=referrer_data,
-                           avg_daily=avg_daily,
-                           range_type=range_type,
-                           recent_clicks=recent_clicks)
-
+    template_data = _prepare_stats_response_data(url_entry, time_data, country_data, browser_data,
+                                                 platform_data, referrer_data, avg_daily,
+                                                 range_type, recent_clicks)
+    return render_template('stats.html', **template_data)
 @main.route('/<short_code>/qr')
 @limiter.limit("30 per minute")
 def qr_download(short_code):
