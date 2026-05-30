@@ -54,10 +54,27 @@ class URL(db.Model):
 
     @rotate_targets.setter
     def rotate_targets(self, value):
-        if value:
-            self._rotate_targets = json.dumps(value)
-        else:
+        if not value:
             self._rotate_targets = None
+            return
+
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    value = parsed
+                else:
+                    value = [parsed]
+            except (json.JSONDecodeError, TypeError):
+                value = [value]
+
+        if not isinstance(value, list):
+            try:
+                value = list(value)
+            except (TypeError, ValueError):
+                value = [value]
+
+        self._rotate_targets = json.dumps(value)
 
     def is_active(self):
         if not self.is_enabled:

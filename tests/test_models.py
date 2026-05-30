@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 from app.models import db, User, URL, Click
 
 def test_user_creation(app):
@@ -27,7 +28,6 @@ def test_url_rotate_targets(app):
 
         saved_url = URL.query.filter_by(short_code='rotate').first()
         assert saved_url.rotate_targets == targets
-        import json
         assert json.loads(saved_url._rotate_targets) == targets
 
         # Test setting None
@@ -41,6 +41,40 @@ def test_url_rotate_targets(app):
         db.session.commit()
         assert saved_url.rotate_targets == []
         assert saved_url._rotate_targets is None
+
+def test_url_rotate_targets_polymorphic(app):
+    with app.app_context():
+        url = URL(short_code='poly', long_url='https://main.com')
+
+        # Test setting JSON string
+        targets_json = '["https://site1.com", "https://site2.com"]'
+        url.rotate_targets = targets_json
+        db.session.add(url)
+        db.session.commit()
+
+        saved_url = URL.query.filter_by(short_code='poly').first()
+        assert saved_url.rotate_targets == ["https://site1.com", "https://site2.com"]
+        assert saved_url._rotate_targets == '["https://site1.com", "https://site2.com"]'
+
+        # Test setting JSON string (not a list)
+        not_list_json = '"https://site1.com"'
+        url.rotate_targets = not_list_json
+        assert url.rotate_targets == ["https://site1.com"]
+
+        # Test setting plain string (single URL)
+        single_target = "https://single.com"
+        url.rotate_targets = single_target
+        db.session.commit()
+        assert saved_url.rotate_targets == ["https://single.com"]
+        assert saved_url._rotate_targets == '["https://single.com"]'
+
+        # Test setting other iterable (tuple)
+        url.rotate_targets = ("https://t1.com", "https://t2.com")
+        assert url.rotate_targets == ["https://t1.com", "https://t2.com"]
+
+        # Test setting non-iterable non-string
+        url.rotate_targets = 123
+        assert url.rotate_targets == [123]
 
 def test_url_is_active(app):
     with app.app_context():
