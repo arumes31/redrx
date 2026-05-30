@@ -38,8 +38,6 @@ _blocked_domains_mtime = 0
 _blocked_domains_path = None
 _blocked_domains_ino = 0
 
-_blocked_env_cache = None
-_blocked_env_raw = None
 
 def update_phishing_list():
     """Downloads the latest phishing domain lists."""
@@ -195,13 +193,8 @@ def is_safe_url(target_url, blocked_domains_cache=None):
     except (ValueError, TypeError):
         return False
 
-    # 1. Check manual overrides from ENV
-    global _blocked_env_cache, _blocked_env_raw
-    current_raw = os.environ.get('BLOCKED_DOMAINS', '')
-    if _blocked_env_cache is None or current_raw != _blocked_env_raw:
-        _blocked_env_cache = [b.strip().lower() for b in current_raw.split(',') if b.strip()]
-        _blocked_env_raw = current_raw
-
+    # 1. Check manual overrides from config
+    blocked_env = current_app.config.get('BLOCKED_DOMAINS', [])
     domain = ""
     try:
         domain = urlparse(target_url).netloc.lower()
@@ -210,7 +203,7 @@ def is_safe_url(target_url, blocked_domains_cache=None):
         if ':' in domain:
             domain = domain.split(':')[0]
              
-        for b in _blocked_env_cache:
+        for b in blocked_env:
             if domain == b or domain.endswith('.' + b):
                 return False
     except Exception:

@@ -28,6 +28,7 @@ class Config:
     
     # App specific config
     BASE_DOMAIN = os.environ.get('BASE_DOMAIN', 'short.example.com')
+    BLOCKED_DOMAINS = [b.strip().lower() for b in os.environ.get('BLOCKED_DOMAINS', '').split(',') if b.strip()]
     EXPIRY_HOURS = int(os.environ.get('EXPIRY_HOURS', 24))
     SHORT_CODE_LENGTH = int(os.environ.get('SHORT_CODE_LENGTH', 6))
     DEFAULT_QR_COLOR = os.environ.get('DEFAULT_QR_COLOR', 'black')
