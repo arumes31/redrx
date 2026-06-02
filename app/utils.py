@@ -267,7 +267,7 @@ def _set_cached_geo(ip, country):
 
     if _redis_client and country:
         try:
-            _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, country)
+            _redis_client.set(f"{_GEO_PREFIX}{ip}", country, ex=_GEO_CACHE_TTL)
         except Exception:
             pass
 
@@ -294,6 +294,12 @@ def _get_db_geo(ip):
 
 def get_geo_info(ip, request=None):
     """Fetches country from IP using local MaxMind database or Cloudflare header with Redis cache."""
+    if not ip or not isinstance(ip, str):
+        return "Unknown"
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return "Unknown"
     # 1. Check Redis Cache
     cached_val = _get_cached_geo(ip)
     if cached_val:

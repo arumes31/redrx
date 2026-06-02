@@ -30,7 +30,7 @@ def test_get_geo_info_cloudflare_hit(app, mock_redis):
         result = get_geo_info("1.2.3.4", request=mock_request)
 
     assert result == "US"
-    mock_redis.setex.assert_called_with("geo:1.2.3.4", 300, "US")
+    mock_redis.set.assert_called_with("geo:1.2.3.4", "US", ex=300)
 
 def test_get_geo_info_local_network(app, mock_redis):
     mock_redis.get.return_value = None
@@ -53,7 +53,7 @@ def test_get_geo_info_db_lookup(app, mock_redis, mock_geoip):
             result = get_geo_info("8.8.8.8")
 
     assert result == "United States"
-    mock_redis.setex.assert_called_with("geo:8.8.8.8", 300, "United States")
+    mock_redis.set.assert_called_with("geo:8.8.8.8", "United States", ex=300)
 
 def test_get_geo_info_db_missing(app, mock_redis):
     mock_redis.get.return_value = None
@@ -64,6 +64,8 @@ def test_get_geo_info_db_missing(app, mock_redis):
             result = get_geo_info("8.8.8.8")
 
     assert result == "Unknown (DB Missing)"
+    # Ensure "Unknown (DB Missing)" is NOT cached
+    mock_redis.set.assert_not_called()
 
 def test_get_geo_info_redis_error(app, mock_redis, mock_geoip):
     mock_redis.get.side_effect = Exception("Redis Down")
@@ -78,3 +80,58 @@ def test_get_geo_info_redis_error(app, mock_redis, mock_geoip):
             result = get_geo_info("8.8.8.8")
 
     assert result == "United Kingdom"
+
+def test_get_geo_info_invalid_ips(app, mock_redis):
+    mock_redis.get.return_value = None
+
+    assert get_geo_info(None) == "Unknown"
+    assert get_geo_info("") == "Unknown"
+    assert get_geo_info(1234) == "Unknown"
+
+    # Malformed IP that ipaddress.ip_address raises ValueError for
+    assert get_geo_info("not-an-ip") == "Unknown"
+
+def test_get_geo_info_db_corrupted_response(app, mock_redis, mock_geoip):
+    mock_redis.get.return_value = None
+    mock_reader = mock_geoip.return_value.__enter__.return_value
+    mock_reader.country.side_effect = Exception("DB Error")
+
+    with patch('app.utils.current_app') as mock_app:
+        mock_app.config = {'GEOIP_DB_PATH': '/tmp/test.mmdb'}
+        with patch('app.utils.os.path.exists', return_value=True):
+            result = get_geo_info("8.8.8.8")
+
+    assert result == "Unknown"
+    mock_redis.set.assert_not_called()
+
+def test_get_geo_info_db_none_country_name(app, mock_redis, mock_geoip):
+    mock_redis.get.return_value = None
+    mock_reader = mock_geoip.return_value.__enter__.return_value
+    mock_response = MagicMock()
+    mock_response.country.name = None
+    mock_reader.country.return_value = mock_response
+
+    with patch('app.utils.current_app') as mock_app:
+        mock_app.config = {'GEOIP_DB_PATH': '/tmp/test.mmdb'}
+        with patch('app.utils.os.path.exists', return_value=True):
+            result = get_geo_info("8.8.8.8")
+
+    assert result == "Unknown"
+    mock_redis.set.assert_not_called()
+
+def test_get_geo_info_redis_init_failure(app, mock_geoip):
+    # Mocking the module-level _redis_client to be None
+    # and ensuring _get_redis_client returns None
+    with patch('app.utils._redis_client', None):
+        with patch('app.utils._get_redis_client', return_value=None):
+            mock_reader = mock_geoip.return_value.__enter__.return_value
+            mock_response = MagicMock()
+            mock_response.country.name = "Germany"
+            mock_reader.country.return_value = mock_response
+
+            with patch('app.utils.current_app') as mock_app:
+                mock_app.config = {'GEOIP_DB_PATH': '/tmp/test.mmdb'}
+                with patch('app.utils.os.path.exists', return_value=True):
+                    result = get_geo_info("8.8.8.8")
+
+            assert result == "Germany"
