@@ -19,3 +19,6 @@ def test_select_rotate_target_other_iterable():
     targets = {"https://a.com", "https://b.com"}
     result = select_rotate_target(targets)
     assert result in targets
+
+def test_select_rotate_target_empty_generator():
+    assert select_rotate_target((x for x in [])) is None
