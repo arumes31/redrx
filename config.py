@@ -1,28 +1,27 @@
 import os
 
-# Compute module-level DEBUG and SECRET_KEY first
-DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() in ['true', '1', 't']
-SECRET_KEY = os.environ.get('SECRET_KEY')
-
-if not SECRET_KEY:
-    if DEBUG:
-        # Fallback for development only
-        SECRET_KEY = 'dev-secret-key-do-not-use-in-production'
-    else:
-        # Enforce security in production
-        raise RuntimeError("SECRET_KEY must be set in production environments for security.")
 
 class Config:
     basedir = os.path.abspath(os.path.dirname(__file__))
 
     # Environment mode
-    DEBUG = DEBUG
+    DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() in ["true", "1", "t"]
 
     # Secret Key Security
-    SECRET_KEY = SECRET_KEY
+    SECRET_KEY = os.environ.get("SECRET_KEY")
 
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'sqlite:///' + os.path.join(basedir, 'db', 'shortener.db')
+    @classmethod
+    def validate(cls):
+        """Validates critical configuration before app startup."""
+        if not cls.SECRET_KEY:
+            if cls.DEBUG:
+                # Fallback for development only
+                cls.SECRET_KEY = 'dev-secret-key-do-not-use-in-production'
+            else:
+                # Enforce security in production
+                raise RuntimeError("SECRET_KEY must be set in production environments for security.")
+
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or         'sqlite:///' + os.path.join(basedir, 'db', 'shortener.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MAX_CONTENT_LENGTH = 1 * 1024 * 1024 # 1MB Limit
     

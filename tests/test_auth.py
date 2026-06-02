@@ -6,9 +6,10 @@ from config import Config
 
 class TestConfig(Config):
     TESTING = True
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    DEBUG = True
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     WTF_CSRF_ENABLED = False
-    BASE_DOMAIN = 'short.example.com'
+    BASE_DOMAIN = "short.example.com"
 
 @pytest.fixture
 def app():
@@ -16,9 +17,9 @@ def app():
     with app.app_context():
         db.create_all()
         user = User(
-            username='testuser',
-            email='test@example.com',
-            password_hash=generate_password_hash('password123')
+            username="testuser",
+            email="test@example.com",
+            password_hash=generate_password_hash("password123")
         )
         db.session.add(user)
         db.session.commit()
@@ -30,20 +31,20 @@ def client(app):
 
 def test_safe_login_redirect_vulnerability_fixed(client):
     # This test should now redirect to index because malicious.com is NOT safe
-    response = client.post('/login?next=http://malicious.com', data={
-        'username': 'testuser',
-        'password': 'password123'
+    response = client.post("/login?next=http://malicious.com", data={
+        "username": "testuser",
+        "password": "password123"
     }, follow_redirects=False)
 
     assert response.status_code == 302
     # Should redirect to index (/)
-    assert response.location == '/' or response.location == 'http://localhost/'
+    assert response.location == "/" or response.location == "http://localhost/"
 
 def test_safe_login_redirect_allowed(client):
-    response = client.post('/login?next=/dashboard', data={
-        'username': 'testuser',
-        'password': 'password123'
+    response = client.post("/login?next=/dashboard", data={
+        "username": "testuser",
+        "password": "password123"
     }, follow_redirects=False)
 
     assert response.status_code == 302
-    assert response.location == '/dashboard' or response.location == 'http://localhost/dashboard'
+    assert response.location == "/dashboard" or response.location == "http://localhost/dashboard"

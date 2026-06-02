@@ -1,5 +1,9 @@
-db/
-TODO.md
+*.pyc
 __pycache__/
-.pytest_cache
-temp/
+.coverage
+blocked_domains.txt
+*.db
+*.sqlite3
+instance/
+.env
+.pytest_cache/
