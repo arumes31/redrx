@@ -1,4 +1,3 @@
-import pytest
 from app.utils import select_rotate_target
 
 def test_select_rotate_target_empty():

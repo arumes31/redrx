@@ -1,6 +1,5 @@
 import re
 from urllib.parse import urlparse
-import pytest
 from app.models import db, URL, Click
 from datetime import datetime, timedelta, timezone
 

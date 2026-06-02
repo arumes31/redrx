@@ -1,5 +1,4 @@
 import pytest
-import os
 from app.models import db, URL
 from app.utils import cleanup_phishing_urls
 
