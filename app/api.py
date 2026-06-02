@@ -3,7 +3,8 @@ from werkzeug.security import generate_password_hash
 from app.models import db, URL, User
 from app.utils import generate_short_code, is_safe_url
 from app import limiter, csrf
-from app.routes import shortened_links_total # Import the custom counter
+from app.routes import shortened_links_total
+import re
 import datetime
 
 api = Blueprint('api', __name__, url_prefix='/api/v1')
@@ -15,159 +16,169 @@ def get_user_from_api_key():
         return None
     return User.query.filter_by(api_key=api_key).first()
 
-@api.route('/shorten', methods=['POST'])
-@limiter.limit("60 per minute") # Higher limit for API
-def shorten():
-    # Authenticate User - Mandatory
-    user = get_user_from_api_key()
+def _parse_iso_datetime(dt_str):
+    if not dt_str:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+
+def _resolve_short_code(custom_code, code_length):
+    if custom_code:
+        custom_code = custom_code.strip().upper()
+        if not (3 <= len(custom_code) <= 20):
+            return None, 'custom_code must be between 3 and 20 characters'
+        if not re.match(r'^[A-Z0-9_-]+$', custom_code):
+            return None, 'custom_code must contain only alphanumeric characters, hyphens, or underscores'
+        if URL.query.filter_by(short_code=custom_code).first():
+            return None, 'Custom code already taken'
+        return custom_code, None
     
+    short_code = generate_short_code(code_length)
+    while URL.query.filter_by(short_code=short_code).first():
+        short_code = generate_short_code(code_length)
+    return short_code, None
+
+def _validate_rotate_targets(rotate_targets):
+    if rotate_targets is None:
+        return None, None
+    if not isinstance(rotate_targets, list) or not all(isinstance(u, str) for u in rotate_targets):
+        return None, 'rotate_targets must be a list of strings'
+    if len(rotate_targets) > 50:
+        return None, 'Maximum 50 rotate targets allowed'
+
+    rotate_targets = [u.strip() for u in rotate_targets]
+    if not all(is_safe_url(u) for u in rotate_targets):
+        return None, 'One or more rotate target URLs are blocked or invalid.'
+    return rotate_targets, None
+
+def _validate_input_json():
+    data = request.get_json()
+    if not isinstance(data, dict):
+        return None, 'Request payload must be a JSON object'
+    if 'long_url' not in data:
+        return None, 'Missing long_url'
+    if not isinstance(data.get('long_url'), str):
+        return None, 'long_url must be a string'
+    return data, None
+
+def _get_expiry_date(data):
+    try:
+        expiry_hours = int(data.get('expiry_hours', current_app.config['EXPIRY_HOURS']))
+        if not (0 <= expiry_hours <= 876000):
+            return None, 'expiry_hours must be between 0 and 876,000 (100 years)'
+    except (ValueError, TypeError):
+        return None, 'expiry_hours must be an integer'
+
+    if expiry_hours == 0:
+        return None, None
+
+    try:
+        return datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=expiry_hours), None
+    except (OverflowError, OSError):
+         return None, 'expiry_hours results in a date that is out of range'
+
+def _get_scheduling_dates(data):
+    s_str, e_str = data.get('start_at'), data.get('end_at')
+    if (s_str and not isinstance(s_str, str)) or (e_str and not isinstance(e_str, str)):
+        return None, None, 'scheduling dates must be strings (ISO 8601)'
+
+    start_at = _parse_iso_datetime(s_str)
+    if s_str and not start_at:
+        return None, None, 'Invalid start_at format. Use ISO 8601'
+
+    end_at = _parse_iso_datetime(e_str)
+    if e_str and not end_at:
+        return None, None, 'Invalid end_at format. Use ISO 8601'
+
+    if start_at and end_at and end_at <= start_at:
+        return None, None, 'Invalid scheduling window: end_at must be after start_at'
+
+    return start_at, end_at, None
+
+def _get_code_length(data):
+    try:
+        code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
+        if not (3 <= code_length <= 20):
+            return None, 'code_length must be between 3 and 20'
+        return code_length, None
+    except (ValueError, TypeError):
+        return None, 'code_length must be an integer'
+
+@api.route('/shorten', methods=['POST'])
+@limiter.limit("60 per minute")
+def shorten():
+    user = get_user_from_api_key()
     if not user:
         return jsonify({'error': 'Valid API Key required. Access denied.'}), 401
 
-    data = request.get_json()
-    if not isinstance(data, dict):
-        return jsonify({'error': 'Request payload must be a JSON object'}), 400
-
-    if 'long_url' not in data:
-        return jsonify({'error': 'Missing long_url'}), 400
-
-    if not isinstance(data.get('long_url'), str):
-        return jsonify({'error': 'long_url must be a string'}), 400
+    data, error = _validate_input_json()
+    if error:
+        return jsonify({'error': error}), 400
 
     long_url = data['long_url'].strip()
-    
     if not is_safe_url(long_url):
         return jsonify({'error': 'Destination URL is blocked'}), 403
 
     custom_code = data.get('custom_code')
-    if custom_code is not None:
-        if not isinstance(custom_code, str):
-            return jsonify({'error': 'custom_code must be a string'}), 400
-        custom_code = custom_code.strip().upper()
-        if len(custom_code) < 3 or len(custom_code) > 20:
-            return jsonify({'error': 'custom_code must be between 3 and 20 characters'}), 400
-        import re
-        if not re.match(r'^[A-Z0-9_-]+$', custom_code):
-            return jsonify({'error': 'custom_code must contain only alphanumeric characters, hyphens, or underscores'}), 400
+    if custom_code is not None and not isinstance(custom_code, str):
+        return jsonify({'error': 'custom_code must be a string'}), 400
 
-    try:
-        code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
-    except (ValueError, TypeError):
-        return jsonify({'error': 'code_length must be an integer'}), 400
+    code_length, error = _get_code_length(data)
+    if error:
+        return jsonify({'error': error}), 400
 
-    if code_length < 3 or code_length > 20:
-        return jsonify({'error': 'code_length must be between 3 and 20'}), 400
-    
-    # Optional parameters
-    rotate_targets = data.get('rotate_targets')  # Expecting a list of strings
+    short_code, error = _resolve_short_code(custom_code, code_length)
+    if error:
+        status_code = 409 if 'taken' in error.lower() else 400
+        return jsonify({'error': error}), status_code
+
+    expires_at, error = _get_expiry_date(data)
+    if error:
+        return jsonify({'error': error}), 400
+
+    start_at, end_at, error = _get_scheduling_dates(data)
+    if error:
+        return jsonify({'error': error}), 400
+
+    rotate_targets, error = _validate_rotate_targets(data.get('rotate_targets'))
+    if error:
+        status_code = 403 if 'blocked' in error.lower() else 400
+        return jsonify({'error': error}), status_code
+
     password = data.get('password')
-    try:
-        expiry_hours = int(data.get('expiry_hours', current_app.config['EXPIRY_HOURS']))
-    except (ValueError, TypeError):
-        return jsonify({'error': 'expiry_hours must be an integer'}), 400
-    
-    if expiry_hours < 0 or expiry_hours > 876000: # 100 years
-        return jsonify({'error': 'expiry_hours must be between 0 and 876,000 (100 years)'}), 400
-
-    preview_mode = data.get('preview_mode', True)
-    stats_enabled = data.get('stats_enabled', True)
-    
-    start_at_str = data.get('start_at')
-    if start_at_str is not None and not isinstance(start_at_str, str):
-        return jsonify({'error': 'start_at must be a string (ISO 8601)'}), 400
-
-    end_at_str = data.get('end_at')
-    if end_at_str is not None and not isinstance(end_at_str, str):
-        return jsonify({'error': 'end_at must be a string (ISO 8601)'}), 400
-
-    if custom_code:
-        if URL.query.filter_by(short_code=custom_code).first():
-            return jsonify({'error': 'Custom code already taken'}), 409
-        short_code = custom_code
-    else:
-        short_code = generate_short_code(code_length)
-        while URL.query.filter_by(short_code=short_code).first():
-            short_code = generate_short_code(code_length)
-
-    # Expiry logic
-    expires_at = None
-    if expiry_hours != 0:
-        try:
-            expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=expiry_hours)
-        except (OverflowError, OSError):
-             return jsonify({'error': 'expiry_hours results in a date that is out of range'}), 400
-
-    # Parse datetime strings if provided (ISO 8601 expected)
-    start_at = None
-    if start_at_str:
-        try:
-            start_at = datetime.datetime.fromisoformat(start_at_str.replace('Z', '+00:00'))
-        except (ValueError, TypeError):
-            return jsonify({'error': 'Invalid start_at format. Use ISO 8601'}), 400
-
-    end_at = None
-    if end_at_str:
-        try:
-            end_at = datetime.datetime.fromisoformat(end_at_str.replace('Z', '+00:00'))
-        except (ValueError, TypeError):
-            return jsonify({'error': 'Invalid end_at format. Use ISO 8601'}), 400
-
-    if start_at and end_at and end_at <= start_at:
-        return jsonify({'error': 'Invalid scheduling window: end_at must be after start_at'}), 400
-
-    # Password hashing
-    password_hash = None
-    if password:
-        password_hash = generate_password_hash(password)
-
-    # Rotate targets
-    if rotate_targets is not None:
-        if not isinstance(rotate_targets, list):
-             return jsonify({'error': 'rotate_targets must be a list of strings'}), 400
-        if not all(isinstance(u, str) for u in rotate_targets):
-             return jsonify({'error': 'rotate_targets must be a list of strings'}), 400
-        if len(rotate_targets) > 50:
-             return jsonify({'error': 'Maximum 50 rotate targets allowed'}), 400
-
-        rotate_targets = [u.strip() for u in rotate_targets]
-        if not all(is_safe_url(u) for u in rotate_targets):
-             return jsonify({'error': 'One or more rotate target URLs are blocked or invalid.'}), 403
-
     new_url = URL(
         user_id=user.id if user else None,
         short_code=short_code,
         long_url=long_url,
         rotate_targets=rotate_targets,
-        password_hash=password_hash,
-        preview_mode=preview_mode,
-        stats_enabled=stats_enabled,
+        password_hash=generate_password_hash(password) if password else None,
+        preview_mode=data.get('preview_mode', True),
+        stats_enabled=data.get('stats_enabled', True),
         expires_at=expires_at,
         start_at=start_at,
         end_at=end_at
     )
     db.session.add(new_url)
     db.session.commit()
-
-    # Increment Prometheus Counter
     shortened_links_total.inc()
 
-    short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
     return jsonify({
         'short_code': short_code,
-        'short_url': short_url,
+        'short_url': f"https://{current_app.config['BASE_DOMAIN']}/{short_code}",
         'long_url': long_url,
         'rotate_targets': rotate_targets,
         'expires_at': expires_at.isoformat() if expires_at else None,
         'start_at': start_at.isoformat() if start_at else None,
         'end_at': end_at.isoformat() if end_at else None,
         'password_protected': bool(password),
-        'preview_mode': preview_mode,
-        'stats_enabled': stats_enabled
+        'preview_mode': new_url.preview_mode,
+        'stats_enabled': new_url.stats_enabled
     }), 201
 
 @api.route('/<short_code>', methods=['GET'])
 def get_url_info(short_code):
-    # Authenticate User - Mandatory
     user = get_user_from_api_key()
     if not user:
         return jsonify({'error': 'Valid API Key required. Access denied.'}), 401
