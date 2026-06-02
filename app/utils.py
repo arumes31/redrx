@@ -385,3 +385,12 @@ def is_safe_redirect_url(target):
     if test_url.scheme or test_url.netloc:
         return test_url.scheme == ref_url.scheme and test_url.netloc == ref_url.netloc
     return True
+
+def sanitize_csv_field(field):
+    """Sanitizes a field for CSV export to prevent formula injection."""
+    if field is None:
+        return ""
+    str_field = str(field)
+    if str_field and str_field[0] in ('=', '+', '-', '@'):
+        return "'" + str_field
+    return str_field

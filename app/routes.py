@@ -21,7 +21,7 @@ from app.models import db, URL, User, Click
 from app.forms import ShortenURLForm, LoginForm, RegisterForm, LinkPasswordForm, EditURLForm
 from app.utils import (
     generate_short_code, get_qr_data_url, generate_qr, select_rotate_target,
-    get_geo_info, is_safe_url, get_client_ip, _get_redis_client, is_safe_redirect_url,
+    get_geo_info, is_safe_url, get_client_ip, _get_redis_client, is_safe_redirect_url, sanitize_csv_field, sanitize_csv_field,
     get_blocked_domains
 )
 
@@ -398,12 +398,12 @@ def export_links():
     
     for u in urls:
         writer.writerow([
-            u.short_code, 
-            u.long_url, 
-            u.clicks_count, 
-            u.created_at.isoformat(),
-            u.last_accessed_at.isoformat() if u.last_accessed_at else 'Never',
-            u.expires_at.isoformat() if u.expires_at else 'Never'
+            sanitize_csv_field(u.short_code),
+            sanitize_csv_field(u.long_url),
+            sanitize_csv_field(u.clicks_count),
+            sanitize_csv_field(u.created_at.isoformat()),
+            sanitize_csv_field(u.last_accessed_at.isoformat() if u.last_accessed_at else "Never"),
+            sanitize_csv_field(u.expires_at.isoformat() if u.expires_at else "Never")
         ])
     
     output.seek(0)
@@ -507,14 +507,14 @@ def _get_time_range_config(range_type, now):
 
     time_data = {}
     if range_type == '24h':
-        for i in range(24, -1, -1):
-            time_data[(now - datetime.timedelta(hours=i)).strftime('%H:00')] = 0
-    else:
-        for i in range(days, -1, -1):
-            time_data[(now - datetime.timedelta(days=i)).strftime('%Y-%m-%d')] = 0
-
-    return cutoff, sqlite_format, pg_format, time_data, days
-
+        writer.writerow([
+            sanitize_csv_field(u.short_code),
+            sanitize_csv_field(u.long_url),
+            sanitize_csv_field(u.clicks_count),
+            sanitize_csv_field(u.created_at.isoformat()),
+            sanitize_csv_field(u.last_accessed_at.isoformat() if u.last_accessed_at else "Never"),
+            sanitize_csv_field(u.expires_at.isoformat() if u.expires_at else "Never")
+        ])
 def _anonymize_ip(ip):
     if not ip:
         return 'Unknown'
