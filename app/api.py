@@ -166,6 +166,7 @@ def shorten():
     }), 201
 
 @api.route('/<short_code>', methods=['GET'])
+@limiter.limit("60 per minute")
 def get_url_info(short_code):
     # Authenticate User - Mandatory
     user = get_user_from_api_key()
@@ -175,6 +176,9 @@ def get_url_info(short_code):
     url_entry = URL.query.filter_by(short_code=short_code.upper()).first()
     if not url_entry:
         return jsonify({'error': 'URL not found'}), 404
+
+    if url_entry.user_id != user.id:
+        return jsonify({'error': 'Access denied. You do not own this URL.'}), 403
 
     return jsonify({
         'short_code': url_entry.short_code,
