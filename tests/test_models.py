@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 from app.models import db, User, URL, Click
 
 def test_user_creation(app):
@@ -16,37 +17,45 @@ def test_user_creation(app):
         assert saved_user.email == 'new@example.com'
         assert saved_user.created_at is not None
 
-def test_url_rotate_targets(app):
+def test_url_rotate_targets_polymorphic(app):
     with app.app_context():
-        # Test setting list
-        targets = ['https://site1.com', 'https://site2.com']
         url = URL(short_code='rotate', long_url='https://main.com')
+
+        # 1. Test setting list
+        targets = ['https://site1.com', 'https://site2.com']
         url.rotate_targets = targets
-        db.session.add(url)
-        db.session.commit()
+        assert url.rotate_targets == targets
+        assert json.loads(url._rotate_targets) == targets
 
-        saved_url = URL.query.filter_by(short_code='rotate').first()
-        assert saved_url.rotate_targets == targets
-        import json
-        assert json.loads(saved_url._rotate_targets) == targets
+        # 2. Test setting JSON string
+        json_targets = json.dumps(['https://json1.com', 'https://json2.com'])
+        url.rotate_targets = json_targets
+        assert url.rotate_targets == ['https://json1.com', 'https://json2.com']
 
-        # Test setting None
+        # 3. Test setting plain string (single URL)
+        single_url = 'https://single.com'
+        url.rotate_targets = single_url
+        assert url.rotate_targets == [single_url]
+
+        # 4. Test setting None
         url.rotate_targets = None
-        db.session.commit()
-        assert saved_url.rotate_targets == []
-        assert saved_url._rotate_targets is None
+        assert url.rotate_targets == []
+        assert url._rotate_targets is None
 
-        # Test setting empty list
+        # 5. Test setting empty list
         url.rotate_targets = []
-        db.session.commit()
-        assert saved_url.rotate_targets == []
-        assert saved_url._rotate_targets is None
+        assert url.rotate_targets == []
+        assert url._rotate_targets is None
+
+        # 6. Test setting empty string
+        url.rotate_targets = ""
+        assert url.rotate_targets == []
+        assert url._rotate_targets is None
 
 def test_url_is_active(app):
     with app.app_context():
         now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-        # Manually set is_enabled=True as it's a default in DB but not in __init__
         url = URL(short_code='active1', long_url='https://a.com', is_enabled=True)
         assert url.is_active() is True
 
@@ -116,3 +125,27 @@ def test_url_cascade_delete(app):
         db.session.commit()
 
         assert Click.query.filter_by(url_id=url.id).count() == 0
+
+def test_url_rotate_targets_edge_cases(app):
+    with app.app_context():
+        url = URL(short_code='edge', long_url='https://main.com')
+
+        # Test getter with invalid JSON in DB
+        url._rotate_targets = "not a json"
+        assert url.rotate_targets == []
+
+        # Test setter with non-list JSON string
+        url.rotate_targets = json.dumps("not a list")
+        assert url.rotate_targets == [json.dumps("not a list")]
+
+        # Test setter with other iterables (e.g. generator)
+        def gen():
+            yield "https://gen1.com"
+            yield "https://gen2.com"
+        url.rotate_targets = gen()
+        assert url.rotate_targets == ["https://gen1.com", "https://gen2.com"]
+
+        # Test setter with non-iterable
+        url.rotate_targets = 123
+        assert url.rotate_targets == []
+        assert url._rotate_targets is None

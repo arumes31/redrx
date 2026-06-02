@@ -1,5 +1,13 @@
-db/
-TODO.md
 __pycache__/
-.pytest_cache
-temp/
+*.pyc
+.pytest_cache/
+.coverage
+blocked_domains.txt
+*.db
+*.sqlite3
+instance/
+.env
+node_modules/
+dist/
+build/
+*.mmdb
