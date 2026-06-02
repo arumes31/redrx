@@ -71,3 +71,26 @@ def test_get_user_from_api_key_too_long(app, test_user):
     with app.test_request_context(headers={'X-API-KEY': 'a' * 100}):
         user = get_user_from_api_key()
         assert user is None
+
+def test_get_user_from_api_key_lowercase_header(app, test_user):
+    with app.test_request_context(headers={'x-api-key': 'test-api-key'}):
+        user = get_user_from_api_key()
+        assert user is not None
+        assert user.api_key == 'test-api-key'
+
+def test_get_user_from_api_key_multiple_headers(app, test_user):
+    # Test with multiple headers - behavior depends on Werkzeug
+    # request.headers.get('X-API-KEY') returns "key1, key2" if both are present
+    with app.test_request_context(headers=[('X-API-KEY', 'test-api-key'), ('X-API-KEY', 'wrong-key')]):
+        user = get_user_from_api_key()
+        assert user is None
+
+def test_get_user_from_api_key_unicode(app, test_user):
+    with app.test_request_context(headers={'X-API-KEY': '🔑-key'}):
+        user = get_user_from_api_key()
+        assert user is None
+
+def test_get_user_from_api_key_case_sensitivity(app, test_user):
+    with app.test_request_context(headers={'X-API-KEY': 'TEST-API-KEY'}):
+        user = get_user_from_api_key()
+        assert user is None
