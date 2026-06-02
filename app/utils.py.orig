@@ -49,10 +49,10 @@ def update_phishing_list():
     urls = current_app.config.get('PHISHING_LIST_URLS')
     path = current_app.config.get('BLOCKED_DOMAINS_PATH')
     interval = current_app.config.get('PHISHING_CHECK_INTERVAL', 24)
-    
+
     if not urls or not path:
         return
-    
+
     try:
         # Check if file is old (e.g. older than interval hours)
         if os.path.exists(path):
@@ -93,7 +93,7 @@ def cleanup_phishing_urls():
         return
 
     from app.models import db, URL
-    
+
     try:
         with open(path, 'r', encoding='utf-8') as f:
             blocked_domains = {line.strip().lower() for line in f if line.strip()}
@@ -103,7 +103,7 @@ def cleanup_phishing_urls():
 
         urls = URL.query.yield_per(100)
         removed_count = 0
-        
+
         for url_entry in urls:
             # Check main long_url
             try:
@@ -115,7 +115,7 @@ def cleanup_phishing_urls():
                         if '.'.join(parts[i:]) in blocked_domains:
                             is_phishing = True
                             break
-                
+
                 # Check rotate_targets if main is clean
                 if not is_phishing and url_entry.rotate_targets:
                     for target in url_entry.rotate_targets:
@@ -132,19 +132,14 @@ def cleanup_phishing_urls():
                 if is_phishing:
                     db.session.delete(url_entry)
                     removed_count += 1
-            except Exception as e: # nosec B112
-                current_app.logger.error(f"Error processing URL {getattr(url_entry, 'id', 'unknown')}: {str(e)}")
+            except Exception: # nosec B112
                 continue
-        
+
         if removed_count > 0:
-            try:
-                db.session.commit()
-            except Exception as e:
-                db.session.rollback()
-                current_app.logger.error(f"Error committing phishing cleanup: {str(e)}")
-            
-    except Exception as e: # nosec B110
-        current_app.logger.error(f"Error in cleanup_phishing_urls: {str(e)}")
+            db.session.commit()
+
+    except Exception: # nosec B110
+        pass
 
 def get_blocked_domains():
     """Returns the set of blocked domains using the in-process cache."""
@@ -214,7 +209,7 @@ def is_safe_url(target_url, blocked_domains_cache=None):
              return False
         if ':' in domain:
             domain = domain.split(':')[0]
-             
+
         for b in _blocked_env_cache:
             if domain == b or domain.endswith('.' + b):
                 return False
@@ -232,7 +227,7 @@ def is_safe_url(target_url, blocked_domains_cache=None):
             check_domain = '.'.join(parts[i:])
             if check_domain in blocked_domains:
                 return False
-            
+
     return True
 
 def get_client_ip(request):
@@ -314,7 +309,7 @@ def get_geo_info(ip, request=None):
     # 3. Check Local Network
     if _is_local_ip(ip):
         return "Local Network"
-    
+
     # 4. Check Local DB
     country = _get_db_geo(ip)
 
@@ -333,8 +328,8 @@ def generate_qr(data, color='black', bg='white', logo_img=None):
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(data)
     qr.make(fit=True)
-    
-    # Basic color validation/fallback could go here if needed, 
+
+    # Basic color validation/fallback could go here if needed,
     # but PIL handles standard color names and hex codes well.
     try:
         img = qr.make_image(fill_color=color, back_color=bg).convert('RGB')
@@ -345,14 +340,14 @@ def generate_qr(data, color='black', bg='white', logo_img=None):
     if logo_img:
         # Ensure logo is compatible
         logo = logo_img.convert("RGBA")
-        
+
         # Resize logo to max 20% of QR size
         max_size = (img.size[0] // 5, img.size[1] // 5)
         logo.thumbnail(max_size, Image.Resampling.LANCZOS)
-        
+
         # Calculate position (center)
         pos = ((img.size[0] - logo.size[0]) // 2, (img.size[1] - logo.size[1]) // 2)
-        
+
         # Create a mask for transparency if needed, but pasting directly works for RGBA on RGB
         img.paste(logo, pos, mask=logo)
 
