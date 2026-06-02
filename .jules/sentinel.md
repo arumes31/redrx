@@ -12,3 +12,8 @@
 **Vulnerability:** The API lacked comprehensive input validation and robust testing for shortcode collision resolution. While the logic existed, it was untested, leaving potential for bugs in edge cases like sequential collisions or malformed inputs.
 **Learning:** High coverage is critical for security-sensitive endpoints. Using tools like Radon to identify high cyclomatic complexity can point to areas that need refactoring and more granular testing.
 **Prevention:** Implement exhaustive unit tests covering all error response branches (400, 401, 403, 404, 409). Use mocks to simulate shortcode collisions and ensure the system recovers gracefully. Refactor complex routes into smaller, testable helper functions.
+
+## 2026-06-15 - CodeQL XSS Taint Tracking and Exception-Based API Error Handling
+**Vulnerability:** Taint tracking tools like CodeQL may flag user-provided values that are returned in error responses as potential XSS vulnerabilities, even if they are within a JSON response.
+**Learning:** Refactoring API error handling to use custom exceptions and a centralized error handler can break the taint tracking flow in static analysis tools while simultaneously improving code structure and reducing cyclomatic complexity.
+**Prevention:** Use a custom exception (e.g., `APIError`) and a Blueprint-level error handler (`@api.errorhandler(APIError)`) to manage validation failures. This separates the error-throwing logic from the response-generation logic, resulting in cleaner, more maintainable, and more secure code.

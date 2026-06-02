@@ -10,6 +10,15 @@ import re
 api = Blueprint('api', __name__, url_prefix='/api/v1')
 csrf.exempt(api)
 
+class APIError(Exception):
+    def __init__(self, message, status_code=400):
+        self.message = message
+        self.status_code = status_code
+
+@api.errorhandler(APIError)
+def handle_api_error(error):
+    return jsonify({'error': error.message}), error.status_code
+
 def get_user_from_api_key():
     api_key = request.headers.get('X-API-KEY')
     if not api_key:
@@ -18,69 +27,69 @@ def get_user_from_api_key():
 
 def _parse_iso_datetime(dt_str, field_name):
     if dt_str is None:
-        return None, None
+        return None
     if not isinstance(dt_str, str):
-        return None, (jsonify({'error': f'{field_name} must be a string (ISO 8601)'}), 400)
+        raise APIError(f'{field_name} must be a string (ISO 8601)')
     try:
-        return datetime.datetime.fromisoformat(dt_str.replace('Z', '+00:00')), None
+        return datetime.datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
     except (ValueError, TypeError):
-        return None, (jsonify({'error': f'Invalid {field_name} format. Use ISO 8601'}), 400)
+        raise APIError(f'Invalid {field_name} format. Use ISO 8601')
 
 def _resolve_short_code(custom_code, code_length):
     if custom_code:
         if URL.query.filter_by(short_code=custom_code).first():
-            return None, (jsonify({'error': 'Custom code already taken'}), 409)
-        return custom_code, None
+            raise APIError('Custom code already taken', 409)
+        return custom_code
 
     short_code = generate_short_code(code_length)
     while URL.query.filter_by(short_code=short_code).first():
         short_code = generate_short_code(code_length)
-    return short_code, None
+    return short_code
 
 def _validate_rotate_targets(targets):
     if targets is None:
-        return None, None
+        return None
     if not isinstance(targets, list) or not all(isinstance(u, str) for u in targets):
-         return None, (jsonify({'error': 'rotate_targets must be a list of strings'}), 400)
+         raise APIError('rotate_targets must be a list of strings')
     if len(targets) > 50:
-         return None, (jsonify({'error': 'Maximum 50 rotate targets allowed'}), 400)
+         raise APIError('Maximum 50 rotate targets allowed')
 
     targets = [u.strip() for u in targets]
     if not all(is_safe_url(u) for u in targets):
-         return None, (jsonify({'error': 'One or more rotate target URLs are blocked or invalid.'}), 403)
-    return targets, None
+         raise APIError('One or more rotate target URLs are blocked or invalid.', 403)
+    return targets
 
 def _validate_custom_code(custom_code):
     if custom_code is None:
-        return None, None
+        return None
     if not isinstance(custom_code, str):
-        return None, (jsonify({'error': 'custom_code must be a string'}), 400)
+        raise APIError('custom_code must be a string')
     custom_code = custom_code.strip().upper()
     if len(custom_code) < 3 or len(custom_code) > 20:
-        return None, (jsonify({'error': 'custom_code must be between 3 and 20 characters'}), 400)
+        raise APIError('custom_code must be between 3 and 20 characters')
     if not re.match(r'^[A-Z0-9_-]+$', custom_code):
-        return None, (jsonify({'error': 'custom_code must contain only alphanumeric characters, hyphens, or underscores'}), 400)
-    return custom_code, None
+        raise APIError('custom_code must contain only alphanumeric characters, hyphens, or underscores')
+    return custom_code
 
 def _get_code_length(data):
     try:
         code_length = int(data.get('code_length', current_app.config['SHORT_CODE_LENGTH']))
     except (ValueError, TypeError):
-        return None, (jsonify({'error': 'code_length must be an integer'}), 400)
+        raise APIError('code_length must be an integer')
 
     if code_length < 3 or code_length > 20:
-        return None, (jsonify({'error': 'code_length must be between 3 and 20'}), 400)
-    return code_length, None
+        raise APIError('code_length must be between 3 and 20')
+    return code_length
 
 def _get_expiry_hours(data):
     try:
         expiry_hours = int(data.get('expiry_hours', current_app.config['EXPIRY_HOURS']))
     except (ValueError, TypeError):
-        return None, (jsonify({'error': 'expiry_hours must be an integer'}), 400)
+        raise APIError('expiry_hours must be an integer')
 
     if expiry_hours < 0 or expiry_hours > 876000: # 100 years
-        return None, (jsonify({'error': 'expiry_hours must be between 0 and 876,000 (100 years)'}), 400)
-    return expiry_hours, None
+        raise APIError('expiry_hours must be between 0 and 876,000 (100 years)')
+    return expiry_hours
 
 @api.route('/shorten', methods=['POST'])
 @limiter.limit("60 per minute") # Higher limit for API
@@ -104,49 +113,32 @@ def shorten():
     if not is_safe_url(long_url):
         return jsonify({'error': 'Destination URL is blocked'}), 403
 
-    custom_code, error = _validate_custom_code(data.get('custom_code'))
-    if error:
-        return error
-
-    code_length, error = _get_code_length(data)
-    if error:
-        return error
-    
-    expiry_hours, error = _get_expiry_hours(data)
-    if error:
-        return error
+    custom_code = _validate_custom_code(data.get('custom_code'))
+    code_length = _get_code_length(data)
+    expiry_hours = _get_expiry_hours(data)
 
     preview_mode = data.get('preview_mode', True)
     stats_enabled = data.get('stats_enabled', True)
     
-    start_at, error = _parse_iso_datetime(data.get('start_at'), 'start_at')
-    if error:
-        return error
-
-    end_at, error = _parse_iso_datetime(data.get('end_at'), 'end_at')
-    if error:
-        return error
+    start_at = _parse_iso_datetime(data.get('start_at'), 'start_at')
+    end_at = _parse_iso_datetime(data.get('end_at'), 'end_at')
 
     if start_at and end_at and end_at <= start_at:
-        return jsonify({'error': 'Invalid scheduling window: end_at must be after start_at'}), 400
+        raise APIError('Invalid scheduling window: end_at must be after start_at')
 
-    short_code, error = _resolve_short_code(custom_code, code_length)
-    if error:
-        return error
+    short_code = _resolve_short_code(custom_code, code_length)
 
     expires_at = None
     if expiry_hours != 0:
         try:
             expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=expiry_hours)
         except (OverflowError, OSError):
-             return jsonify({'error': 'expiry_hours results in a date that is out of range'}), 400
+             raise APIError('expiry_hours results in a date that is out of range')
 
     password = data.get('password')
     password_hash = generate_password_hash(password) if password else None
 
-    rotate_targets, error = _validate_rotate_targets(data.get('rotate_targets'))
-    if error:
-        return error
+    rotate_targets = _validate_rotate_targets(data.get('rotate_targets'))
 
     new_url = URL(
         user_id=user.id if user else None,
