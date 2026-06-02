@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, Response
+from flask import Flask, request, redirect, Response, current_app
 from flask_login import LoginManager
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -20,25 +20,22 @@ csrf = CSRFProtect()
 
 def get_actual_ip():
     """Custom key function for Limiter that respects Cloudflare headers."""
-    # We check environment variable directly for the key function
-    if os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']:
+    # Try to get from current_app config if available, otherwise env
+    try:
+        use_cloudflare = current_app.config.get('USE_CLOUDFLARE')
+    except RuntimeError:
+        use_cloudflare = os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']
+
+    if use_cloudflare:
         cf_ip = request.headers.get('CF-Connecting-IP')
         if cf_ip:
             return cf_ip
     return get_remote_address()
 
-# Rate limiting configuration from env
-limit_default = os.environ.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")
-limit_create = os.environ.get('RATELIMIT_CREATE', "10 per minute")
-limit_redirect = os.environ.get('RATELIMIT_REDIRECT', "100 per minute")
-limit_health = os.environ.get('RATELIMIT_HEALTH', "10 per minute")
-limit_metrics = os.environ.get('RATELIMIT_METRICS', "10 per minute")
-storage_url = os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
-
 limiter = Limiter(
     key_func=get_actual_ip,
-    default_limits=[limit_default],
-    storage_uri=storage_url
+    default_limits=[lambda: current_app.config.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")],
+    storage_uri=os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
 )
 
 metrics = PrometheusMetrics.for_app_factory(path=None)

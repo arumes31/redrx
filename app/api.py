@@ -16,7 +16,7 @@ def get_user_from_api_key():
     return User.query.filter_by(api_key=api_key).first()
 
 @api.route('/shorten', methods=['POST'])
-@limiter.limit("60 per minute") # Higher limit for API
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_API', '60 per minute')) # Higher limit for API
 def shorten():
     # Authenticate User - Mandatory
     user = get_user_from_api_key()
@@ -166,6 +166,7 @@ def shorten():
     }), 201
 
 @api.route('/<short_code>', methods=['GET'])
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_API', '60 per minute'))
 def get_url_info(short_code):
     # Authenticate User - Mandatory
     user = get_user_from_api_key()

@@ -274,7 +274,7 @@ def redirect_to_url(short_code):
     return render_template('redirect.html', target_url=target_url)
 
 @main.route('/link-auth/<short_code>', methods=['GET', 'POST'])
-@limiter.limit("10 per minute")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_AUTH', '10 per minute'))
 def link_password_auth(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
     form = LinkPasswordForm()
@@ -289,7 +289,7 @@ def link_password_auth(short_code):
     return render_template('login.html', form=form, short_code=short_code)
 
 @main.route('/register', methods=['GET', 'POST'])
-@limiter.limit("5 per hour") # Prevent spam accounts
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_REGISTER', '5 per hour')) # Prevent spam accounts
 def register():
     if current_app.config.get('DISABLE_REGISTRATION'):
         flash("Registration is currently disabled.", 'info')
@@ -308,7 +308,7 @@ def register():
     return render_template('register.html', form=form)
 
 @main.route('/login', methods=['GET', 'POST'])
-@limiter.limit("10 per minute") # Prevent brute force
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_LOGIN', '10 per minute')) # Prevent brute force
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('main.index'))
@@ -368,7 +368,7 @@ def dashboard():
 
 @main.route('/regenerate-api-key', methods=['POST'])
 @login_required
-@limiter.limit("5 per hour")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_AUTH', '5 per hour'))
 def regenerate_api_key():
     current_user.api_key = str(uuid.uuid4())
     db.session.commit()
