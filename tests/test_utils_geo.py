@@ -30,7 +30,7 @@ def test_get_geo_info_cloudflare_hit(app, mock_redis):
         result = get_geo_info("1.2.3.4", request=mock_request)
 
     assert result == "US"
-    mock_redis.setex.assert_called_with("geo:1.2.3.4", 300, "US")
+    mock_redis.set.assert_called_with("geo:1.2.3.4", "US", ex=300)
 
 def test_get_geo_info_local_network(app, mock_redis):
     mock_redis.get.return_value = None
@@ -53,7 +53,7 @@ def test_get_geo_info_db_lookup(app, mock_redis, mock_geoip):
             result = get_geo_info("8.8.8.8")
 
     assert result == "United States"
-    mock_redis.setex.assert_called_with("geo:8.8.8.8", 300, "United States")
+    mock_redis.set.assert_called_with("geo:8.8.8.8", "United States", ex=300)
 
 def test_get_geo_info_db_missing(app, mock_redis):
     mock_redis.get.return_value = None

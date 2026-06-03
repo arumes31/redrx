@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, Response
+from flask import Flask, request, redirect, Response, current_app
 from flask_login import LoginManager
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -20,25 +20,22 @@ csrf = CSRFProtect()
 
 def get_actual_ip():
     """Custom key function for Limiter that respects Cloudflare headers."""
-    # We check environment variable directly for the key function
-    if os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']:
+    # Try to get from current_app config if available, otherwise env
+    try:
+        use_cloudflare = current_app.config.get('USE_CLOUDFLARE')
+    except RuntimeError:
+        use_cloudflare = os.environ.get('USE_CLOUDFLARE', 'false').lower() in ['true', '1', 't']
+
+    if use_cloudflare:
         cf_ip = request.headers.get('CF-Connecting-IP')
         if cf_ip:
             return cf_ip
     return get_remote_address()
 
-# Rate limiting configuration from env
-limit_default = os.environ.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")
-limit_create = os.environ.get('RATELIMIT_CREATE', "10 per minute")
-limit_redirect = os.environ.get('RATELIMIT_REDIRECT', "100 per minute")
-limit_health = os.environ.get('RATELIMIT_HEALTH', "10 per minute")
-limit_metrics = os.environ.get('RATELIMIT_METRICS', "10 per minute")
-storage_url = os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
-
 limiter = Limiter(
     key_func=get_actual_ip,
-    default_limits=[limit_default],
-    storage_uri=storage_url
+    default_limits=[lambda: current_app.config.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")],
+    storage_uri=Config.RATELIMIT_STORAGE_URI
 )
 
 metrics = PrometheusMetrics.for_app_factory(path=None)
@@ -64,6 +61,9 @@ class AnonymizeFilter(logging.Filter):
         return True
 
 def create_app(config_class=Config):
+    # Validate configuration before applying it
+    config_class.validate()
+
     app = Flask(__name__)
     app.config.from_object(config_class)
 
@@ -115,9 +115,12 @@ def create_app(config_class=Config):
             base_domain = urlparse(base_domain).netloc
 
         if request.host != base_domain:
-            # Reconstruct URL with canonical host
-            # 301 Moved Permanently
-            return redirect(request.url.replace(request.host, base_domain, 1), code=301)
+            target = request.full_path[:-1] if request.full_path.endswith('?') else request.full_path
+            normalized_target = target.replace('\\', '')
+            parsed_target = urlparse(normalized_target)
+            safe_target = normalized_target if not parsed_target.netloc and not parsed_target.scheme else '/'
+            canonical_url = f"https://{base_domain}{safe_target}"
+            return redirect(canonical_url, code=301)
 
     @app.after_request
     def set_security_headers(response):

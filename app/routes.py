@@ -16,7 +16,7 @@ from app.forms import ShortenURLForm, LoginForm, RegisterForm, LinkPasswordForm,
 from app.utils import (
     generate_short_code, get_qr_data_url, generate_qr, select_rotate_target,
     get_geo_info, is_safe_url, get_client_ip, _get_redis_client, is_safe_redirect_url,
-    get_blocked_domains
+    get_blocked_domains, sanitize_csv_field
 )
 
 # Custom Metrics
@@ -55,6 +55,72 @@ def health_check():
     code = 200 if health["status"] == "healthy" else 503
     return jsonify(health), code
 
+def _handle_short_code(form):
+    custom_code = form.custom_code.data.strip().upper() if form.custom_code.data else None
+    if custom_code:
+        if URL.query.filter_by(short_code=custom_code).first():
+            return None, f"Code '{custom_code}' is already taken."
+        return custom_code, None
+    else:
+        length = form.code_length.data or current_app.config['SHORT_CODE_LENGTH']
+        short_code = generate_short_code(length)
+        while URL.query.filter_by(short_code=short_code).first():
+             short_code = generate_short_code(length)
+        return short_code, None
+
+def _validate_additional_urls(form):
+    rotate_list = [u.strip() for u in form.rotate_targets.data.split(',') if u.strip()] if form.rotate_targets.data else None
+    if rotate_list:
+        if len(rotate_list) > 50:
+            return None, "Maximum 50 rotate targets allowed."
+        if not all(is_safe_url(u) for u in rotate_list):
+            return None, "One or more rotate target URLs are blocked or invalid."
+    if form.ios_target_url.data and not is_safe_url(form.ios_target_url.data):
+        return None, "iOS target URL is blocked or invalid."
+    if form.android_target_url.data and not is_safe_url(form.android_target_url.data):
+        return None, "Android target URL is blocked or invalid."
+    return rotate_list, None
+
+def _process_url_timestamps(form):
+    start_at = None
+    if form.start_date.data and form.start_time.data:
+        start_at = datetime.datetime.combine(form.start_date.data, form.start_time.data)
+    end_at = None
+    if form.end_date.data and form.end_time.data:
+        end_at = datetime.datetime.combine(form.end_date.data, form.end_time.data)
+
+    if start_at and end_at and end_at <= start_at:
+        return start_at, end_at, None, "End time must be after start time"
+
+    expires_at = None
+    if form.expiry_hours.data is not None:
+        if form.expiry_hours.data == 0 or form.expiry_hours.data > 8760:
+            if not current_user.is_authenticated:
+                return None, None, None, "Please log in to create links longer than 1 year or permanent links."
+
+            if form.expiry_hours.data == 0:
+                expires_at = None
+            else:
+                expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
+        else:
+            expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
+    return start_at, end_at, expires_at, None
+
+def _generate_qr_data_for_form(form, short_url):
+    logo_img = None
+    if form.logo_file.data:
+         try:
+            logo_img = Image.open(form.logo_file.data)
+         except Exception:
+             flash("Invalid Logo Image", 'warning')
+
+    return get_qr_data_url(
+        short_url,
+        color=form.qr_color.data,
+        bg=form.qr_bg.data,
+        logo_img=logo_img
+    )
+
 @main.route('/', methods=['GET', 'POST'])
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_CREATE', '10 per minute'), methods=['POST'])
 @limiter.limit(lambda: current_app.config.get('RATELIMIT_DEFAULT', '200 per day'), methods=['GET'])
@@ -65,78 +131,33 @@ def index():
     qr_data = None
     stats_url = None
     
-    # Handle Tab Switching Logic via Session or just context if needed, 
-    # but strictly forms handle their own validation.
-    
     if form.validate_on_submit():
         if current_app.config.get('DISABLE_ANONYMOUS_CREATE') and not current_user.is_authenticated:
             flash("Please log in to shorten URLs.", 'warning')
             return redirect(url_for('main.login'))
 
         long_url = form.long_url.data
-        
         if not is_safe_url(long_url):
             flash("That destination URL is blocked for safety reasons.", 'danger')
             return render_template('index.html', form=form)
 
-        custom_code = form.custom_code.data.strip().upper() if form.custom_code.data else None
+        # Handle short code
+        short_code, error = _handle_short_code(form)
+        if error:
+            flash(error, 'danger')
+            return render_template('index.html', form=form)
         
-        # Check Custom Code Availability
-        if custom_code:
-            if URL.query.filter_by(short_code=custom_code).first():
-                flash(f"Code '{custom_code}' is already taken.", 'danger')
-                return render_template('index.html', form=form)
-            short_code = custom_code
-        else:
-            # Generate unique code
-            length = form.code_length.data or current_app.config['SHORT_CODE_LENGTH']
-            short_code = generate_short_code(length)
-            while URL.query.filter_by(short_code=short_code).first():
-                 short_code = generate_short_code(length)
-        
-        # Prepare Data
-        rotate_list = [u.strip() for u in form.rotate_targets.data.split(',') if u.strip()] if form.rotate_targets.data else None
-        
-        if rotate_list:
-            if len(rotate_list) > 50:
-                flash("Maximum 50 rotate targets allowed.", 'danger')
-                return render_template('index.html', form=form)
-            if not all(is_safe_url(u) for u in rotate_list):
-                flash("One or more rotate target URLs are blocked or invalid.", 'danger')
-                return render_template('index.html', form=form)
-
-        if form.ios_target_url.data and not is_safe_url(form.ios_target_url.data):
-            flash("iOS target URL is blocked or invalid.", 'danger')
+        # Validate additional URLs
+        rotate_list, error = _validate_additional_urls(form)
+        if error:
+            flash(error, 'danger')
             return render_template('index.html', form=form)
 
-        if form.android_target_url.data and not is_safe_url(form.android_target_url.data):
-            flash("Android target URL is blocked or invalid.", 'danger')
+        # Process timestamps and expiry
+        start_at, end_at, expires_at, error = _process_url_timestamps(form)
+        if error:
+            flash(error, 'warning')
             return render_template('index.html', form=form)
-
-        password_hash = generate_password_hash(form.password.data) if form.password.data else None
-        
-        start_at = None
-        if form.start_date.data and form.start_time.data:
-            start_at = datetime.datetime.combine(form.start_date.data, form.start_time.data)
-            
-        end_at = None
-        if form.end_date.data and form.end_time.data:
-            end_at = datetime.datetime.combine(form.end_date.data, form.end_time.data)
-            
-        expires_at = None
-        if form.expiry_hours.data is not None:
-            if form.expiry_hours.data == 0 or form.expiry_hours.data > 8760:
-                if not current_user.is_authenticated:
-                    msg = "Please log in to create links longer than 1 year or permanent links."
-                    flash(msg, 'warning')
-                    return render_template('index.html', form=form)
-                
-                if form.expiry_hours.data == 0:
-                    expires_at = None
-                else:
-                    expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
-            else:
-                expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=form.expiry_hours.data)
 
         # Create Record
         new_url = URL(
@@ -146,7 +167,7 @@ def index():
             rotate_targets=rotate_list,
             ios_target_url=form.ios_target_url.data,
             android_target_url=form.android_target_url.data,
-            password_hash=password_hash,
+            password_hash=generate_password_hash(form.password.data) if form.password.data else None,
             preview_mode=form.preview_mode.data,
             stats_enabled=form.stats_enabled.data,
             start_at=start_at,
@@ -156,26 +177,11 @@ def index():
         db.session.add(new_url)
         db.session.commit()
         
-        # Increment Prometheus Counter
         shortened_links_total.inc()
         
-        # Generate QR
-        logo_img = None
-        if form.logo_file.data:
-             try:
-                logo_img = Image.open(form.logo_file.data)
-             except Exception:
-                 flash("Invalid Logo Image", 'warning')
-
+        # Post-creation info
         short_url = f"https://{current_app.config['BASE_DOMAIN']}/{short_code}"
-
-        qr_data = get_qr_data_url(
-            short_url,
-            color=form.qr_color.data,
-            bg=form.qr_bg.data,
-            logo_img=logo_img
-        )
-        
+        qr_data = _generate_qr_data_for_form(form, short_url)
         stats_url = url_for('main.stats', short_code=short_code, _external=True)
         
         flash("URL Shortened Successfully!", 'success')
@@ -198,35 +204,13 @@ def redirect_to_url(short_code):
         # Check session
         auth_key = f"auth_{short_code}"
         if not session.get(auth_key):
-             return redirect(url_for('main.link_password_auth', short_code=short_code))
+             return redirect(url_for("main.link_password_auth", short_code=short_code))
              
-    # Select destination
-    target_url = url_entry.long_url
-    
-    # Device Targeting (overrides main URL, but rotate logic is complex with this - let's keep it simple: Device > Rotate > Main)
-    # However, user might want to rotate AND target.
-    # Logic: 
-    # 1. Check Device specific URL
-    # 2. If no device match or no device URL, check Rotate
-    # 3. Else Main
-    
-    ua_string = request.headers.get('User-Agent')
+    ua_string = request.headers.get("User-Agent")
     user_agent = parse(ua_string)
-    
-    device_match = False
-    if url_entry.ios_target_url and (user_agent.os.family == 'iOS'):
-        target_url = url_entry.ios_target_url
-        device_match = True
-    elif url_entry.android_target_url and (user_agent.os.family == 'Android'):
-        target_url = url_entry.android_target_url
-        device_match = True
-
     cached_domains = get_blocked_domains()
-    if not device_match and url_entry.rotate_targets:
-        safe_rotate_targets = [alt for alt in url_entry.rotate_targets if is_safe_url(alt, cached_domains)]
-        alt = select_rotate_target(safe_rotate_targets)
-        if alt:
-            target_url = alt
+
+    target_url = _get_target_url(url_entry, user_agent, cached_domains)
             
     if not is_safe_url(target_url, cached_domains):
         abort(403)
@@ -240,41 +224,17 @@ def redirect_to_url(short_code):
 
     # Stats
     if url_entry.stats_enabled:
-        url_entry.clicks_count += 1
-        
-        # Record detailed click
-        # Note: We already parsed UA above, reuse it
         client_ip = get_client_ip(request)
-        
-        # Mask IP for privacy (e.g. 1.2.3.4 -> 1.2.x.x)
-        masked_ip = client_ip
-        parts = client_ip.split('.')
-        if len(parts) == 4:
-            masked_ip = f"{parts[0]}.{parts[1]}.x.x"
-        else: # IPv6 support
-            v6_parts = client_ip.split(':')
-            if len(v6_parts) >= 2:
-                masked_ip = f"{v6_parts[0]}:{v6_parts[1]}:x:x"
-
-        new_click = Click(
-            url_id=url_entry.id,
-            ip_address=masked_ip,
-            country=get_geo_info(client_ip, request),
-            browser=user_agent.browser.family,
-            platform=user_agent.os.family,
-            referrer=request.referrer or "Direct"
-        )
-        db.session.add(new_click)
-        db.session.commit()
+        _record_click(url_entry, user_agent, client_ip)
     
     # If preview mode is enabled
     if url_entry.preview_mode:
-        return render_template('preview.html', target_url=target_url, short_code=short_code)
+        return render_template("preview.html", target_url=target_url, short_code=short_code)
 
-    return render_template('redirect.html', target_url=target_url)
+    return render_template("redirect.html", target_url=target_url)
 
 @main.route('/link-auth/<short_code>', methods=['GET', 'POST'])
-@limiter.limit("10 per minute")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_AUTH', '10 per minute'))
 def link_password_auth(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
     form = LinkPasswordForm()
@@ -289,7 +249,7 @@ def link_password_auth(short_code):
     return render_template('login.html', form=form, short_code=short_code)
 
 @main.route('/register', methods=['GET', 'POST'])
-@limiter.limit("5 per hour") # Prevent spam accounts
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_REGISTER', '5 per hour')) # Prevent spam accounts
 def register():
     if current_app.config.get('DISABLE_REGISTRATION'):
         flash("Registration is currently disabled.", 'info')
@@ -308,7 +268,7 @@ def register():
     return render_template('register.html', form=form)
 
 @main.route('/login', methods=['GET', 'POST'])
-@limiter.limit("10 per minute") # Prevent brute force
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_LOGIN', '10 per minute')) # Prevent brute force
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('main.index'))
@@ -368,7 +328,7 @@ def dashboard():
 
 @main.route('/regenerate-api-key', methods=['POST'])
 @login_required
-@limiter.limit("5 per hour")
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_AUTH', '5 per hour'))
 def regenerate_api_key():
     current_user.api_key = str(uuid.uuid4())
     db.session.commit()
@@ -398,12 +358,12 @@ def export_links():
     
     for u in urls:
         writer.writerow([
-            u.short_code, 
-            u.long_url, 
-            u.clicks_count, 
-            u.created_at.isoformat(),
-            u.last_accessed_at.isoformat() if u.last_accessed_at else 'Never',
-            u.expires_at.isoformat() if u.expires_at else 'Never'
+            sanitize_csv_field(u.short_code),
+            sanitize_csv_field(u.long_url),
+            sanitize_csv_field(u.clicks_count),
+            sanitize_csv_field(u.created_at.isoformat()),
+            sanitize_csv_field(u.last_accessed_at.isoformat() if u.last_accessed_at else 'Never'),
+            sanitize_csv_field(u.expires_at.isoformat() if u.expires_at else 'Never')
         ])
     
     output.seek(0)
@@ -487,6 +447,42 @@ def delete_url(short_code):
     return redirect(url_for('main.dashboard'))
 
 
+def _get_target_url(url_entry, user_agent, cached_domains):
+    """Determines the target URL based on device and rotation settings."""
+    target_url = url_entry.long_url
+    device_match = False
+
+    if url_entry.ios_target_url and (user_agent.os.family == "iOS"):
+        target_url = url_entry.ios_target_url
+        device_match = True
+    elif url_entry.android_target_url and (user_agent.os.family == "Android"):
+        target_url = url_entry.android_target_url
+        device_match = True
+
+    if not device_match and url_entry.rotate_targets:
+        safe_rotate_targets = [alt for alt in url_entry.rotate_targets if is_safe_url(alt, cached_domains)]
+        alt = select_rotate_target(safe_rotate_targets)
+        if alt:
+            target_url = alt
+
+    return target_url
+
+def _record_click(url_entry, user_agent, client_ip):
+    """Records a click with detailed statistics."""
+    url_entry.clicks_count += 1
+    masked_ip = _anonymize_ip(client_ip)
+
+    new_click = Click(
+        url_id=url_entry.id,
+        ip_address=masked_ip,
+        country=get_geo_info(client_ip, request),
+        browser=user_agent.browser.family,
+        platform=user_agent.os.family,
+        referrer=request.referrer or "Direct"
+    )
+    db.session.add(new_click)
+    db.session.commit()
+
 def _get_time_range_config(range_type, now):
     import datetime
     if range_type == '24h':
@@ -540,13 +536,7 @@ def _get_relative_time(ts, now):
         return f'{diff.seconds // 60}m ago'
     return 'Just now'
 
-def _process_analytics(url_id, range_type, now):
-    from sqlalchemy import func
-    from app.models import db, Click
-
-    cutoff, sqlite_format, pg_format, time_data, days_in_range = _get_time_range_config(range_type, now)
-
-    # 1. Clicks over time
+def _get_time_series_stats(url_id, cutoff, sqlite_format, pg_format, time_data):
     dialect = db.engine.dialect.name
     format_str = sqlite_format if dialect == 'sqlite' else pg_format
     if dialect == 'sqlite':
@@ -563,29 +553,49 @@ def _process_analytics(url_id, range_type, now):
     for key, count in time_counts:
         if key in time_data:
             time_data[key] = count
+    return time_data
 
-    # 2. Country stats (all time)
-    country_counts = db.session.query(Click.country, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.country).all()
-    country_data = {c or 'Unknown': count for c, count in country_counts}
+def _get_grouped_stats(url_id, cutoff, column):
+    counts = db.session.query(column, func.count(Click.id)).filter(
+        Click.url_id == url_id,
+        Click.timestamp >= cutoff
+    ).group_by(column).all()
+    return {val or 'Unknown': count for val, count in counts}
 
-    # 3. Browser stats (all time)
-    browser_counts = db.session.query(Click.browser, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.browser).all()
-    browser_data = {b or 'Unknown': count for b, count in browser_counts}
-
-    # 4. Platform stats (all time)
-    platform_counts = db.session.query(Click.platform, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.platform).all()
-    platform_data = {p or 'Unknown': count for p, count in platform_counts}
-
-    # 5. Referrer stats (all time)
-    ref_counts = db.session.query(Click.referrer, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.referrer).all()
+def _get_referrer_stats(url_id, cutoff):
+    ref_counts = db.session.query(Click.referrer, func.count(Click.id)).filter(
+        Click.url_id == url_id,
+        Click.timestamp >= cutoff
+    ).group_by(Click.referrer).all()
     referrer_data = {}
     for ref, count in ref_counts:
         label = ref or 'Direct'
         if '://' in label:
             label = urlparse(label).netloc or label
         referrer_data[label] = referrer_data.get(label, 0) + count
+    return referrer_data
 
-    # 6. Momentum
+def _check_stats_access(url_entry):
+    current_user_id = current_user.id if current_user.is_authenticated else None
+    if url_entry.user_id is None or url_entry.user_id != current_user_id:
+        abort(403)
+
+def _prepare_recent_clicks(url_id, now):
+    recent_clicks = Click.query.filter_by(url_id=url_id).order_by(Click.timestamp.desc()).limit(10).all()
+    for rc in recent_clicks:
+        rc.relative_time = _get_relative_time(rc.timestamp, now)
+        rc.ip_anonymized = _anonymize_ip(rc.ip_address)
+    return recent_clicks
+
+def _process_analytics(url_id, range_type, now):
+    cutoff, sqlite_format, pg_format, time_data, days_in_range = _get_time_range_config(range_type, now)
+
+    time_data = _get_time_series_stats(url_id, cutoff, sqlite_format, pg_format, time_data)
+    country_data = _get_grouped_stats(url_id, cutoff, Click.country)
+    browser_data = _get_grouped_stats(url_id, cutoff, Click.browser)
+    platform_data = _get_grouped_stats(url_id, cutoff, Click.platform)
+    referrer_data = _get_referrer_stats(url_id, cutoff)
+
     total_in_range = sum(time_data.values())
     avg_daily = round(total_in_range / days_in_range, 1)
 
@@ -595,10 +605,7 @@ def _process_analytics(url_id, range_type, now):
 @limiter.limit("20 per minute")
 def stats(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
-    
-    current_user_id = current_user.id if current_user.is_authenticated else None
-    if url_entry.user_id != current_user_id:
-        abort(403)
+    _check_stats_access(url_entry)
         
     range_type = request.args.get('range', '30d')
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -607,10 +614,7 @@ def stats(short_code):
     time_data, country_data, browser_data, platform_data, referrer_data, avg_daily = _process_analytics(url_entry.id, range_type, now)
 
     # Recent activity (last 10)
-    recent_clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.desc()).limit(10).all()
-    for rc in recent_clicks:
-        rc.relative_time = _get_relative_time(rc.timestamp, now)
-        rc.ip_anonymized = _anonymize_ip(rc.ip_address)
+    recent_clicks = _prepare_recent_clicks(url_entry.id, now)
 
     short_url = f'https://{current_app.config["BASE_DOMAIN"]}/{short_code}'
     return render_template('stats.html', url=url_entry, short_url=short_url, 

@@ -38,8 +38,6 @@ _blocked_domains_mtime = 0
 _blocked_domains_path = None
 _blocked_domains_ino = 0
 
-_blocked_env_cache = None
-_blocked_env_raw = None
 
 def update_phishing_list():
     """Downloads the latest phishing domain lists."""
@@ -100,6 +98,19 @@ def _check_domain_phishing(domain, blocked_domains):
         check_domain = check_domain.split('.', 1)[1]
     return False
 
+def _is_url_entry_phishing(url_entry, blocked_domains):
+    """Checks if the main url or any of its rotate targets are phishing."""
+    domain = urlparse(url_entry.long_url).netloc.lower()
+    if domain and _check_domain_phishing(domain, blocked_domains):
+        return True
+
+    if url_entry.rotate_targets:
+        for target in url_entry.rotate_targets:
+            target_domain = urlparse(target).netloc.lower()
+            if target_domain and _check_domain_phishing(target_domain, blocked_domains):
+                return True
+    return False
+
 def cleanup_phishing_urls():
     """Removes URLs from database that are found in the phishing lists."""
     if not current_app.config.get('ENABLE_AUTO_REMOVE_PHISHING'):
@@ -122,25 +133,12 @@ def cleanup_phishing_urls():
         removed_count = 0
         
         for url_entry in urls:
-            # Check main long_url
             try:
-                domain = urlparse(url_entry.long_url).netloc.lower()
-                is_phishing = False
-                if domain:
-                    is_phishing = _check_domain_phishing(domain, blocked_domains)
-                
-                # Check rotate_targets if main is clean
-                if not is_phishing and url_entry.rotate_targets:
-                    for target in url_entry.rotate_targets:
-                        target_domain = urlparse(target).netloc.lower()
-                        if target_domain:
-                            is_phishing = _check_domain_phishing(target_domain, blocked_domains)
-                        if is_phishing:
-                            break
-
-                if is_phishing:
+                if _is_url_entry_phishing(url_entry, blocked_domains):
                     db.session.delete(url_entry)
                     removed_count += 1
+                else:
+                    db.session.expunge(url_entry)
             except Exception: # nosec B112
                 continue
         
@@ -148,7 +146,10 @@ def cleanup_phishing_urls():
             db.session.commit()
             
     except Exception: # nosec B110
-        pass
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
 
 def get_blocked_domains():
     """Returns the set of blocked domains using the in-process cache."""
@@ -204,13 +205,8 @@ def is_safe_url(target_url, blocked_domains_cache=None):
     except (ValueError, TypeError):
         return False
 
-    # 1. Check manual overrides from ENV
-    global _blocked_env_cache, _blocked_env_raw
-    current_raw = os.environ.get('BLOCKED_DOMAINS', '')
-    if _blocked_env_cache is None or current_raw != _blocked_env_raw:
-        _blocked_env_cache = [b.strip().lower() for b in current_raw.split(',') if b.strip()]
-        _blocked_env_raw = current_raw
-
+    # 1. Check manual overrides from config
+    blocked_env = current_app.config.get('BLOCKED_DOMAINS', [])
     domain = ""
     try:
         domain = urlparse(target_url).netloc.lower()
@@ -219,7 +215,7 @@ def is_safe_url(target_url, blocked_domains_cache=None):
         if ':' in domain:
             domain = domain.split(':')[0]
              
-        for b in _blocked_env_cache:
+        for b in blocked_env:
             if domain == b or domain.endswith('.' + b):
                 return False
     except Exception:
@@ -391,3 +387,12 @@ def is_safe_redirect_url(target):
     if test_url.scheme or test_url.netloc:
         return test_url.scheme == ref_url.scheme and test_url.netloc == ref_url.netloc
     return True
+
+def sanitize_csv_field(field):
+    """Sanitizes a field for CSV export to prevent formula injection."""
+    if field is None:
+        return ""
+    str_field = str(field)
+    if str_field and str_field[0] in ('=', '+', '-', '@'):
+        return "'" + str_field
+    return str_field

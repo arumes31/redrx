@@ -42,3 +42,92 @@ def test_api_shorten_generated_code_collision(client, test_user):
         data = response.get_json()
         assert data['short_code'] == 'UNIQUE'
         assert mock_gen.call_count == 2
+
+def test_api_shorten_valid_dates(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    start_at = "2025-01-01T00:00:00Z"
+    end_at = "2025-12-31T23:59:59+00:00"
+
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'start_at': start_at,
+        'end_at': end_at
+    })
+
+    assert response.status_code == 201
+    data = response.get_json()
+    # fromisoformat(start_at.replace('Z', '+00:00')).isoformat() -> '2025-01-01T00:00:00+00:00'
+    assert data['start_at'] == '2025-01-01T00:00:00+00:00'
+    assert data['end_at'] == '2025-12-31T23:59:59+00:00'
+
+def test_api_shorten_invalid_start_at(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'start_at': 'invalid-date'
+    })
+
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'Invalid start_at format. Use ISO 8601'
+
+def test_api_shorten_invalid_end_at(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'end_at': 'invalid-date'
+    })
+
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'Invalid end_at format. Use ISO 8601'
+
+def test_api_shorten_invalid_window(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'start_at': '2025-12-31T23:59:59Z',
+        'end_at': '2025-01-01T00:00:00Z'
+    })
+
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'Invalid scheduling window: end_at must be after start_at'
+
+def test_api_shorten_validate_password(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'password': 12345
+    })
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'password must be a string'
+
+def test_api_shorten_validate_preview_mode(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'preview_mode': 'invalid_bool'
+    })
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'preview_mode must be a boolean'
+
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'preview_mode': 'false'
+    })
+    assert response.status_code == 201
+    assert response.get_json()['preview_mode'] is False
+
+def test_api_shorten_validate_stats_enabled(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'stats_enabled': 'invalid_bool'
+    })
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'stats_enabled must be a boolean'
+
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'stats_enabled': '1'
+    })
+    assert response.status_code == 201
+    assert response.get_json()['stats_enabled'] is True
