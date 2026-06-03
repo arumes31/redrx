@@ -139,6 +139,8 @@ def cleanup_phishing_urls():
                 if is_phishing:
                     db.session.delete(url_entry)
                     removed_count += 1
+                else:
+                    db.session.expunge(url_entry)
             except Exception: # nosec B112
                 continue
         
