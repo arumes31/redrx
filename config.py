@@ -46,3 +46,15 @@ class Config:
     ANONYMIZE_LOGS = os.environ.get('ANONYMIZE_LOGS', 'false').lower() in ['true', '1', 't']
     ENABLE_SEO = os.environ.get('ENABLE_SEO', 'false').lower() in ['true', '1', 't']
     SEO_DOMAIN = os.environ.get('SEO_DOMAIN', 'redrx.eu')
+
+    # Rate limiting
+    RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")
+    RATELIMIT_STORAGE_URI = os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
+    RATELIMIT_LOGIN = os.environ.get('RATELIMIT_LOGIN', "10 per minute")
+    RATELIMIT_REGISTER = os.environ.get('RATELIMIT_REGISTER', "5 per hour")
+    RATELIMIT_AUTH = os.environ.get('RATELIMIT_AUTH', "10 per minute")
+    RATELIMIT_API = os.environ.get('RATELIMIT_API', "60 per minute")
+    RATELIMIT_CREATE = os.environ.get('RATELIMIT_CREATE', "10 per minute")
+    RATELIMIT_REDIRECT = os.environ.get('RATELIMIT_REDIRECT', "100 per minute")
+    RATELIMIT_HEALTH = os.environ.get('RATELIMIT_HEALTH', "10 per minute")
+    RATELIMIT_METRICS = os.environ.get('RATELIMIT_METRICS', "10 per minute")
