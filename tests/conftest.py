@@ -7,11 +7,12 @@ from config import Config
 
 class TestConfig(Config):
     TESTING = True
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    DEBUG = True # Use debug mode to allow secret key fallback in tests
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     WTF_CSRF_ENABLED = False
     ENABLE_PHISHING_CHECK = False
     # Use a real path in a temporary directory
-    GEOIP_DB_PATH = os.path.join(tempfile.gettempdir(), 'test_geoip.mmdb')
+    GEOIP_DB_PATH = os.path.join(tempfile.gettempdir(), "test_geoip.mmdb")
 
 @pytest.fixture
 def app():
@@ -35,10 +36,10 @@ def runner(app):
 def test_user(app):
     with app.app_context():
         user = User(
-            username='testuser',
-            email='test@example.com',
-            password_hash='pbkdf2:sha256:...', # dummy hash
-            api_key='test-api-key'
+            username="testuser",
+            email="test@example.com",
+            password_hash="pbkdf2:sha256:...", # dummy hash
+            api_key="test-api-key"
         )
         db.session.add(user)
         db.session.commit()

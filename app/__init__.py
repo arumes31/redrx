@@ -61,6 +61,9 @@ class AnonymizeFilter(logging.Filter):
         return True
 
 def create_app(config_class=Config):
+    # Validate configuration before applying it
+    config_class.validate()
+
     app = Flask(__name__)
     app.config.from_object(config_class)
 
