@@ -83,6 +83,23 @@ def update_phishing_list():
     except Exception: # nosec B110
         pass
 
+def _check_domain_phishing(domain, blocked_domains):
+    """Checks if a domain or any of its suffixes are in the blocked domains set."""
+    if not domain or not blocked_domains:
+        return False
+
+    if ':' in domain:
+        domain = domain.split(':')[0]
+
+    check_domain = domain
+    while True:
+        if check_domain in blocked_domains:
+            return True
+        if '.' not in check_domain:
+            break
+        check_domain = check_domain.split('.', 1)[1]
+    return False
+
 def cleanup_phishing_urls():
     """Removes URLs from database that are found in the phishing lists."""
     if not current_app.config.get('ENABLE_AUTO_REMOVE_PHISHING'):
@@ -110,22 +127,14 @@ def cleanup_phishing_urls():
                 domain = urlparse(url_entry.long_url).netloc.lower()
                 is_phishing = False
                 if domain:
-                    parts = domain.split('.')
-                    for i in range(len(parts)):
-                        if '.'.join(parts[i:]) in blocked_domains:
-                            is_phishing = True
-                            break
+                    is_phishing = _check_domain_phishing(domain, blocked_domains)
                 
                 # Check rotate_targets if main is clean
                 if not is_phishing and url_entry.rotate_targets:
                     for target in url_entry.rotate_targets:
                         target_domain = urlparse(target).netloc.lower()
                         if target_domain:
-                            parts = target_domain.split('.')
-                            for i in range(len(parts)):
-                                if '.'.join(parts[i:]) in blocked_domains:
-                                    is_phishing = True
-                                    break
+                            is_phishing = _check_domain_phishing(target_domain, blocked_domains)
                         if is_phishing:
                             break
 
@@ -222,11 +231,8 @@ def is_safe_url(target_url, blocked_domains_cache=None):
 
     blocked_domains = blocked_domains_cache if blocked_domains_cache is not None else get_blocked_domains()
     if blocked_domains:
-        parts = domain.split('.')
-        for i in range(len(parts)):
-            check_domain = '.'.join(parts[i:])
-            if check_domain in blocked_domains:
-                return False
+        if _check_domain_phishing(domain, blocked_domains):
+            return False
             
     return True
 
@@ -267,7 +273,7 @@ def _set_cached_geo(ip, country):
 
     if _redis_client and country:
         try:
-            _redis_client.setex(f"{_GEO_PREFIX}{ip}", _GEO_CACHE_TTL, country)
+            _redis_client.set(f"{_GEO_PREFIX}{ip}", country, ex=_GEO_CACHE_TTL)
         except Exception:
             pass
 
