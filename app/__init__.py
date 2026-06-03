@@ -35,7 +35,7 @@ def get_actual_ip():
 limiter = Limiter(
     key_func=get_actual_ip,
     default_limits=[lambda: current_app.config.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")],
-    storage_uri=os.environ.get('RATELIMIT_STORAGE_URL', 'memory://')
+    storage_uri=Config.RATELIMIT_STORAGE_URI
 )
 
 metrics = PrometheusMetrics.for_app_factory(path=None)

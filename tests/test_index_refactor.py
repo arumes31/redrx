@@ -100,8 +100,9 @@ def test_index_disable_anonymous(client, app):
 
 def test_index_post_timestamps(client, app):
     # Test scheduling
-    start_date = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
-    end_date = (datetime.date.today() + datetime.timedelta(days=2)).isoformat()
+    today = datetime.date.today()
+    start_date = (today + datetime.timedelta(days=1)).isoformat()
+    end_date = (today + datetime.timedelta(days=2)).isoformat()
     response = client.post('/', data={
         'long_url': 'https://example.com',
         'start_date': start_date,
@@ -114,3 +115,16 @@ def test_index_post_timestamps(client, app):
         url = URL.query.filter_by(long_url='https://example.com').first()
         assert url.start_at is not None
         assert url.end_at is not None
+
+def test_index_post_invalid_timestamps(client):
+    today = datetime.date.today()
+    start_date = (today + datetime.timedelta(days=2)).isoformat()
+    end_date = (today + datetime.timedelta(days=1)).isoformat()
+    response = client.post('/', data={
+        'long_url': 'https://example.com',
+        'start_date': start_date,
+        'start_time': '12:00',
+        'end_date': end_date,
+        'end_time': '12:00'
+    }, follow_redirects=True)
+    assert b"End time must be after start time" in response.data

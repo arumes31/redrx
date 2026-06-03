@@ -1,6 +1,6 @@
 import pytest
 import time
-from app import create_app, db
+from app import create_app, db, limiter
 from app.models import User
 from config import Config
 
@@ -11,6 +11,11 @@ class TestConfig(Config):
     # Set tight limits for testing
     RATELIMIT_LOGIN = "1 per minute"
     RATELIMIT_ENABLED = True
+
+@pytest.fixture(autouse=True)
+def clear_limiter(app):
+    with app.app_context():
+        limiter.reset()
 
 @pytest.fixture
 def app():

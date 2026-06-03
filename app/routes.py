@@ -88,6 +88,10 @@ def _process_url_timestamps(form):
     end_at = None
     if form.end_date.data and form.end_time.data:
         end_at = datetime.datetime.combine(form.end_date.data, form.end_time.data)
+
+    if start_at and end_at and end_at <= start_at:
+        return start_at, end_at, None, "End time must be after start time"
+
     expires_at = None
     if form.expiry_hours.data is not None:
         if form.expiry_hours.data == 0 or form.expiry_hours.data > 8760:
@@ -573,7 +577,7 @@ def _get_referrer_stats(url_id, cutoff):
 
 def _check_stats_access(url_entry):
     current_user_id = current_user.id if current_user.is_authenticated else None
-    if url_entry.user_id != current_user_id:
+    if url_entry.user_id is None or url_entry.user_id != current_user_id:
         abort(403)
 
 def _prepare_recent_clicks(url_id, now):

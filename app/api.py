@@ -148,14 +148,44 @@ def shorten():
         return jsonify({'error': error}), status_code
 
     password = data.get('password')
+    if password is not None:
+        if not isinstance(password, str):
+            return jsonify({'error': 'password must be a string'}), 400
+        if not password:
+            password = None
+
+    preview_raw = data.get('preview_mode', True)
+    if isinstance(preview_raw, bool):
+        preview_mode = preview_raw
+    else:
+        preview_str = str(preview_raw).lower().strip()
+        if preview_str in ('true', '1', 'yes', 'y'):
+            preview_mode = True
+        elif preview_str in ('false', '0', 'no', 'n'):
+            preview_mode = False
+        else:
+            return jsonify({'error': 'preview_mode must be a boolean'}), 400
+
+    stats_raw = data.get('stats_enabled', True)
+    if isinstance(stats_raw, bool):
+        stats_enabled = stats_raw
+    else:
+        stats_str = str(stats_raw).lower().strip()
+        if stats_str in ('true', '1', 'yes', 'y'):
+            stats_enabled = True
+        elif stats_str in ('false', '0', 'no', 'n'):
+            stats_enabled = False
+        else:
+            return jsonify({'error': 'stats_enabled must be a boolean'}), 400
+
     new_url = URL(
         user_id=user.id if user else None,
         short_code=short_code,
         long_url=long_url,
         rotate_targets=rotate_targets,
         password_hash=generate_password_hash(password) if password else None,
-        preview_mode=data.get('preview_mode', True),
-        stats_enabled=data.get('stats_enabled', True),
+        preview_mode=preview_mode,
+        stats_enabled=stats_enabled,
         expires_at=expires_at,
         start_at=start_at,
         end_at=end_at
