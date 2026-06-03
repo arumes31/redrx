@@ -115,10 +115,11 @@ def create_app(config_class=Config):
             base_domain = urlparse(base_domain).netloc
 
         if request.host != base_domain:
-            # Reconstruct URL with canonical host
-            # 301 Moved Permanently
-            qs = f"?{request.query_string.decode('utf-8')}" if request.query_string else ""
-            canonical_url = f"https://{base_domain}{request.path}{qs}"
+            target = request.full_path[:-1] if request.full_path.endswith('?') else request.full_path
+            normalized_target = target.replace('\\', '')
+            parsed_target = urlparse(normalized_target)
+            safe_target = normalized_target if not parsed_target.netloc and not parsed_target.scheme else '/'
+            canonical_url = f"https://{base_domain}{safe_target}"
             return redirect(canonical_url, code=301)
 
     @app.after_request
