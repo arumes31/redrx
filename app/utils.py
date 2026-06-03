@@ -98,6 +98,19 @@ def _check_domain_phishing(domain, blocked_domains):
         check_domain = check_domain.split('.', 1)[1]
     return False
 
+def _is_url_entry_phishing(url_entry, blocked_domains):
+    """Checks if the main url or any of its rotate targets are phishing."""
+    domain = urlparse(url_entry.long_url).netloc.lower()
+    if domain and _check_domain_phishing(domain, blocked_domains):
+        return True
+
+    if url_entry.rotate_targets:
+        for target in url_entry.rotate_targets:
+            target_domain = urlparse(target).netloc.lower()
+            if target_domain and _check_domain_phishing(target_domain, blocked_domains):
+                return True
+    return False
+
 def cleanup_phishing_urls():
     """Removes URLs from database that are found in the phishing lists."""
     if not current_app.config.get('ENABLE_AUTO_REMOVE_PHISHING'):
@@ -120,23 +133,8 @@ def cleanup_phishing_urls():
         removed_count = 0
         
         for url_entry in urls:
-            # Check main long_url
             try:
-                domain = urlparse(url_entry.long_url).netloc.lower()
-                is_phishing = False
-                if domain:
-                    is_phishing = _check_domain_phishing(domain, blocked_domains)
-                
-                # Check rotate_targets if main is clean
-                if not is_phishing and url_entry.rotate_targets:
-                    for target in url_entry.rotate_targets:
-                        target_domain = urlparse(target).netloc.lower()
-                        if target_domain:
-                            is_phishing = _check_domain_phishing(target_domain, blocked_domains)
-                        if is_phishing:
-                            break
-
-                if is_phishing:
+                if _is_url_entry_phishing(url_entry, blocked_domains):
                     db.session.delete(url_entry)
                     removed_count += 1
                 else:
@@ -148,7 +146,10 @@ def cleanup_phishing_urls():
             db.session.commit()
             
     except Exception: # nosec B110
-        pass
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
 
 def get_blocked_domains():
     """Returns the set of blocked domains using the in-process cache."""

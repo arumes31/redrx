@@ -532,13 +532,7 @@ def _get_relative_time(ts, now):
         return f'{diff.seconds // 60}m ago'
     return 'Just now'
 
-def _process_analytics(url_id, range_type, now):
-    from sqlalchemy import func
-    from app.models import db, Click
-
-    cutoff, sqlite_format, pg_format, time_data, days_in_range = _get_time_range_config(range_type, now)
-
-    # 1. Clicks over time
+def _get_time_series_stats(url_id, cutoff, sqlite_format, pg_format, time_data):
     dialect = db.engine.dialect.name
     format_str = sqlite_format if dialect == 'sqlite' else pg_format
     if dialect == 'sqlite':
@@ -555,29 +549,49 @@ def _process_analytics(url_id, range_type, now):
     for key, count in time_counts:
         if key in time_data:
             time_data[key] = count
+    return time_data
 
-    # 2. Country stats (in range)
-    country_counts = db.session.query(Click.country, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.country).all()
-    country_data = {c or 'Unknown': count for c, count in country_counts}
+def _get_grouped_stats(url_id, cutoff, column):
+    counts = db.session.query(column, func.count(Click.id)).filter(
+        Click.url_id == url_id,
+        Click.timestamp >= cutoff
+    ).group_by(column).all()
+    return {val or 'Unknown': count for val, count in counts}
 
-    # 3. Browser stats (in range)
-    browser_counts = db.session.query(Click.browser, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.browser).all()
-    browser_data = {b or 'Unknown': count for b, count in browser_counts}
-
-    # 4. Platform stats (in range)
-    platform_counts = db.session.query(Click.platform, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.platform).all()
-    platform_data = {p or 'Unknown': count for p, count in platform_counts}
-
-    # 5. Referrer stats (in range)
-    ref_counts = db.session.query(Click.referrer, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.referrer).all()
+def _get_referrer_stats(url_id, cutoff):
+    ref_counts = db.session.query(Click.referrer, func.count(Click.id)).filter(
+        Click.url_id == url_id,
+        Click.timestamp >= cutoff
+    ).group_by(Click.referrer).all()
     referrer_data = {}
     for ref, count in ref_counts:
         label = ref or 'Direct'
         if '://' in label:
             label = urlparse(label).netloc or label
         referrer_data[label] = referrer_data.get(label, 0) + count
+    return referrer_data
 
-    # 6. Momentum
+def _check_stats_access(url_entry):
+    current_user_id = current_user.id if current_user.is_authenticated else None
+    if url_entry.user_id != current_user_id:
+        abort(403)
+
+def _prepare_recent_clicks(url_id, now):
+    recent_clicks = Click.query.filter_by(url_id=url_id).order_by(Click.timestamp.desc()).limit(10).all()
+    for rc in recent_clicks:
+        rc.relative_time = _get_relative_time(rc.timestamp, now)
+        rc.ip_anonymized = _anonymize_ip(rc.ip_address)
+    return recent_clicks
+
+def _process_analytics(url_id, range_type, now):
+    cutoff, sqlite_format, pg_format, time_data, days_in_range = _get_time_range_config(range_type, now)
+
+    time_data = _get_time_series_stats(url_id, cutoff, sqlite_format, pg_format, time_data)
+    country_data = _get_grouped_stats(url_id, cutoff, Click.country)
+    browser_data = _get_grouped_stats(url_id, cutoff, Click.browser)
+    platform_data = _get_grouped_stats(url_id, cutoff, Click.platform)
+    referrer_data = _get_referrer_stats(url_id, cutoff)
+
     total_in_range = sum(time_data.values())
     avg_daily = round(total_in_range / days_in_range, 1)
 
@@ -587,10 +601,7 @@ def _process_analytics(url_id, range_type, now):
 @limiter.limit("20 per minute")
 def stats(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first_or_404()
-    
-    current_user_id = current_user.id if current_user.is_authenticated else None
-    if url_entry.user_id != current_user_id:
-        abort(403)
+    _check_stats_access(url_entry)
         
     range_type = request.args.get('range', '30d')
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -599,10 +610,7 @@ def stats(short_code):
     time_data, country_data, browser_data, platform_data, referrer_data, avg_daily = _process_analytics(url_entry.id, range_type, now)
 
     # Recent activity (last 10)
-    recent_clicks = Click.query.filter_by(url_id=url_entry.id).order_by(Click.timestamp.desc()).limit(10).all()
-    for rc in recent_clicks:
-        rc.relative_time = _get_relative_time(rc.timestamp, now)
-        rc.ip_anonymized = _anonymize_ip(rc.ip_address)
+    recent_clicks = _prepare_recent_clicks(url_entry.id, now)
 
     short_url = f'https://{current_app.config["BASE_DOMAIN"]}/{short_code}'
     return render_template('stats.html', url=url_entry, short_url=short_url, 
