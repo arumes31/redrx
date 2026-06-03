@@ -1,5 +1,3 @@
-import os
-import pytest
 from app.utils import is_safe_url
 
 def test_is_safe_url_blocked_env(app, monkeypatch):
