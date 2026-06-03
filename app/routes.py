@@ -564,20 +564,20 @@ def _process_analytics(url_id, range_type, now):
         if key in time_data:
             time_data[key] = count
 
-    # 2. Country stats (all time)
-    country_counts = db.session.query(Click.country, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.country).all()
+    # 2. Country stats (in range)
+    country_counts = db.session.query(Click.country, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.country).all()
     country_data = {c or 'Unknown': count for c, count in country_counts}
 
-    # 3. Browser stats (all time)
-    browser_counts = db.session.query(Click.browser, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.browser).all()
+    # 3. Browser stats (in range)
+    browser_counts = db.session.query(Click.browser, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.browser).all()
     browser_data = {b or 'Unknown': count for b, count in browser_counts}
 
-    # 4. Platform stats (all time)
-    platform_counts = db.session.query(Click.platform, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.platform).all()
+    # 4. Platform stats (in range)
+    platform_counts = db.session.query(Click.platform, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.platform).all()
     platform_data = {p or 'Unknown': count for p, count in platform_counts}
 
-    # 5. Referrer stats (all time)
-    ref_counts = db.session.query(Click.referrer, func.count(Click.id)).filter_by(url_id=url_id).group_by(Click.referrer).all()
+    # 5. Referrer stats (in range)
+    ref_counts = db.session.query(Click.referrer, func.count(Click.id)).filter(Click.url_id == url_id, Click.timestamp >= cutoff).group_by(Click.referrer).all()
     referrer_data = {}
     for ref, count in ref_counts:
         label = ref or 'Direct'
