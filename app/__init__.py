@@ -117,7 +117,9 @@ def create_app(config_class=Config):
         if request.host != base_domain:
             # Reconstruct URL with canonical host
             # 301 Moved Permanently
-            return redirect(request.url.replace(request.host, base_domain, 1), code=301)
+            qs = f"?{request.query_string.decode('utf-8')}" if request.query_string else ""
+            canonical_url = f"https://{base_domain}{request.path}{qs}"
+            return redirect(canonical_url, code=301)
 
     @app.after_request
     def set_security_headers(response):

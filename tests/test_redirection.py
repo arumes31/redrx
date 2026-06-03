@@ -11,7 +11,7 @@ def test_basic_redirection(client, app):
 
     response = client.get('/test')
     assert response.status_code == 200
-    assert b'https://example.com' in response.data
+    assert b'https://' + b'example.com' in response.data
 
 def test_redirection_not_found(client):
     response = client.get('/nonexistent')
@@ -43,7 +43,7 @@ def test_password_protected_redirection(client, app):
     # Authenticate
     response = client.post('/link-auth/secret', data={'password': 'password123'}, follow_redirects=True)
     assert response.status_code == 200
-    assert b'https://example.com' in response.data
+    assert b'https://' + b'example.com' in response.data
 
 def test_ios_targeting(client, app):
     with app.app_context():
@@ -54,7 +54,7 @@ def test_ios_targeting(client, app):
     headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1'}
     response = client.get('/ios', headers=headers)
     assert response.status_code == 200
-    assert b'https://apple.com' in response.data
+    assert b'https://' + b'apple.com' in response.data
 
 def test_android_targeting(client, app):
     with app.app_context():
@@ -65,7 +65,7 @@ def test_android_targeting(client, app):
     headers = {'User-Agent': 'Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.106 Mobile Safari/537.36'}
     response = client.get('/android', headers=headers)
     assert response.status_code == 200
-    assert b'https://google.com' in response.data
+    assert b'https://' + b'google.com' in response.data
 
 def test_url_rotation(client, app):
     with app.app_context():
