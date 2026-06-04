@@ -113,44 +113,52 @@ def _is_url_entry_phishing(url_entry, blocked_domains):
 
 def cleanup_phishing_urls():
     """Removes URLs from database that are found in the phishing lists."""
-    if not current_app.config.get('ENABLE_AUTO_REMOVE_PHISHING'):
+    if not current_app.config.get("ENABLE_AUTO_REMOVE_PHISHING"):
         return
 
-    path = current_app.config.get('BLOCKED_DOMAINS_PATH')
+    path = current_app.config.get("BLOCKED_DOMAINS_PATH")
     if not path or not os.path.exists(path):
         return
 
     from app.models import db, URL
     
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             blocked_domains = {line.strip().lower() for line in f if line.strip()}
 
         if not blocked_domains:
             return
 
+        # Use yield_per to stream results from the database
         urls = URL.query.yield_per(100)
-        removed_count = 0
+        phishing_ids = []
         
         for url_entry in urls:
             try:
                 if _is_url_entry_phishing(url_entry, blocked_domains):
-                    db.session.delete(url_entry)
-                    removed_count += 1
-                else:
-                    db.session.expunge(url_entry)
+                    phishing_ids.append(url_entry.id)
+
+                # Expunge from session immediately to keep memory usage low
+                db.session.expunge(url_entry)
             except Exception: # nosec B112
                 continue
-        
-        if removed_count > 0:
-            db.session.commit()
+
+        # Process deletions in batches to avoid large transactions and memory spikes
+        batch_size = 100
+        for i in range(0, len(phishing_ids), batch_size):
+            batch = phishing_ids[i:i + batch_size]
+            try:
+                URL.query.filter(URL.id.in_(batch)).delete(synchronize_session=False)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                return # Exit on batch failure to avoid redundant rollbacks
             
     except Exception: # nosec B110
         try:
             db.session.rollback()
         except Exception:
             pass
-
 def get_blocked_domains():
     """Returns the set of blocked domains using the in-process cache."""
     if not current_app.config.get('ENABLE_PHISHING_CHECK'):
