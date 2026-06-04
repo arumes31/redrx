@@ -39,6 +39,20 @@ _blocked_domains_path = None
 _blocked_domains_ino = 0
 
 
+_blocked_env_cache = set()
+_blocked_env_raw = None
+
+def _get_blocked_env_set():
+    """Returns a set of blocked domains from the environment config, cached for performance."""
+    global _blocked_env_cache, _blocked_env_raw
+    blocked_env = current_app.config.get("BLOCKED_DOMAINS", [])
+
+    if blocked_env != _blocked_env_raw:
+        _blocked_env_cache = {str(b).lower() for b in blocked_env if b}
+        _blocked_env_raw = list(blocked_env)
+
+    return _blocked_env_cache
+
 def update_phishing_list():
     """Downloads the latest phishing domain lists."""
     if not current_app.config.get('ENABLE_PHISHING_CHECK'):
@@ -87,15 +101,18 @@ def _check_domain_phishing(domain, blocked_domains):
         return False
 
     if ':' in domain:
-        domain = domain.split(':')[0]
+        domain = domain.split(':', 1)[0]
 
     check_domain = domain
     while True:
         if check_domain in blocked_domains:
             return True
-        if '.' not in check_domain:
+
+        dot_idx = check_domain.find('.')
+        if dot_idx == -1:
             break
-        check_domain = check_domain.split('.', 1)[1]
+        check_domain = check_domain[dot_idx + 1:]
+
     return False
 
 def _is_url_entry_phishing(url_entry, blocked_domains):
@@ -206,18 +223,14 @@ def is_safe_url(target_url, blocked_domains_cache=None):
         return False
 
     # 1. Check manual overrides from config
-    blocked_env = current_app.config.get('BLOCKED_DOMAINS', [])
-    domain = ""
     try:
         domain = urlparse(target_url).netloc.lower()
         if not domain: # For relative or malformed URLs
              return False
-        if ':' in domain:
-            domain = domain.split(':')[0]
              
-        for b in blocked_env:
-            if domain == b or domain.endswith('.' + b):
-                return False
+        blocked_env_set = _get_blocked_env_set()
+        if _check_domain_phishing(domain, blocked_env_set):
+            return False
     except Exception:
         return False
 
