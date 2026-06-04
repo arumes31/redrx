@@ -369,6 +369,9 @@ def select_rotate_target(rotate_targets):
     if not isinstance(rotate_targets, list):
         rotate_targets = list(rotate_targets)
 
+    if not rotate_targets:
+        return None
+
     # Using microsecond for more "random" feel on rapid refreshes
     idx = hash(str(datetime.datetime.now().microsecond)) % len(rotate_targets)
     return rotate_targets[idx]
