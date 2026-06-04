@@ -383,9 +383,9 @@ def bulk_delete():
         flash('No links selected.', 'warning')
         return redirect(url_for('main.dashboard'))
         
-    URL.query.filter(URL.id.in_(ids), URL.user_id == current_user.id).delete(synchronize_session=False)
+    deleted_count = URL.query.filter(URL.id.in_(ids), URL.user_id == current_user.id).delete(synchronize_session=False)
     db.session.commit()
-    flash(f'Successfully deleted {len(ids)} links.', 'info')
+    flash(f'Successfully deleted {deleted_count} links.', 'info')
     return redirect(url_for('main.dashboard'))
 
 @main.route('/edit/<short_code>', methods=['GET', 'POST'])
