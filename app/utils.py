@@ -278,7 +278,7 @@ def _is_local_ip(ip):
     try:
         ip_obj = ipaddress.ip_address(ip)
         return ip_obj.is_private or ip_obj.is_loopback
-    except ValueError:
+    except (ValueError, TypeError):
         return False
 
 def _get_db_geo(ip):
@@ -335,7 +335,7 @@ def generate_qr(data, color='black', bg='white', logo_img=None):
     # but PIL handles standard color names and hex codes well.
     try:
         img = qr.make_image(fill_color=color, back_color=bg).convert('RGB')
-    except ValueError:
+    except (ValueError, TypeError):
         # Fallback to defaults on error
         img = qr.make_image(fill_color='black', back_color='white').convert('RGB')
 

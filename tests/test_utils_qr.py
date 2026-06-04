@@ -44,3 +44,11 @@ def test_generate_qr_with_logo():
     assert isinstance(buffer, io.BytesIO)
     img = Image.open(buffer)
     assert img.format == 'PNG'
+
+def test_generate_qr_type_error_fallback():
+    """Test QR generation fallback when invalid types are provided for colors."""
+    # This should trigger the TypeError in app/utils.py and fall back to black/white
+    buffer = generate_qr("https://example.com", color=[1, 2, 3])
+    assert isinstance(buffer, io.BytesIO)
+    img = Image.open(buffer)
+    assert img.format == 'PNG'
