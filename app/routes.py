@@ -194,17 +194,9 @@ def index():
 def redirect_to_url(short_code):
     url_entry = URL.query.filter_by(short_code=short_code).first()
     
-    if not url_entry:
-        abort(404)
-        
-    if not url_entry.is_active():
-        abort(410)
-        
-    if url_entry.password_hash:
-        # Check session
-        auth_key = f"auth_{short_code}"
-        if not session.get(auth_key):
-             return redirect(url_for("main.link_password_auth", short_code=short_code))
+    access_check = _check_redirection_access(url_entry, short_code)
+    if access_check:
+        return access_check
              
     ua_string = request.headers.get("User-Agent")
     user_agent = parse(ua_string)
@@ -215,17 +207,7 @@ def redirect_to_url(short_code):
     if not is_safe_url(target_url, cached_domains):
         abort(403)
 
-    # Update last accessed
-    url_entry.last_accessed_at = datetime.datetime.now(datetime.timezone.utc)
-    db.session.commit()
-
-    # Increment Prometheus Counter
-    redirections_total.inc()
-
-    # Stats
-    if url_entry.stats_enabled:
-        client_ip = get_client_ip(request)
-        _record_click(url_entry, user_agent, client_ip)
+    _perform_redirection_logging(url_entry, user_agent)
     
     # If preview mode is enabled
     if url_entry.preview_mode:
@@ -446,6 +428,35 @@ def delete_url(short_code):
     flash('Link deleted successfully.', 'info')
     return redirect(url_for('main.dashboard'))
 
+
+def _check_redirection_access(url_entry, short_code):
+    """Checks if the user has access to the redirection link."""
+    if not url_entry:
+        abort(404)
+
+    if not url_entry.is_active():
+        abort(410)
+
+    if url_entry.password_hash:
+        # Check session
+        auth_key = f"auth_{short_code}"
+        if not session.get(auth_key):
+             return redirect(url_for("main.link_password_auth", short_code=short_code))
+    return None
+
+def _perform_redirection_logging(url_entry, user_agent):
+    """Handles logging and statistics for a redirection event."""
+    # Update last accessed
+    url_entry.last_accessed_at = datetime.datetime.now(datetime.timezone.utc)
+    db.session.commit()
+
+    # Increment Prometheus Counter
+    redirections_total.inc()
+
+    # Stats
+    if url_entry.stats_enabled:
+        client_ip = get_client_ip(request)
+        _record_click(url_entry, user_agent, client_ip)
 
 def _get_target_url(url_entry, user_agent, cached_domains):
     """Determines the target URL based on device and rotation settings."""
