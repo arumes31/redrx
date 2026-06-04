@@ -131,3 +131,71 @@ def test_api_shorten_validate_stats_enabled(client, test_user):
     })
     assert response.status_code == 201
     assert response.get_json()['stats_enabled'] is True
+
+def test_api_shorten_non_string_scheduling_dates(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+
+    # start_at is int
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'start_at': 123
+    })
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'scheduling dates must be strings (ISO 8601)'
+
+    # end_at is list
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'end_at': ['2025-01-01']
+    })
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'scheduling dates must be strings (ISO 8601)'
+
+def test_api_shorten_expiry_hours_invalid(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+
+    # Negative
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'expiry_hours': -1
+    })
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'expiry_hours must be between 0 and 876,000 (100 years)'
+
+    # Too large
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'expiry_hours': 900000
+    })
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'expiry_hours must be between 0 and 876,000 (100 years)'
+
+    # Not an integer
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'expiry_hours': 'many'
+    })
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'expiry_hours must be an integer'
+
+def test_api_shorten_expiry_hours_zero(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'expiry_hours': 0
+    })
+    assert response.status_code == 201
+    assert response.get_json()['expires_at'] is None
+
+def test_api_shorten_expiry_overflow(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    from unittest.mock import patch
+
+    # Mock datetime.timedelta to raise OverflowError when called with hours=something
+    with patch('datetime.timedelta', side_effect=OverflowError):
+        response = client.post('/api/v1/shorten', headers=headers, json={
+            'long_url': 'https://example.com',
+            'expiry_hours': 100
+        })
+        assert response.status_code == 400
+        assert response.get_json()['error'] == 'expiry_hours results in a date that is out of range'
