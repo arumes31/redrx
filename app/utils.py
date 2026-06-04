@@ -294,6 +294,19 @@ def _get_db_geo(ip):
     except Exception:
         return "Unknown"
 
+def _get_cloudflare_geo(ip, request):
+    """Checks Cloudflare header for country info and caches it if found."""
+    cf_country = get_client_country(request)
+    if cf_country:
+        _set_cached_geo(ip, cf_country)
+    return cf_country
+
+def _update_geo_cache(ip, country):
+    """Updates Redis cache with geo info if it is valid."""
+    if country and "Unknown" not in country:
+        _set_cached_geo(ip, country)
+
+
 def get_geo_info(ip, request=None):
     """Fetches country from IP using local MaxMind database or Cloudflare header with Redis cache."""
     # 1. Check Redis Cache
@@ -303,21 +316,19 @@ def get_geo_info(ip, request=None):
 
     # 2. Check Cloudflare
     if request:
-        cf_country = get_client_country(request)
+        cf_country = _get_cloudflare_geo(ip, request)
         if cf_country:
-            _set_cached_geo(ip, cf_country)
             return cf_country
 
     # 3. Check Local Network
     if _is_local_ip(ip):
         return "Local Network"
-    
+
     # 4. Check Local DB
     country = _get_db_geo(ip)
 
     # 5. Update Redis Cache (if not Unknown/Missing)
-    if country and "Unknown" not in country:
-        _set_cached_geo(ip, country)
+    _update_geo_cache(ip, country)
 
     return country
 
