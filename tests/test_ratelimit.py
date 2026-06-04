@@ -6,10 +6,12 @@ from config import Config
 
 class TestConfig(Config):
     TESTING = True
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    DEBUG = True
     WTF_CSRF_ENABLED = False
     # Set tight limits for testing
     RATELIMIT_LOGIN = "1 per minute"
+    RATELIMIT_HEADERS_ENABLED = True
     RATELIMIT_ENABLED = True
 
 @pytest.fixture(autouse=True)

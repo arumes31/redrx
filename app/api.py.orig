@@ -34,7 +34,7 @@ def _resolve_short_code(custom_code, code_length):
         if URL.query.filter_by(short_code=custom_code).first():
             return None, 'Custom code already taken'
         return custom_code, None
-    
+
     short_code = generate_short_code(code_length)
     while URL.query.filter_by(short_code=short_code).first():
         short_code = generate_short_code(code_length)
@@ -208,7 +208,6 @@ def shorten():
     }), 201
 
 @api.route('/<short_code>', methods=['GET'])
-@limiter.limit("100 per minute")
 def get_url_info(short_code):
     user = get_user_from_api_key()
     if not user:
@@ -218,22 +217,11 @@ def get_url_info(short_code):
     if not url_entry:
         return jsonify({'error': 'URL not found'}), 404
 
-    # Ownership check - if URL has an owner, must match current user
-    if url_entry.user_id and url_entry.user_id != user.id:
-        return jsonify({'error': 'Access denied to this URL info'}), 403
-
     return jsonify({
         'short_code': url_entry.short_code,
-        'short_url': f"https://{current_app.config['BASE_DOMAIN']}/{url_entry.short_code}",
         'long_url': url_entry.long_url,
-        'rotate_targets': url_entry.rotate_targets,
         'clicks_count': url_entry.clicks_count,
         'created_at': url_entry.created_at.isoformat(),
         'expires_at': url_entry.expires_at.isoformat() if url_entry.expires_at else None,
-        'start_at': url_entry.start_at.isoformat() if url_entry.start_at else None,
-        'end_at': url_entry.end_at.isoformat() if url_entry.end_at else None,
-        'active': url_entry.is_active(),
-        'preview_mode': url_entry.preview_mode,
-        'stats_enabled': url_entry.stats_enabled,
-        'password_protected': bool(url_entry.password_hash)
+        'active': url_entry.is_active()
     })
