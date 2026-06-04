@@ -1,4 +1,3 @@
-import pytest
 from app.models import db, URL
 
 def test_stats_access_owner(client, app, test_user):

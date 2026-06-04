@@ -1,6 +1,4 @@
-import pytest
 from app.models import db, URL
-from flask import url_for
 import datetime
 
 def test_index_get(client):
