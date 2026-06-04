@@ -484,7 +484,6 @@ def _record_click(url_entry, user_agent, client_ip):
     db.session.commit()
 
 def _get_time_range_config(range_type, now):
-    import datetime
     if range_type == '24h':
         cutoff = now - datetime.timedelta(hours=24)
         days = 1
@@ -525,7 +524,6 @@ def _anonymize_ip(ip):
     return 'xxxx'
 
 def _get_relative_time(ts, now):
-    import datetime
     ts_aware = ts.replace(tzinfo=datetime.timezone.utc) if ts.tzinfo is None else ts
     diff = now - ts_aware
     if diff.days > 0:
@@ -581,7 +579,7 @@ def _check_stats_access(url_entry):
         abort(403)
 
 def _prepare_recent_clicks(url_id, now):
-    recent_clicks = Click.query.filter_by(url_id=url_id).order_by(Click.timestamp.desc()).limit(10).all()
+    recent_clicks = db.session.query(Click).filter_by(url_id=url_id).order_by(Click.timestamp.desc()).limit(10).all()
     for rc in recent_clicks:
         rc.relative_time = _get_relative_time(rc.timestamp, now)
         rc.ip_anonymized = _anonymize_ip(rc.ip_address)
