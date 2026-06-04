@@ -47,10 +47,10 @@ def update_phishing_list():
     urls = current_app.config.get('PHISHING_LIST_URLS')
     path = current_app.config.get('BLOCKED_DOMAINS_PATH')
     interval = current_app.config.get('PHISHING_CHECK_INTERVAL', 24)
-    
+
     if not urls or not path:
         return
-    
+
     try:
         # Check if file is old (e.g. older than interval hours)
         if os.path.exists(path):
@@ -220,7 +220,7 @@ def is_safe_url(target_url, blocked_domains_cache=None):
              return False
         if ':' in domain:
             domain = domain.split(':')[0]
-             
+
         for b in blocked_env:
             if domain == b or domain.endswith('.' + b):
                 return False
@@ -235,7 +235,7 @@ def is_safe_url(target_url, blocked_domains_cache=None):
     if blocked_domains:
         if _check_domain_phishing(domain, blocked_domains):
             return False
-            
+
     return True
 
 def get_client_ip(request):
@@ -317,7 +317,7 @@ def get_geo_info(ip, request=None):
     # 3. Check Local Network
     if _is_local_ip(ip):
         return "Local Network"
-    
+
     # 4. Check Local DB
     country = _get_db_geo(ip)
 
@@ -336,8 +336,8 @@ def generate_qr(data, color='black', bg='white', logo_img=None):
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(data)
     qr.make(fit=True)
-    
-    # Basic color validation/fallback could go here if needed, 
+
+    # Basic color validation/fallback could go here if needed,
     # but PIL handles standard color names and hex codes well.
     try:
         img = qr.make_image(fill_color=color, back_color=bg).convert('RGB')
@@ -348,14 +348,14 @@ def generate_qr(data, color='black', bg='white', logo_img=None):
     if logo_img:
         # Ensure logo is compatible
         logo = logo_img.convert("RGBA")
-        
+
         # Resize logo to max 20% of QR size
         max_size = (img.size[0] // 5, img.size[1] // 5)
         logo.thumbnail(max_size, Image.Resampling.LANCZOS)
-        
+
         # Calculate position (center)
         pos = ((img.size[0] - logo.size[0]) // 2, (img.size[1] - logo.size[1]) // 2)
-        
+
         # Create a mask for transparency if needed, but pasting directly works for RGBA on RGB
         img.paste(logo, pos, mask=logo)
 
