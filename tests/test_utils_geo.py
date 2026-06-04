@@ -78,3 +78,52 @@ def test_get_geo_info_redis_error(app, mock_redis, mock_geoip):
             result = get_geo_info("8.8.8.8")
 
     assert result == "United Kingdom"
+
+def test_get_geo_info_invalid_ip(app):
+    assert get_geo_info(None) == "Unknown"
+    assert get_geo_info("") == "Unknown"
+    assert get_geo_info(123) == "Unknown"
+    assert get_geo_info(["1.2.3.4"]) == "Unknown"
+
+def test_is_local_ip_validation(app):
+    from app.utils import _is_local_ip
+    assert _is_local_ip("invalid-ip") == False
+    assert _is_local_ip("127.0.0.1") == True
+    assert _is_local_ip("192.168.0.1") == True
+    assert _is_local_ip("10.0.0.1") == True
+    assert _is_local_ip("172.16.0.1") == True
+    assert _is_local_ip("8.8.8.8") == False
+
+def test_get_db_geo_exception(app, mock_redis, mock_geoip):
+    mock_redis.get.return_value = None
+    mock_geoip.side_effect = Exception("DB Read Error")
+
+    with patch('app.utils.current_app') as mock_app:
+        mock_app.config = {'GEOIP_DB_PATH': '/tmp/test.mmdb'}
+        with patch('app.utils.os.path.exists', return_value=True):
+            result = get_geo_info("8.8.8.8")
+
+    assert result == "Unknown"
+
+def test_get_redis_client_variations(app):
+    from app.utils import _get_redis_client
+    with patch('app.utils._REDIS_URL', 'invalid://url'):
+        assert _get_redis_client() is None
+
+    with patch('app.utils._REDIS_URL', 'redis://localhost:6379'):
+        with patch('redis.from_url', side_effect=Exception("Redis connection error")):
+            assert _get_redis_client() is None
+
+def test_get_db_geo_none_country(app, mock_redis, mock_geoip):
+    mock_redis.get.return_value = None
+    mock_reader = mock_geoip.return_value.__enter__.return_value
+    mock_response = MagicMock()
+    mock_response.country.name = None
+    mock_reader.country.return_value = mock_response
+
+    with patch('app.utils.current_app') as mock_app:
+        mock_app.config = {'GEOIP_DB_PATH': '/tmp/test.mmdb'}
+        with patch('app.utils.os.path.exists', return_value=True):
+            result = get_geo_info("8.8.8.8")
+
+    assert result == "Unknown"

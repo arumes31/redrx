@@ -296,6 +296,9 @@ def _get_db_geo(ip):
 
 def get_geo_info(ip, request=None):
     """Fetches country from IP using local MaxMind database or Cloudflare header with Redis cache."""
+    if not ip or not isinstance(ip, str):
+        return "Unknown"
+
     # 1. Check Redis Cache
     cached_val = _get_cached_geo(ip)
     if cached_val:
