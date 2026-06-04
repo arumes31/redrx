@@ -24,8 +24,11 @@ def _parse_iso_datetime(dt_str):
     except (ValueError, TypeError):
         return None
 
-def _resolve_short_code(custom_code, code_length):
-    if custom_code:
+def _resolve_short_code(data, code_length):
+    custom_code = data.get('custom_code')
+    if custom_code is not None:
+        if not isinstance(custom_code, str):
+            return None, 'custom_code must be a string'
         custom_code = custom_code.strip().upper()
         if not (3 <= len(custom_code) <= 20):
             return None, 'custom_code must be between 3 and 20 characters'
@@ -34,7 +37,7 @@ def _resolve_short_code(custom_code, code_length):
         if URL.query.filter_by(short_code=custom_code).first():
             return None, 'Custom code already taken'
         return custom_code, None
-    
+
     short_code = generate_short_code(code_length)
     while URL.query.filter_by(short_code=short_code).first():
         short_code = generate_short_code(code_length)
@@ -79,18 +82,25 @@ def _get_expiry_date(data):
     except (OverflowError, OSError):
          return None, 'expiry_hours results in a date that is out of range'
 
+def _parse_date_field(data, field_name):
+    val = data.get(field_name)
+    if val is None:
+        return None, None
+    if not isinstance(val, str):
+        return None, f'{field_name} must be a string (ISO 8601)'
+    dt = _parse_iso_datetime(val)
+    if not dt:
+        return None, f'Invalid {field_name} format. Use ISO 8601'
+    return dt, None
+
 def _get_scheduling_dates(data):
-    s_str, e_str = data.get('start_at'), data.get('end_at')
-    if (s_str and not isinstance(s_str, str)) or (e_str and not isinstance(e_str, str)):
-        return None, None, 'scheduling dates must be strings (ISO 8601)'
+    start_at, error = _parse_date_field(data, 'start_at')
+    if error:
+        return None, None, error
 
-    start_at = _parse_iso_datetime(s_str)
-    if s_str and not start_at:
-        return None, None, 'Invalid start_at format. Use ISO 8601'
-
-    end_at = _parse_iso_datetime(e_str)
-    if e_str and not end_at:
-        return None, None, 'Invalid end_at format. Use ISO 8601'
+    end_at, error = _parse_date_field(data, 'end_at')
+    if error:
+        return None, None, error
 
     if start_at and end_at and end_at <= start_at:
         return None, None, 'Invalid scheduling window: end_at must be after start_at'
@@ -105,6 +115,39 @@ def _get_code_length(data):
         return code_length, None
     except (ValueError, TypeError):
         return None, 'code_length must be an integer'
+
+def _parse_boolean_field(data, field_name, default_value=True):
+    raw_val = data.get(field_name, default_value)
+    if isinstance(raw_val, bool):
+        return raw_val, None
+    val_str = str(raw_val).lower().strip()
+    if val_str in ('true', '1', 'yes', 'y'):
+        return True, None
+    if val_str in ('false', '0', 'no', 'n'):
+        return False, None
+    return None, f'{field_name} must be a boolean'
+
+def _get_password(data):
+    password = data.get('password')
+    if password is None:
+        return None, None
+    if not isinstance(password, str):
+        return None, 'password must be a string'
+    return (password if password else None), None
+
+def _build_shorten_response(new_url, password, expires_at, start_at, end_at):
+    return {
+        'short_code': new_url.short_code,
+        'short_url': f"https://{current_app.config['BASE_DOMAIN']}/{new_url.short_code}",
+        'long_url': new_url.long_url,
+        'rotate_targets': new_url.rotate_targets,
+        'expires_at': expires_at.isoformat() if expires_at else None,
+        'start_at': start_at.isoformat() if start_at else None,
+        'end_at': end_at.isoformat() if end_at else None,
+        'password_protected': bool(password),
+        'preview_mode': new_url.preview_mode,
+        'stats_enabled': new_url.stats_enabled
+    }
 
 @api.route('/shorten', methods=['POST'])
 @limiter.limit("60 per minute")
@@ -121,15 +164,11 @@ def shorten():
     if not is_safe_url(long_url):
         return jsonify({'error': 'Destination URL is blocked'}), 403
 
-    custom_code = data.get('custom_code')
-    if custom_code is not None and not isinstance(custom_code, str):
-        return jsonify({'error': 'custom_code must be a string'}), 400
-
     code_length, error = _get_code_length(data)
     if error:
         return jsonify({'error': error}), 400
 
-    short_code, error = _resolve_short_code(custom_code, code_length)
+    short_code, error = _resolve_short_code(data, code_length)
     if error:
         status_code = 409 if 'taken' in error.lower() else 400
         return jsonify({'error': error}), status_code
@@ -147,36 +186,17 @@ def shorten():
         status_code = 403 if 'blocked' in error.lower() else 400
         return jsonify({'error': error}), status_code
 
-    password = data.get('password')
-    if password is not None:
-        if not isinstance(password, str):
-            return jsonify({'error': 'password must be a string'}), 400
-        if not password:
-            password = None
+    password, error = _get_password(data)
+    if error:
+        return jsonify({'error': error}), 400
 
-    preview_raw = data.get('preview_mode', True)
-    if isinstance(preview_raw, bool):
-        preview_mode = preview_raw
-    else:
-        preview_str = str(preview_raw).lower().strip()
-        if preview_str in ('true', '1', 'yes', 'y'):
-            preview_mode = True
-        elif preview_str in ('false', '0', 'no', 'n'):
-            preview_mode = False
-        else:
-            return jsonify({'error': 'preview_mode must be a boolean'}), 400
+    preview_mode, error = _parse_boolean_field(data, 'preview_mode')
+    if error:
+        return jsonify({'error': error}), 400
 
-    stats_raw = data.get('stats_enabled', True)
-    if isinstance(stats_raw, bool):
-        stats_enabled = stats_raw
-    else:
-        stats_str = str(stats_raw).lower().strip()
-        if stats_str in ('true', '1', 'yes', 'y'):
-            stats_enabled = True
-        elif stats_str in ('false', '0', 'no', 'n'):
-            stats_enabled = False
-        else:
-            return jsonify({'error': 'stats_enabled must be a boolean'}), 400
+    stats_enabled, error = _parse_boolean_field(data, 'stats_enabled')
+    if error:
+        return jsonify({'error': error}), 400
 
     new_url = URL(
         user_id=user.id if user else None,
@@ -194,18 +214,7 @@ def shorten():
     db.session.commit()
     shortened_links_total.inc()
 
-    return jsonify({
-        'short_code': short_code,
-        'short_url': f"https://{current_app.config['BASE_DOMAIN']}/{short_code}",
-        'long_url': long_url,
-        'rotate_targets': rotate_targets,
-        'expires_at': expires_at.isoformat() if expires_at else None,
-        'start_at': start_at.isoformat() if start_at else None,
-        'end_at': end_at.isoformat() if end_at else None,
-        'password_protected': bool(password),
-        'preview_mode': new_url.preview_mode,
-        'stats_enabled': new_url.stats_enabled
-    }), 201
+    return jsonify(_build_shorten_response(new_url, password, expires_at, start_at, end_at)), 201
 
 @api.route('/<short_code>', methods=['GET'])
 def get_url_info(short_code):
