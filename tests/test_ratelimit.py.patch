@@ -1,0 +1,18 @@
+<<<<<<< SEARCH
+class TestConfig(Config):
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    WTF_CSRF_ENABLED = False
+    # Set tight limits for testing
+    RATELIMIT_LOGIN = "1 per minute"
+    RATELIMIT_ENABLED = True
+=======
+class TestConfig(Config):
+    TESTING = True
+    DEBUG = True
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    WTF_CSRF_ENABLED = False
+    # Set tight limits for testing
+    RATELIMIT_LOGIN = "1 per minute"
+    RATELIMIT_ENABLED = True
+>>>>>>> REPLACE

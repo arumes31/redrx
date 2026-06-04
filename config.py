@@ -8,7 +8,7 @@ class Config:
     DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() in ["true", "1", "t"]
 
     # Secret Key Security
-    SECRET_KEY = os.environ.get("SECRET_KEY")
+    SECRET_KEY = os.environ.get("SECRET_KEY", "").strip() or None
 
     @classmethod
     def validate(cls):
@@ -21,7 +21,10 @@ class Config:
                 # Enforce security in production
                 raise RuntimeError("SECRET_KEY must be set in production environments for security.")
 
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or         'sqlite:///' + os.path.join(basedir, 'db', 'shortener.db')
+        if not cls.DEBUG and len(cls.SECRET_KEY) < 16:
+            raise RuntimeError("SECRET_KEY must be at least 16 characters long in production for security.")
+
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///' + os.path.join(basedir, 'db', 'shortener.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MAX_CONTENT_LENGTH = 1 * 1024 * 1024 # 1MB Limit
     

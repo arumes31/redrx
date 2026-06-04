@@ -6,6 +6,7 @@ from config import Config
 
 class TestConfig(Config):
     TESTING = True
+    DEBUG = True
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
     WTF_CSRF_ENABLED = False
     # Set tight limits for testing
