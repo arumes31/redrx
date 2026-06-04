@@ -1,6 +1,4 @@
-import pytest
 from app.models import db, URL, Click
-from flask import session
 import datetime
 
 def test_basic_redirection(client, app):

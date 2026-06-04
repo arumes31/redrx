@@ -484,7 +484,6 @@ def _record_click(url_entry, user_agent, client_ip):
     db.session.commit()
 
 def _get_time_range_config(range_type, now):
-    import datetime
     if range_type == '24h':
         cutoff = now - datetime.timedelta(hours=24)
         days = 1
@@ -525,7 +524,6 @@ def _anonymize_ip(ip):
     return 'xxxx'
 
 def _get_relative_time(ts, now):
-    import datetime
     ts_aware = ts.replace(tzinfo=datetime.timezone.utc) if ts.tzinfo is None else ts
     diff = now - ts_aware
     if diff.days > 0:
