@@ -1,6 +1,5 @@
 import io
 import csv
-import pytest
 from app.models import db, URL
 
 def test_csv_export_sanitization(client, app, test_user):

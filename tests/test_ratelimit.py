@@ -1,7 +1,5 @@
 import pytest
-import time
 from app import create_app, db, limiter
-from app.models import User
 from config import Config
 
 class TestConfig(Config):

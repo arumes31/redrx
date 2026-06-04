@@ -107,7 +107,7 @@ def _get_code_length(data):
         return None, 'code_length must be an integer'
 
 @api.route('/shorten', methods=['POST'])
-@limiter.limit("60 per minute")
+@limiter.limit(lambda: current_app.config.get("RATELIMIT_API", "60 per minute"))
 def shorten():
     user = get_user_from_api_key()
     if not user:
@@ -208,6 +208,7 @@ def shorten():
     }), 201
 
 @api.route('/<short_code>', methods=['GET'])
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_API', '60 per minute'))
 def get_url_info(short_code):
     user = get_user_from_api_key()
     if not user:
