@@ -393,6 +393,12 @@ def sanitize_csv_field(field):
     if field is None:
         return ""
     str_field = str(field)
-    if str_field and str_field[0] in ('=', '+', '-', '@'):
+    if not str_field:
+        return ""
+
+    # Triggers for formula injection.
+    # We check after lstrip() because many spreadsheet apps ignore leading whitespace.
+    triggers = ('=', '+', '-', '@', '\t', '\r')
+    if str_field.lstrip().startswith(triggers) or str_field.startswith(triggers):
         return "'" + str_field
     return str_field

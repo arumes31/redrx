@@ -38,7 +38,7 @@ def test_csv_export_sanitization(client, app, test_user):
         rows = list(reader)
 
         # Check headers
-        assert rows[0] == ['Short Code', 'Long URL', 'Clicks', 'Created At', 'Last Accessed', 'Expires At']
+        assert rows[0] == ['Short Code', 'Long URL', 'iOS Target', 'Android Target', 'Rotation Targets', 'Clicks', 'Created At', 'Last Accessed', 'Expires At']
 
         # Check for escaping
         found_count = 0

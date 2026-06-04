@@ -354,12 +354,15 @@ def export_links():
     
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Short Code', 'Long URL', 'Clicks', 'Created At', 'Last Accessed', 'Expires At'])
+    writer.writerow(['Short Code', 'Long URL', 'iOS Target', 'Android Target', 'Rotation Targets', 'Clicks', 'Created At', 'Last Accessed', 'Expires At'])
     
     for u in urls:
         writer.writerow([
             sanitize_csv_field(u.short_code),
             sanitize_csv_field(u.long_url),
+            sanitize_csv_field(u.ios_target_url),
+            sanitize_csv_field(u.android_target_url),
+            sanitize_csv_field(', '.join(u.rotate_targets) if u.rotate_targets else ''),
             sanitize_csv_field(u.clicks_count),
             sanitize_csv_field(u.created_at.isoformat()),
             sanitize_csv_field(u.last_accessed_at.isoformat() if u.last_accessed_at else 'Never'),
