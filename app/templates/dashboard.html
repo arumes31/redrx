@@ -55,8 +55,9 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h5 class="card-title text-info mb-0"><i class="fas fa-key me-2"></i> API Access</h5>
-                    <form action="{{ url_for('main.regenerate_api_key') }}" method="POST" onsubmit="return confirm('Are you sure? All existing API integrations will break.')">
-                        <button type="submit" class="btn btn-sm btn-outline-danger">Regenerate Key</button>
+                    <form id="regenerateKeyForm" action="{{ url_for('main.regenerate_api_key') }}" method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmRegenerateKey()">Regenerate Key</button>
                     </form>
                 </div>
                 <p class="card-text text-muted mb-2">Use this key in the <code>X-API-KEY</code> header to create links via the API.</p>
@@ -97,11 +98,12 @@
         </div>
 
         <form id="bulkActionForm" action="{{ url_for('main.bulk_delete') }}" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <!-- Step 6: Bulk Actions -->
             <div id="bulkActions" class="mb-3 d-none animate__animated animate__fadeIn">
                 <div class="alert alert-secondary d-flex justify-content-between align-items-center py-2">
                     <span id="selectedCount">0 links selected</span>
-                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete all selected links?')">
+                    <button type="button" class="btn btn-sm btn-danger" onclick="confirmBulkDelete()">
                         <i class="fas fa-trash me-1"></i> Delete Selected
                     </button>
                 </div>
@@ -165,9 +167,8 @@
                                             <a href="{{ url_for('main.stats', short_code=url.short_code) }}" class="btn btn-sm btn-outline-info">Stats</a>
                                             <button type="button" class="btn btn-sm btn-outline-light" 
                                                     onclick="showQRModal('{{ url.short_code }}')">QR</button>
-                                            <form action="{{ url_for('main.delete_url', short_code=url.short_code) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure?');">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger">Del</button>
-                                            </form>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" 
+                                                    onclick="confirmDelete('{{ url.short_code }}')">Del</button>
                                         </div>
                                     </td>
                                 </tr>
@@ -211,6 +212,25 @@
     </div>
 </div>
 
+<!-- Generic Confirmation Modal -->
+<div class="modal fade" id="confirmModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark border-secondary text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="confirmModalTitle">Confirm Action</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="confirmModalBody">
+                Are you sure you want to proceed?
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmModalBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- QR Modal -->
 <div class="modal fade" id="qrModal" tabindex="-1">
     <div class="modal-dialog modal-sm modal-dialog-centered">
@@ -229,11 +249,54 @@
     </div>
 </div>
 
+<!-- Hidden Delete Form -->
+<form id="deleteForm" method="POST" style="display:none;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+</form>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
 const baseDomain = "{{ config['BASE_DOMAIN'] }}";
+
+// Modern Modal Logic
+let confirmCallback = null;
+const confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+
+function showConfirm(title, message, callback) {
+    document.getElementById('confirmModalTitle').innerText = title;
+    document.getElementById('confirmModalBody').innerText = message;
+    confirmCallback = callback;
+    confirmModal.show();
+}
+
+document.getElementById('confirmModalBtn').addEventListener('click', () => {
+    if (confirmCallback) confirmCallback();
+    confirmModal.hide();
+});
+
+// Triggers
+function confirmDelete(code) {
+    showConfirm('Delete Link', `Are you sure you want to delete /${code}? This action cannot be undone.`, () => {
+        const form = document.getElementById('deleteForm');
+        form.action = `/delete/${code}`;
+        form.submit();
+    });
+}
+
+function confirmRegenerateKey() {
+    showConfirm('Regenerate API Key', 'Are you sure? All existing API integrations will break immediately.', () => {
+        document.getElementById('regenerateKeyForm').submit();
+    });
+}
+
+function confirmBulkDelete() {
+    const count = Array.from(document.querySelectorAll('.link-checkbox:checked')).length;
+    showConfirm('Bulk Delete', `Are you sure you want to delete ${count} selected links?`, () => {
+        document.getElementById('bulkActionForm').submit();
+    });
+}
 
 // Step 3: Quick Copy Logic
 function copyLink(code, btn) {
