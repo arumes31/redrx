@@ -119,6 +119,7 @@
                                     <th>Code</th>
                                     <th>Long URL</th>
                                     <th>Clicks</th>
+                                    <th>Expires</th>
                                     <th>Last Accessed</th>
                                     <th>Status</th>
                                     <th>Actions</th>
@@ -146,9 +147,20 @@
                                     </td>
                                     <td class="text-truncate" style="max-width: 250px;" title="{{ url.long_url }}">{{ url.long_url }}</td>
                                     <td>{{ url.clicks_count }}</td>
+                                    <!-- Link Expiry -->
+                                    <td class="small">
+                                        {% if url.expires_at %}
+                                            {% set expiry_text = url.expires_at|time_until %}
+                                            <span class="badge {% if expiry_text == 'Expired' %}bg-danger{% elif 'in' in expiry_text and ('h' in expiry_text or 'm' in expiry_text or 'Soon' in expiry_text) %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                                {{ expiry_text }}
+                                            </span>
+                                        {% else %}
+                                            <span class="text-muted">Never</span>
+                                        {% endif %}
+                                    </td>
                                     <!-- Step 7: Last Accessed -->
                                     <td class="small text-muted">
-                                        {{ url.last_accessed_at.strftime('%Y-%m-%d %H:%M') if url.last_accessed_at else 'Never' }}
+                                        {{ url.last_accessed_at|time_ago if url.last_accessed_at else 'Never' }}
                                     </td>
                                     <td>
                                         <!-- Step 5: Inline Toggle Status -->
