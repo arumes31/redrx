@@ -166,6 +166,8 @@ pytest
 
 ## 🔌 REST API Documentation
 
+For the full detailed documentation including parameter tables and system metrics, visit the `/api-docs` page on your running Redrx instance.
+
 ### Authentication
 Include your personal API key (available inside your user Profile menu) in request headers:
 ```http
@@ -178,25 +180,36 @@ X-API-KEY: your_api_key_here
 **Payload:**
 ```json
 {
-  "long_url": "https://google.com",
-  "custom_code": "gg",
-  "expiry_hours": 48,
-  "password": "optional-access-password",
-  "rotate_targets": ["https://google.ca", "https://google.co.uk"],
-  "stats_enabled": true
+  "long_url": "https://example.com/my-long-link",
+  "custom_code": "my-code",
+  "code_length": 6,
+  "preview_mode": true,
+  "stats_enabled": true,
+  "rotate_targets": ["https://alt1.com", "https://alt2.com"],
+  "ios_target_url": "https://apps.apple.com/app/id123",
+  "android_target_url": "https://play.google.com/store/apps/details?id=com.example",
+  "password": "secret-password",
+  "expiry_hours": 24,
+  "start_at": "2026-06-05T22:00:00Z",
+  "end_at": "2026-06-30T23:59:59Z"
 }
 ```
 
 **Response (201 Created):**
 ```json
 {
-  "short_code": "gg",
-  "short_url": "https://short.example.com/gg",
-  "long_url": "https://google.com",
-  "expires_at": "2026-05-31T16:00:00+00:00",
+  "short_code": "my-code",
+  "short_url": "https://short.example.com/my-code",
+  "long_url": "https://example.com/my-long-link",
+  "rotate_targets": ["https://alt1.com", "https://alt2.com"],
+  "ios_target_url": "https://apps.apple.com/app/id123",
+  "android_target_url": "https://play.google.com/store/apps/details?id=com.example",
+  "expires_at": "2026-06-06T22:00:00+00:00",
+  "start_at": "2026-06-05T22:00:00+00:00",
+  "end_at": "2026-06-30T23:59:59+00:00",
   "password_protected": true,
-  "stats_enabled": true,
-  "rotate_targets": ["https://google.ca", "https://google.co.uk"]
+  "preview_mode": true,
+  "stats_enabled": true
 }
 ```
 
@@ -206,11 +219,20 @@ X-API-KEY: your_api_key_here
 **Response (200 OK):**
 ```json
 {
-  "short_code": "gg",
-  "long_url": "https://google.com",
-  "clicks": 184,
-  "created_at": "2026-05-29T16:00:00",
-  "expires_at": "2026-05-31T16:00:00",
+  "short_code": "my-code",
+  "short_url": "https://short.example.com/my-code",
+  "long_url": "https://example.com/my-long-link",
+  "rotate_targets": ["https://alt1.com", "https://alt2.com"],
+  "ios_target_url": "https://apps.apple.com/app/id123",
+  "android_target_url": "https://play.google.com/store/apps/details?id=com.example",
+  "preview_mode": true,
+  "stats_enabled": true,
+  "clicks_count": 42,
+  "clicks": 42,
+  "created_at": "2026-06-05T22:00:00+00:00",
+  "expires_at": "2026-06-06T22:00:00+00:00",
+  "start_at": "2026-06-05T22:00:00+00:00",
+  "end_at": "2026-06-30T23:59:59+00:00",
   "active": true
 }
 ```

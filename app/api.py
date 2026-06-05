@@ -147,6 +147,28 @@ def shorten():
         status_code = 403 if 'blocked' in error.lower() else 400
         return jsonify({'error': error}), status_code
 
+    ios_target_url = data.get('ios_target_url')
+    if ios_target_url is not None:
+        if not isinstance(ios_target_url, str):
+            return jsonify({'error': 'ios_target_url must be a string'}), 400
+        ios_target_url = ios_target_url.strip()
+        if ios_target_url:
+            if not is_safe_url(ios_target_url):
+                return jsonify({'error': 'iOS target URL is blocked or invalid.'}), 403
+        else:
+            ios_target_url = None
+
+    android_target_url = data.get('android_target_url')
+    if android_target_url is not None:
+        if not isinstance(android_target_url, str):
+            return jsonify({'error': 'android_target_url must be a string'}), 400
+        android_target_url = android_target_url.strip()
+        if android_target_url:
+            if not is_safe_url(android_target_url):
+                return jsonify({'error': 'Android target URL is blocked or invalid.'}), 403
+        else:
+            android_target_url = None
+
     password = data.get('password')
     if password is not None:
         if not isinstance(password, str):
@@ -183,6 +205,8 @@ def shorten():
         short_code=short_code,
         long_url=long_url,
         rotate_targets=rotate_targets,
+        ios_target_url=ios_target_url,
+        android_target_url=android_target_url,
         password_hash=generate_password_hash(password) if password else None,
         preview_mode=preview_mode,
         stats_enabled=stats_enabled,
@@ -199,6 +223,8 @@ def shorten():
         'short_url': f"https://{current_app.config['BASE_DOMAIN']}/{short_code}",
         'long_url': long_url,
         'rotate_targets': rotate_targets,
+        'ios_target_url': ios_target_url,
+        'android_target_url': android_target_url,
         'expires_at': expires_at.isoformat() if expires_at else None,
         'start_at': start_at.isoformat() if start_at else None,
         'end_at': end_at.isoformat() if end_at else None,
@@ -219,9 +245,18 @@ def get_url_info(short_code):
 
     return jsonify({
         'short_code': url_entry.short_code,
+        'short_url': f"https://{current_app.config['BASE_DOMAIN']}/{url_entry.short_code}",
         'long_url': url_entry.long_url,
+        'rotate_targets': url_entry.rotate_targets,
+        'ios_target_url': url_entry.ios_target_url,
+        'android_target_url': url_entry.android_target_url,
+        'preview_mode': url_entry.preview_mode,
+        'stats_enabled': url_entry.stats_enabled,
         'clicks_count': url_entry.clicks_count,
+        'clicks': url_entry.clicks_count,
         'created_at': url_entry.created_at.isoformat(),
         'expires_at': url_entry.expires_at.isoformat() if url_entry.expires_at else None,
+        'start_at': url_entry.start_at.isoformat() if url_entry.start_at else None,
+        'end_at': url_entry.end_at.isoformat() if url_entry.end_at else None,
         'active': url_entry.is_active()
     })
