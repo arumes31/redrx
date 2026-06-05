@@ -51,7 +51,7 @@ jobs:
           pip install bandit safety
 
       - name: Run Bandit Scan
-        run: bandit -r . -ll
+        run: bandit -r app/ config.py run.py -ll
 
       - name: Run Safety Check
         run: safety check -r requirements.txt

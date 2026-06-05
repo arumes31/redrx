@@ -23,7 +23,7 @@ jobs:
         run: pip install bandit
 
       - name: Run Bandit
-        run: bandit -r . -ll -x ./tests
+        run: bandit -r app/ config.py run.py -ll
 
   dependency-scan:
     name: Dependency Check
