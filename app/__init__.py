@@ -87,6 +87,36 @@ def create_app(config_class=Config):
     def inject_csrf_token():
         return dict(csrf_token=generate_csrf)
 
+    @app.template_filter('time_until')
+    def time_until_filter(value):
+        if not value:
+            return "Never"
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        if value < now:
+            return "Expired"
+        diff = value - now
+        if diff.days > 365: return f"in {diff.days // 365}y"
+        if diff.days > 30: return f"in {diff.days // 30}mo"
+        if diff.days > 0: return f"in {diff.days}d"
+        if diff.seconds > 3600: return f"in {diff.seconds // 3600}h"
+        if diff.seconds > 60: return f"in {diff.seconds // 60}m"
+        return "Soon"
+
+    @app.template_filter('time_ago')
+    def time_ago_filter(value):
+        if not value:
+            return "Never"
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        diff = now - value
+        if diff.days > 365: return f"{diff.days // 365}y ago"
+        if diff.days > 30: return f"{diff.days // 30}mo ago"
+        if diff.days > 0: return f"{diff.days}d ago"
+        if diff.seconds > 3600: return f"{diff.seconds // 3600}h ago"
+        if diff.seconds > 60: return f"{diff.seconds // 60}m ago"
+        return "Just now"
+
     @app.route('/metrics')
     @limiter.limit(lambda: app.config.get('RATELIMIT_METRICS', '10 per minute')) # Configurable limit
     def custom_metrics():
