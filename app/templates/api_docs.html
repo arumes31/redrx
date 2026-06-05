@@ -49,13 +49,106 @@
   -d '{
     "long_url": "https://example.com/my-long-link",
     "custom_code": "my-code",
-    "expiry_hours": 24,
-    "password": "secret-password",
+    "code_length": 6,
+    "preview_mode": true,
+    "stats_enabled": true,
+    "rotate_targets": ["https://alt1.com", "https://alt2.com"],
     "ios_target_url": "https://apps.apple.com/app/id123",
     "android_target_url": "https://play.google.com/store/apps/details?id=com.example",
-    "rotate_targets": ["https://alt1.com", "https://alt2.com"]
+    "password": "secret-password",
+    "expiry_hours": 24,
+    "start_at": "2026-06-05T22:00:00Z",
+    "end_at": "2026-06-30T23:59:59Z"
 }'</code></pre>
                         </div>
+                    </div>
+
+                    <h3 class="text-light mt-4 mb-3 h5"><i class="fas fa-list-ul text-info me-2"></i>Request Parameters</h3>
+                    <div class="table-responsive mb-4">
+                        <table class="table table-dark table-hover border-secondary align-middle">
+                            <thead>
+                                <tr class="text-info">
+                                    <th scope="col" style="width: 20%;">Field</th>
+                                    <th scope="col" style="width: 15%;">Type</th>
+                                    <th scope="col" style="width: 15%;">Default</th>
+                                    <th scope="col">Description & Constraints</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code class="text-warning">long_url</code></td>
+                                    <td><span class="badge bg-danger">Required</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>The original long URL to shorten. Must be a valid and safe destination URL.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">custom_code</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>A custom alias for the short code. Must be <strong>3 to 20 characters</strong> long and contain only alphanumeric characters, hyphens, or underscores.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">code_length</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">integer</code></td>
+                                    <td><code>6</code></td>
+                                    <td>Length of the auto-generated short code. Must be between <strong>3 and 20</strong>.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">preview_mode</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">boolean</code></td>
+                                    <td><code>true</code></td>
+                                    <td>Enable preview mode. If <code>true</code>, users see a preview page before redirecting. Accepts boolean value or string representations (<code>true</code>/<code>false</code>, <code>1</code>/<code>0</code>, <code>yes</code>/<code>no</code>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">stats_enabled</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">boolean</code></td>
+                                    <td><code>true</code></td>
+                                    <td>Enable stats collection for this link. If <code>true</code>, click analytics are recorded. Accepts boolean value or string representations.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">rotate_targets</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">array[string]</code></td>
+                                    <td><code>[]</code></td>
+                                    <td>A list of fallback/alternate redirect destination URLs. Max <strong>50 target URLs</strong>. The short link will dynamically rotate through these target URLs.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">ios_target_url</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>A special redirect URL for iOS devices. Must be a valid and safe URL.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">android_target_url</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>A special redirect URL for Android devices. Must be a valid and safe URL.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">password</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>Password protection for the short link. If set, visitors must enter this password to unlock the destination URL.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">expiry_hours</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">integer</code></td>
+                                    <td><code>24</code></td>
+                                    <td>Relative expiration time in hours from creation. Must be between <code>0</code> and <code>876,000</code>. Set to <code>0</code> for permanent links (requires authentication).</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">start_at</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>The scheduling activation date and time in <strong>ISO 8601 format</strong> (e.g. <code>2026-06-05T22:00:00Z</code>). The link remains inactive until this time.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">end_at</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>The scheduling expiration date and time in <strong>ISO 8601 format</strong> (e.g. <code>2026-06-30T23:59:59Z</code>). The link becomes inactive after this time.</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
 
                     <h3 class="text-light mt-3 h5">Response</h3>
@@ -65,10 +158,15 @@
   "short_code": "my-code",
   "short_url": "https://{{ config.BASE_DOMAIN }}/my-code",
   "long_url": "https://example.com/my-long-link",
-  "expires_at": "2024-01-02T12:00:00+00:00",
-  "password_protected": true,
+  "rotate_targets": ["https://alt1.com", "https://alt2.com"],
   "ios_target_url": "https://apps.apple.com/app/id123",
-  "android_target_url": "https://play.google.com/store/apps/details?id=com.example"
+  "android_target_url": "https://play.google.com/store/apps/details?id=com.example",
+  "expires_at": "2026-06-06T22:00:00+00:00",
+  "start_at": "2026-06-05T22:00:00+00:00",
+  "end_at": "2026-06-30T23:59:59+00:00",
+  "password_protected": true,
+  "preview_mode": true,
+  "stats_enabled": true
 }</code></pre>
                         </div>
                     </div>
@@ -93,9 +191,19 @@
                         <div class="card-body p-0">
 <pre class="m-0 p-3 text-success" style="overflow-x: auto;"><code>{
   "short_code": "my-code",
+  "short_url": "https://{{ config.BASE_DOMAIN }}/my-code",
   "long_url": "https://example.com/my-long-link",
+  "rotate_targets": ["https://alt1.com", "https://alt2.com"],
+  "ios_target_url": "https://apps.apple.com/app/id123",
+  "android_target_url": "https://play.google.com/store/apps/details?id=com.example",
+  "preview_mode": true,
+  "stats_enabled": true,
+  "clicks_count": 42,
   "clicks": 42,
-  "created_at": "2024-01-01T12:00:00",
+  "created_at": "2026-06-05T22:00:00+00:00",
+  "expires_at": "2026-06-06T22:00:00+00:00",
+  "start_at": "2026-06-05T22:00:00+00:00",
+  "end_at": "2026-06-30T23:59:59+00:00",
   "active": true
 }</code></pre>
                         </div>

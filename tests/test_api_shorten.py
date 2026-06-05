@@ -131,3 +131,40 @@ def test_api_shorten_validate_stats_enabled(client, test_user):
     })
     assert response.status_code == 201
     assert response.get_json()['stats_enabled'] is True
+
+def test_api_shorten_device_targeting(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'ios_target_url': 'https://apps.apple.com/app/id123',
+        'android_target_url': 'https://play.google.com/store/apps/details?id=com.example'
+    })
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data['ios_target_url'] == 'https://apps.apple.com/app/id123'
+    assert data['android_target_url'] == 'https://play.google.com/store/apps/details?id=com.example'
+
+    # Verify via GET endpoint
+    get_response = client.get(f"/api/v1/{data['short_code']}", headers=headers)
+    assert get_response.status_code == 200
+    get_data = get_response.get_json()
+    assert get_data['ios_target_url'] == 'https://apps.apple.com/app/id123'
+    assert get_data['android_target_url'] == 'https://play.google.com/store/apps/details?id=com.example'
+
+def test_api_shorten_device_targeting_invalid(client, test_user):
+    headers = {'X-API-KEY': 'test-api-key'}
+    # Non-string value
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'ios_target_url': 12345
+    })
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'ios_target_url must be a string'
+
+    # Blocked/invalid URL
+    response = client.post('/api/v1/shorten', headers=headers, json={
+        'long_url': 'https://example.com',
+        'android_target_url': 'invalid-url-schema'
+    })
+    assert response.status_code == 403
+    assert 'blocked or invalid' in response.get_json()['error']
