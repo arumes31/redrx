@@ -12,5 +12,5 @@ gunicorn>=25.3.0
 Werkzeug>=3.1.5
 psycopg2-binary>=2.9.11
 user-agents>=2.2.0
-redis>=5.0.0
+redis>=8.0.1
 prometheus-flask-exporter>=0.23.2
