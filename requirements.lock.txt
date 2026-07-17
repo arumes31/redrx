@@ -422,9 +422,9 @@ frozenlist==1.8.0 \
     # via
     #   aiohttp
     #   aiosignal
-geoip2==5.2.0 \
-    --hash=sha256:3d1546fd4eb7cad20445d027d2d9e81d3a71c074e019383f30db5d45e2c23320 \
-    --hash=sha256:6c9ded1953f8eb16043ed0a8ea20e6e9524ea7b65eb745724e12490aca44ef00
+geoip2==5.3.0 \
+    --hash=sha256:66df653e16c535f9bb45e3c7ce992fbe008911d9c7c349540574ea2fe8931db5 \
+    --hash=sha256:7f82c587f3f3691f30adc8634d0b93de9853d96d514ed48ff3ba38f188a5df31
     # via -r requirements.txt
 greenlet==3.5.3 \
     --hash=sha256:0909f9355a9f24845d3299f3112e266a06afb68302041989fd26bd68894933db \
