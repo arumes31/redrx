@@ -228,10 +228,10 @@
     new Chart(document.getElementById('timeChart'), {
         type: 'line',
         data: {
-            labels: {{jsonArray (.Get "time_labels")}},
+            labels: {{.Get "time_labels"}},
             datasets: [{
                 label: 'Clicks',
-                data: {{jsonArray (.Get "time_values")}},
+                data: {{.Get "time_values"}},
                 borderColor: '#0dc5e8',
                 backgroundColor: 'rgba(13, 197, 232, 0.1)',
                 fill: true,
@@ -246,8 +246,8 @@
     new Chart(document.getElementById('referrerChart'), {
         type: 'doughnut',
         data: {
-            labels: {{jsonArray (.Get "referrer_labels")}},
-            datasets: [{ data: {{jsonArray (.Get "referrer_values")}}, backgroundColor: colors }]
+            labels: {{.Get "referrer_labels"}},
+            datasets: [{ data: {{.Get "referrer_values"}}, backgroundColor: colors }]
         },
         options: pieOptions
     });
@@ -255,8 +255,8 @@
     new Chart(document.getElementById('countryChart'), {
         type: 'doughnut',
         data: {
-            labels: {{jsonArray (.Get "country_labels")}},
-            datasets: [{ data: {{jsonArray (.Get "country_values")}}, backgroundColor: colors }]
+            labels: {{.Get "country_labels"}},
+            datasets: [{ data: {{.Get "country_values"}}, backgroundColor: colors }]
         },
         options: pieOptions
     });
@@ -264,8 +264,8 @@
     new Chart(document.getElementById('browserChart'), {
         type: 'bar',
         data: {
-            labels: {{jsonArray (.Get "browser_labels")}},
-            datasets: [{ label: 'Browsers', data: {{jsonArray (.Get "browser_values")}}, backgroundColor: 'rgba(102, 126, 234, 0.7)' }]
+            labels: {{.Get "browser_labels"}},
+            datasets: [{ label: 'Browsers', data: {{.Get "browser_values"}}, backgroundColor: 'rgba(102, 126, 234, 0.7)' }]
         },
         options: { ...chartOptions, indexAxis: 'y' }
     });
@@ -273,8 +273,8 @@
     new Chart(document.getElementById('platformChart'), {
         type: 'bar',
         data: {
-            labels: {{jsonArray (.Get "platform_labels")}},
-            datasets: [{ label: 'Platforms', data: {{jsonArray (.Get "platform_values")}}, backgroundColor: 'rgba(118, 75, 162, 0.7)' }]
+            labels: {{.Get "platform_labels"}},
+            datasets: [{ label: 'Platforms', data: {{.Get "platform_values"}}, backgroundColor: 'rgba(118, 75, 162, 0.7)' }]
         },
         options: { ...chartOptions, indexAxis: 'y' }
     });

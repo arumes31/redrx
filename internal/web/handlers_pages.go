@@ -113,6 +113,14 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.db.CreateURL(r.Context(), link); err != nil {
+		// The availability check above can be raced by a concurrent request;
+		// the unique index decides, and the loser sees the ordinary "taken"
+		// field error rather than a 500.
+		if store.IsUniqueViolation(err) {
+			form.Errors.add("custom_code", "Code '"+code+"' is already taken.")
+			s.render(w, r, http.StatusOK, "index.html", data)
+			return
+		}
 		s.log.Error("create link", "error", err)
 		s.renderError(w, r, http.StatusInternalServerError)
 		return

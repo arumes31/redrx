@@ -15,8 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 // Dialect distinguishes the two supported backends.
@@ -139,3 +140,35 @@ func (d *DB) Exec(ctx context.Context, query string, args ...any) (sql.Result, e
 
 // now returns the current time in the naive-UTC form the Python app stored.
 func now() time.Time { return time.Now().UTC() }
+
+// IsUniqueViolation reports whether err is a unique-constraint failure from
+// either backend. Callers use it to turn the race between checking a short code
+// and inserting it into a conflict response rather than a server error.
+func IsUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == pgUniqueViolation
+	}
+
+	var sqliteErr *sqlite.Error
+	if errors.As(err, &sqliteErr) {
+		switch sqliteErr.Code() {
+		case sqliteConstraintUnique, sqliteConstraintPrimaryKey:
+			return true
+		}
+	}
+	return false
+}
+
+const (
+	// 23505 is unique_violation in the SQLSTATE table.
+	pgUniqueViolation = "23505"
+	// Extended SQLite result codes for the two constraints that can reject a
+	// duplicate short code.
+	sqliteConstraintUnique     = 2067
+	sqliteConstraintPrimaryKey = 1555
+)

@@ -155,7 +155,7 @@ The application will boot and expose itself at `http://localhost:5000`.
 
 ## 💻 Local Development Setup
 
-Requires Go 1.26 or newer. Dependencies are pinned in `go.mod` and checksum-verified through `go.sum`.
+Requires Go 1.26.5 or newer, the minimum declared by the `go` directive in `go.mod`. Dependencies are pinned in `go.mod` and checksum-verified through `go.sum`.
 
 ### 1. Build
 
@@ -297,7 +297,7 @@ X-API-KEY: your_api_key_here
 - **Fail-Closed Blocklist:** If phishing checking is enabled but the blocklist cannot be read and nothing is cached, every destination is rejected rather than silently allowing traffic past an unenforced filter.
 - **Session Integrity:** Cookies are HMAC-SHA256 signed, `HttpOnly`, `SameSite=Lax`, and `Secure` outside debug. CSRF tokens are per-session, constant-time compared, and rotated on login.
 - **Privacy:** Client IPs are truncated to two octets (IPv4) or two groups (IPv6) before being stored, and `ANONYMIZE_LOGS` masks them in log output.
-- **Container:** Runs as a non-root user from a minimal Alpine base with no compiler, interpreter or package manager present.
+- **Container:** Runs as a non-root user from a minimal Alpine base. The Go toolchain stays in the build stage, so the runtime image carries only the static binary and its CA certificates — no compiler and no language runtime.
 - **Dependabot Enforced:** Automatic dependency tracking for patches and security updates.
 
 ---

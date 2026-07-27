@@ -192,6 +192,14 @@ func (s *Server) handleAPIShorten(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.db.CreateURL(r.Context(), link); err != nil {
+		// resolveShortCode checked availability a moment ago, but a concurrent
+		// request can claim the same code in between. The unique index on
+		// urls.short_code settles it, and the loser gets the same conflict it
+		// would have got had it checked second.
+		if store.IsUniqueViolation(err) {
+			apiError(w, http.StatusConflict, "Custom code already taken")
+			return
+		}
 		s.log.Error("create link via api", "error", err)
 		apiError(w, http.StatusInternalServerError, "Could not create the link")
 		return

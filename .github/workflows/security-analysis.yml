@@ -53,9 +53,9 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Run gosec
-        uses: securego/gosec@master
+        uses: securego/gosec@9e75c0576c9878035d4221392108d458abe10fc3 # v2.28.0
         with:
-          args: -exclude-dir=venv -severity medium ./...
+          args: -severity medium ./...
 
   dependency-scan:
     name: Dependency Check

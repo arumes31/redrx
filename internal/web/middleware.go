@@ -54,6 +54,14 @@ func (s *Server) wrap(h handlerFunc) http.Handler {
 		ctx = context.WithValue(ctx, ctxUser, user)
 		r = r.WithContext(ctx)
 
+		// Cap the request body before anything parses it. ParseMultipartForm's
+		// argument is only the in-memory threshold — everything beyond it spills
+		// to temp files with no ceiling — and the CSRF check below is the first
+		// thing to read the body, so the limit has to be installed here.
+		if isStateChanging(r.Method) && r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadSize)
+		}
+
 		if isStateChanging(r.Method) && !s.checkCSRF(r, sess) {
 			s.sessions.Save(w, sess)
 			s.renderError(w, r, http.StatusForbidden)

@@ -43,7 +43,7 @@
                     <div class="card-body">
                         <h6 class="text-muted text-uppercase small">Top Performer</h6>
                         <h3 class="mb-0 text-warning" style="font-size: 1.2rem;">
-                            {{if $stats.TopPerfomer}}{{$stats.TopPerfomer.ShortCode}}{{else}}N/A{{end}}
+                            {{if $stats.TopPerformer}}{{$stats.TopPerformer.ShortCode}}{{else}}N/A{{end}}
                         </h3>
                     </div>
                 </div>
@@ -310,26 +310,36 @@ function copyLink(code, btn) {
     setTimeout(() => btn.innerHTML = originalIcon, 2000);
 }
 
+function setStatusBadge(checkbox, enabled) {
+    const badge = checkbox.nextElementSibling;
+    badge.innerText = enabled ? 'Active' : 'Inactive';
+    badge.className = `badge ${enabled ? 'bg-success' : 'bg-danger'} status-badge`;
+}
+
 function toggleStatus(code, checkbox) {
+    // The checkbox has already flipped optimistically; a failure has to put it
+    // back, or the row keeps claiming a state the server never accepted.
+    const intended = checkbox.checked;
     fetch(`/toggle-status/${code}`, {
         method: 'POST',
         headers: { 'X-CSRFToken': csrfToken }
     })
-    .then(r => r.json())
-    .then(data => {
-        const badge = checkbox.nextElementSibling;
-        if (data.is_enabled) {
-            badge.innerText = 'Active';
-            badge.className = 'badge bg-success status-badge';
-        } else {
-            badge.innerText = 'Inactive';
-            badge.className = 'badge bg-danger status-badge';
-        }
+    .then(r => {
+        if (!r.ok) throw new Error(`request failed with ${r.status}`);
+        return r.json();
+    })
+    .then(data => setStatusBadge(checkbox, data.is_enabled))
+    .catch(() => {
+        // Snapping the switch back is the signal that the change did not take.
+        checkbox.checked = !intended;
+        setStatusBadge(checkbox, !intended);
+        checkbox.title = 'Could not change the link status. Please try again.';
     });
 }
 
+const qrModal = new bootstrap.Modal(document.getElementById('qrModal'));
+
 function showQRModal(code) {
-    const modal = new bootstrap.Modal(document.getElementById('qrModal'));
     const body = document.getElementById('qrModalBody');
     const downloadBtn = document.getElementById('qrDownloadBtn');
 
@@ -337,14 +347,17 @@ function showQRModal(code) {
     downloadBtn.href = `/${code}/qr`;
 
     const img = new Image();
-    img.src = `/${code}/qr`;
     img.onload = () => {
         body.innerHTML = '';
         img.className = 'img-fluid rounded';
         body.appendChild(img);
     };
+    img.onerror = () => {
+        body.innerHTML = '<p class="text-danger mb-0">Could not load the QR code.</p>';
+    };
+    img.src = `/${code}/qr`;
 
-    modal.show();
+    qrModal.show();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -293,8 +293,8 @@ func TestDashboardStatsOverLegacyData(t *testing.T) {
 	if s.ActiveLinks != 1 {
 		t.Errorf("ActiveLinks = %d, want 1", s.ActiveLinks)
 	}
-	if s.TopPerfomer == nil || s.TopPerfomer.ShortCode != "ABC123" {
-		t.Errorf("TopPerfomer = %v, want ABC123", s.TopPerfomer)
+	if s.TopPerformer == nil || s.TopPerformer.ShortCode != "ABC123" {
+		t.Errorf("TopPerformer = %v, want ABC123", s.TopPerformer)
 	}
 }
 

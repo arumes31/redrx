@@ -185,10 +185,10 @@ func collectURLs(rows *sql.Rows) ([]*URL, error) {
 
 // DashboardStats is the summary shown above the link table.
 type DashboardStats struct {
-	TotalLinks  int64
-	TotalClicks int64
-	ActiveLinks int64
-	TopPerfomer *URL
+	TotalLinks   int64
+	TotalClicks  int64
+	ActiveLinks  int64
+	TopPerformer *URL
 }
 
 func (d *DB) DashboardStats(ctx context.Context, userID int64) (*DashboardStats, error) {
@@ -212,7 +212,7 @@ func (d *DB) DashboardStats(ctx context.Context, userID int64) (*DashboardStats,
 		return nil, err
 	}
 	if err == nil {
-		s.TopPerfomer = top
+		s.TopPerformer = top
 	}
 	return &s, nil
 }

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/arumes31/redrx/internal/config"
 	"github.com/arumes31/redrx/internal/geo"
@@ -545,4 +546,80 @@ func truncateBody(s string) string {
 		return s[:1500] + "\n...[truncated]"
 	}
 	return s
+}
+
+// TestTimeBucketsAreUnique guards the 24h range against emitting the current
+// hour twice: the labels are hour-of-day only, so a duplicate would collapse
+// onto one bucket and count its clicks twice in the total and daily average.
+func TestTimeBucketsAreUnique(t *testing.T) {
+	now := time.Date(2026, 5, 4, 15, 37, 0, 0, time.UTC)
+
+	for _, tc := range []struct {
+		rangeType string
+		want      int
+	}{
+		{"24h", 24},
+		{"7d", 8},
+		{"30d", 31},
+	} {
+		labels, _, _ := timeBuckets(tc.rangeType, now)
+		if len(labels) != tc.want {
+			t.Errorf("%s produced %d labels, want %d", tc.rangeType, len(labels), tc.want)
+		}
+		seen := map[string]bool{}
+		for _, l := range labels {
+			if seen[l] {
+				t.Errorf("%s repeats the label %q", tc.rangeType, l)
+			}
+			seen[l] = true
+		}
+	}
+}
+
+func TestTruncateKeepsRunesIntact(t *testing.T) {
+	// "€" is three bytes, so a byte-wise cut at 4 would split the second one.
+	if got := truncate("a€€", 4); !utf8.ValidString(got) {
+		t.Errorf("truncate produced invalid UTF-8: %q", got)
+	}
+	if got := truncate("a€€", 4); got != "a€" {
+		t.Errorf("truncate = %q, want %q", got, "a€")
+	}
+	if got := truncate("short", 255); got != "short" {
+		t.Errorf("a string within the limit was altered: %q", got)
+	}
+	if got := truncate("€€€", 2); got != "" {
+		t.Errorf("truncate = %q, want empty when no whole rune fits", got)
+	}
+}
+
+// TestShortCodeLookupIsCaseInsensitive checks that every short-code route
+// normalises the same way. Codes are stored uppercase, so a lowercase link had
+// to resolve on the redirect just as it already did on /stats and /qr.
+func TestShortCodeLookupIsCaseInsensitive(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	for _, path := range []string{"/abc123", "/abc123/stats", "/abc123/qr"} {
+		rec := get(t, srv, path)
+		if rec.Code == http.StatusNotFound {
+			t.Errorf("GET %s = 404; the lowercase form of an existing code did not resolve", path)
+		}
+	}
+}
+
+// TestAPIRejectsDuplicateCustomCodeWithConflict pins the 409 the API returns
+// when a custom code is taken, including when the loss happens at insert time
+// rather than at the preliminary check.
+func TestAPIRejectsDuplicateCustomCodeWithConflict(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := `{"long_url":"https://example.com/","custom_code":"ABC123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/shorten", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "11111111-2222-3333-4444-555555555555")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Errorf("status = %d, want 409; body: %s", rec.Code, truncateBody(rec.Body.String()))
+	}
 }

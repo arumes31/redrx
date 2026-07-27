@@ -122,15 +122,35 @@
     <script>
         const targetUrl = {{.TargetURL}};
 
+        // The backend only ever renders http(s) destinations, but this page
+        // navigates on a timer without further checks, so the scheme is
+        // re-validated here rather than trusted.
+        function isNavigable(raw) {
+            try {
+                const scheme = new URL(raw, window.location.href).protocol;
+                return scheme === 'http:' || scheme === 'https:';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        const canNavigate = isNavigable(targetUrl);
+
         let seconds = 5;
         const countdownEl = document.getElementById('countdown');
+
+        if (!canNavigate) {
+            countdownEl.innerText = 'This destination was blocked for safety reasons.';
+        }
 
         const timer = setInterval(() => {
             seconds--;
             if (seconds <= 0) {
                 clearInterval(timer);
-                window.location.href = targetUrl;
-            } else {
+                if (canNavigate) {
+                    window.location.href = targetUrl;
+                }
+            } else if (canNavigate) {
                 countdownEl.innerText = `Redirecting in ${seconds} seconds...`;
             }
         }, 1000);

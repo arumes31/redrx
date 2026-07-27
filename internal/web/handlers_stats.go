@@ -150,7 +150,10 @@ func timeBuckets(rangeType string, now time.Time) (labels []string, cutoff time.
 	switch rangeType {
 	case "24h":
 		cutoff = now.Add(-24 * time.Hour)
-		for i := 24; i >= 0; i-- {
+		// Exactly 24 hourly labels. Starting at -24h would repeat the current
+		// hour at both ends, and since the labels are hour-of-day only, the two
+		// would collide on one bucket and count its clicks twice in the total.
+		for i := 23; i >= 0; i-- {
 			labels = append(labels, now.Add(-time.Duration(i)*time.Hour).Format("15:00"))
 		}
 		return labels, cutoff, true

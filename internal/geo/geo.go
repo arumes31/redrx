@@ -31,7 +31,10 @@ type Resolver struct {
 	cache         *redis.Client
 	log           *slog.Logger
 
-	mu     sync.Mutex
+	// mu guards reader and opened. Lookups take it for reading and hold it for
+	// the duration of the query, so Close cannot unmap the database underneath
+	// an in-flight read.
+	mu     sync.RWMutex
 	reader *geoip2.Reader
 	opened string
 }
@@ -131,18 +134,29 @@ func isLocal(ip string) bool {
 
 // lookupDB queries the MaxMind database, opening it on first use and keeping
 // the handle for subsequent lookups.
+//
+// The read lock is held across the query itself, not just while fetching the
+// handle: geoip2 reads straight out of a memory mapping that Close unmaps, so a
+// Close racing an in-flight lookup would otherwise read freed pages.
 func (r *Resolver) lookupDB(ip string) string {
 	addr := net.ParseIP(ip)
 	if addr == nil {
 		return "Unknown"
 	}
 
-	reader, err := r.readerFor()
-	if err != nil {
+	if err := r.ensureReader(); err != nil {
 		return "Unknown (DB Missing)"
 	}
 
-	record, err := reader.Country(addr)
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Close may have run between opening the database and acquiring this lock.
+	if r.reader == nil {
+		return "Unknown (DB Missing)"
+	}
+
+	record, err := r.reader.Country(addr)
 	if err != nil || record == nil {
 		return "Unknown"
 	}
@@ -155,39 +169,43 @@ func (r *Resolver) lookupDB(ip string) string {
 	return "Unknown"
 }
 
-func (r *Resolver) readerFor() (*geoip2.Reader, error) {
+// ensureReader opens the database when it is not open yet, or when the
+// configured path has changed. It takes the write lock, so it must never be
+// called while the read lock is held.
+func (r *Resolver) ensureReader() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.reader != nil && r.opened == r.dbPath {
-		return r.reader, nil
+		return nil
 	}
 	if r.dbPath == "" {
-		return nil, os.ErrNotExist
+		return os.ErrNotExist
 	}
 	if _, err := os.Stat(r.dbPath); err != nil {
-		return nil, err
+		return err
 	}
 
 	reader, err := geoip2.Open(r.dbPath)
 	if err != nil {
 		r.log.Warn("cannot open GeoIP database", "path", r.dbPath, "error", err)
-		return nil, err
+		return err
 	}
 	if r.reader != nil {
 		r.reader.Close()
 	}
 	r.reader, r.opened = reader, r.dbPath
-	return reader, nil
+	return nil
 }
 
-// Close releases the MaxMind reader.
+// Close releases the MaxMind reader, waiting for any in-flight lookup to
+// finish first.
 func (r *Resolver) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.reader != nil {
 		err := r.reader.Close()
-		r.reader = nil
+		r.reader, r.opened = nil, ""
 		return err
 	}
 	return nil

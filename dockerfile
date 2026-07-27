@@ -44,7 +44,11 @@ ENV BASE_DOMAIN=short.example.com \
 
 EXPOSE 5000
 
+# Probe whatever LISTEN_ADDR binds. A wildcard or empty host is reached over
+# loopback; an explicit host is probed directly.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO- http://127.0.0.1:5000/health >/dev/null || exit 1
+    CMD host="${LISTEN_ADDR%:*}"; port="${LISTEN_ADDR##*:}"; \
+        case "$host" in ''|'0.0.0.0'|'[::]'|'::') host='127.0.0.1' ;; esac; \
+        wget -qO- "http://$host:$port/health" >/dev/null || exit 1
 
 ENTRYPOINT ["redrx"]

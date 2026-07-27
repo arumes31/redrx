@@ -107,15 +107,20 @@ func (n NullTime) Ptr() *time.Time {
 
 // naiveUTC drops any timezone offset the driver attached without shifting the
 // wall-clock reading, because the stored values are naive UTC to begin with.
+//
+// Converting with t.UTC() would be wrong here: a driver that labels the stored
+// "12:00" as +02:00 local time means 12:00 UTC, not 10:00, so the components
+// are relabelled rather than recomputed.
 func naiveUTC(t time.Time) time.Time {
 	if t.Location() == time.UTC {
 		return t
 	}
-	_, offset := t.Zone()
-	if offset == 0 {
+	if _, offset := t.Zone(); offset == 0 {
 		return t.UTC()
 	}
-	return t.UTC()
+	y, mo, d := t.Date()
+	h, mi, sec := t.Clock()
+	return time.Date(y, mo, d, h, mi, sec, t.Nanosecond(), time.UTC)
 }
 
 // nullBool scans SQLite's integer booleans as well as Postgres' native ones.

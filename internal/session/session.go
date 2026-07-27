@@ -109,20 +109,9 @@ func (m *Manager) Save(w http.ResponseWriter, s *Session) {
 	}
 
 	s.Issued = time.Now().Unix()
-	payload, err := json.Marshal(s.Data)
-	if err != nil {
+	value, ok := m.shrinkToFit(s)
+	if !ok {
 		return
-	}
-	value := m.sign(payload)
-	if len(value) > maxCookieBytes {
-		// Almost certainly a flash flood; drop them rather than emit a cookie
-		// the browser will silently discard.
-		s.Flashes = nil
-		payload, err = json.Marshal(s.Data)
-		if err != nil {
-			return
-		}
-		value = m.sign(payload)
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -130,6 +119,59 @@ func (m *Manager) Save(w http.ResponseWriter, s *Session) {
 		MaxAge: int(maxAge.Seconds()), HttpOnly: true,
 		Secure: m.secure, SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// shrinkToFit signs the session, dropping the least important state until the
+// cookie fits. An oversized Set-Cookie is discarded by the browser in full, so
+// emitting one would silently log the visitor out and lose every unlocked link
+// — shedding some state is always better than shedding all of it.
+func (m *Manager) shrinkToFit(s *Session) (string, bool) {
+	value, ok := m.trySign(s)
+	if !ok {
+		return "", false
+	}
+	if len(value) <= maxCookieBytes {
+		return value, true
+	}
+
+	// Flashes are one-shot and the largest single contributor, so they go first.
+	if len(s.Flashes) > 0 {
+		s.Flashes = nil
+		if value, ok = m.trySign(s); !ok {
+			return "", false
+		}
+		if len(value) <= maxCookieBytes {
+			return value, true
+		}
+	}
+
+	// Then the oldest link authorisations, which cost the visitor no more than
+	// re-entering a link password. Map order is unspecified, so this evicts an
+	// arbitrary entry each round rather than a strictly oldest one.
+	for len(s.LinkAuth) > 0 {
+		for code := range s.LinkAuth {
+			delete(s.LinkAuth, code)
+			break
+		}
+		if value, ok = m.trySign(s); !ok {
+			return "", false
+		}
+		if len(value) <= maxCookieBytes {
+			return value, true
+		}
+	}
+
+	// Nothing left to shed: the identity alone is over the limit, which cannot
+	// happen with the fields defined here.
+	return value, len(value) <= maxCookieBytes
+}
+
+func (m *Manager) trySign(s *Session) (string, bool) {
+	payload, err := json.Marshal(s.Data)
+	if err != nil {
+		return "", false
+	}
+	return m.sign(payload), true
 }
 
 func (m *Manager) sign(payload []byte) string {

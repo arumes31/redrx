@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mileusna/useragent"
 
@@ -19,7 +20,10 @@ import (
 )
 
 func (s *Server) handleRedirect(w http.ResponseWriter, r *http.Request) {
-	code := r.PathValue("code")
+	// Codes are stored uppercase, so the lookup normalises exactly as the stats
+	// and QR handlers do; without it "/abc123" would 404 while "/abc123/stats"
+	// resolved.
+	code := shortcode.Normalize(r.PathValue("code"))
 
 	link, err := s.db.URLByShortCode(r.Context(), code)
 	if errors.Is(err, store.ErrNotFound) {
@@ -126,8 +130,13 @@ func (s *Server) recordClick(r *http.Request, link *store.URL, ua useragent.User
 }
 
 func (s *Server) handleLinkAuthForm(w http.ResponseWriter, r *http.Request) {
-	code := r.PathValue("code")
+	code := shortcode.Normalize(r.PathValue("code"))
 	if _, err := s.db.URLByShortCode(r.Context(), code); err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			s.log.Error("load link for auth form", "code", code, "error", err)
+			s.renderError(w, r, http.StatusInternalServerError)
+			return
+		}
 		s.renderError(w, r, http.StatusNotFound)
 		return
 	}
@@ -138,7 +147,7 @@ func (s *Server) handleLinkAuthForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLinkAuth(w http.ResponseWriter, r *http.Request) {
-	code := r.PathValue("code")
+	code := shortcode.Normalize(r.PathValue("code"))
 	sess := sessionFrom(r)
 
 	link, err := s.db.URLByShortCode(r.Context(), code)
@@ -219,9 +228,14 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// truncate limits s to n bytes, backing up to a rune boundary so a Referrer cut
+// mid-character is never stored as invalid UTF-8.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
 	}
 	return s[:n]
 }

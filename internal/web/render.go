@@ -3,7 +3,6 @@ package web
 import (
 	"bytes"
 	"embed"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -132,15 +131,6 @@ func templateFuncs() template.FuncMap {
 				return ""
 			}
 			return t.UTC().Format(layout)
-		},
-		// jsonArray renders a value as JSON for embedding in a <script> block.
-		// html/template escapes the result for the JS context it appears in.
-		"jsonArray": func(v any) template.JS {
-			b, err := json.Marshal(v)
-			if err != nil {
-				return template.JS("[]")
-			}
-			return template.JS(b)
 		},
 		"add":      func(a, b int) int { return a + b },
 		"sub":      func(a, b int) int { return a - b },

@@ -121,13 +121,18 @@ func run() error {
 		log.Info("shutting down")
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+	// Each stage gets its own budget: draining in-flight requests can consume
+	// the whole timeout, and releasing the server's resources afterwards must
+	// not inherit an already-expired deadline.
+	httpCtx, cancelHTTP := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancelHTTP()
+	if err := httpServer.Shutdown(httpCtx); err != nil {
 		log.Error("graceful shutdown failed", "error", err)
 	}
-	return srv.Shutdown(shutdownCtx)
+
+	srvCtx, cancelSrv := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancelSrv()
+	return srv.Shutdown(srvCtx)
 }
 
 func newLogger(cfg *config.Config) *slog.Logger {

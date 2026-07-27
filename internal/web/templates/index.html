@@ -124,15 +124,19 @@
                                 </div>
                                 <div class="row form-section">
                                     <div class="col-md-6">
-                                        <label class="form-label">Start Time (Optional)</label>
-                                        <input class="form-control mb-1" name="start_date" type="date" value="{{$form.StartDate}}">
-                                        <input class="form-control" name="start_time" type="time" value="{{$form.StartTime}}">
+                                        <span class="form-label d-block">Start (Optional)</span>
+                                        <label class="form-label small text-muted" for="start_date">Start date</label>
+                                        <input class="form-control mb-1" id="start_date" name="start_date" type="date" value="{{$form.StartDate}}">
+                                        <label class="form-label small text-muted" for="start_time">Start time</label>
+                                        <input class="form-control" id="start_time" name="start_time" type="time" value="{{$form.StartTime}}">
                                         {{with $form.Errors.Get "start_date"}}<div class="text-danger small">{{.}}</div>{{end}}
                                     </div>
                                     <div class="col-md-6">
-                                        <label class="form-label">End Time (Optional)</label>
-                                        <input class="form-control mb-1" name="end_date" type="date" value="{{$form.EndDate}}">
-                                        <input class="form-control" name="end_time" type="time" value="{{$form.EndTime}}">
+                                        <span class="form-label d-block">End (Optional)</span>
+                                        <label class="form-label small text-muted" for="end_date">End date</label>
+                                        <input class="form-control mb-1" id="end_date" name="end_date" type="date" value="{{$form.EndDate}}">
+                                        <label class="form-label small text-muted" for="end_time">End time</label>
+                                        <input class="form-control" id="end_time" name="end_time" type="time" value="{{$form.EndTime}}">
                                         {{with $form.Errors.Get "end_date"}}<div class="text-danger small">{{.}}</div>{{end}}
                                     </div>
                                 </div>

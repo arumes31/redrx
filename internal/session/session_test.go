@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -173,5 +174,79 @@ func TestUnchangedSessionWritesNoCookie(t *testing.T) {
 
 	if len(rec.Result().Cookies()) != 0 {
 		t.Error("an untouched session still wrote a Set-Cookie header")
+	}
+}
+
+// TestOversizedSessionIsShrunkNotDropped covers the visitor who has unlocked
+// enough password-protected links to overflow the cookie. Emitting the
+// oversized value would make the browser discard the whole cookie, logging them
+// out; the session must instead shed link authorisations and keep the identity.
+func TestOversizedSessionIsShrunkNotDropped(t *testing.T) {
+	m := NewManager([]byte("secret"), true)
+
+	rec := httptest.NewRecorder()
+	s := m.Load(httptest.NewRequest(http.MethodGet, "/", nil))
+	s.Login(42)
+	s.CSRFToken()
+	for i := 0; i < 400; i++ {
+		s.AuthorizeLink(fmt.Sprintf("CODE%06d", i))
+	}
+	m.Save(rec, s)
+
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected one cookie, got %d", len(cookies))
+	}
+	if n := len(cookies[0].Value); n > maxCookieBytes {
+		t.Errorf("cookie value is %d bytes, over the %d limit browsers accept", n, maxCookieBytes)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookies[0])
+	got := m.Load(req)
+
+	if got.UserID != 42 {
+		t.Errorf("UserID = %d after shrinking, want 42 — the login was lost", got.UserID)
+	}
+	if got.CSRF == "" {
+		t.Error("CSRF token was lost while shrinking")
+	}
+	if len(got.LinkAuth) == 0 {
+		t.Error("every link authorisation was evicted; expected as many as fit")
+	}
+}
+
+// TestOversizedFlashesAreDroppedFirst keeps flashes ahead of link
+// authorisations in the eviction order: a flash is shown once, an unlocked link
+// costs a password re-entry.
+func TestOversizedFlashesAreDroppedFirst(t *testing.T) {
+	m := NewManager([]byte("secret"), true)
+
+	rec := httptest.NewRecorder()
+	s := m.Load(httptest.NewRequest(http.MethodGet, "/", nil))
+	s.Login(7)
+	s.AuthorizeLink("KEEPME")
+	for i := 0; i < 200; i++ {
+		s.AddFlash("info", strings.Repeat("x", 100))
+	}
+	m.Save(rec, s)
+
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected one cookie, got %d", len(cookies))
+	}
+	if n := len(cookies[0].Value); n > maxCookieBytes {
+		t.Errorf("cookie value is %d bytes, over the %d limit", n, maxCookieBytes)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookies[0])
+	got := m.Load(req)
+
+	if len(got.Flashes) != 0 {
+		t.Errorf("Flashes = %d, want 0 — they should be dropped first", len(got.Flashes))
+	}
+	if !got.IsLinkAuthorized("KEEPME") {
+		t.Error("the link authorisation was evicted before the flashes were")
 	}
 }
