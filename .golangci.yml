@@ -1,0 +1,60 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - bodyclose      # HTTP response bodies must be closed
+    - copyloopvar    # loop-variable capture mistakes
+    - errorlint      # errors.Is/As instead of == and type asserts
+    - gocritic       # broad correctness and style checks
+    - misspell
+    - nilerr         # returning nil after a non-nil error
+    - noctx          # HTTP requests without a context
+    - predeclared    # shadowing built-in identifiers
+    - revive         # the maintained successor to the archived golint
+    - rowserrcheck   # sql.Rows.Err() must be checked
+    - sqlclosecheck  # sql.Rows/Stmt must be closed
+    - unconvert
+    - usetesting     # prefer t.Setenv, t.Context and friends
+    - whitespace
+
+  settings:
+    errcheck:
+      # A deferred Close on a read path reports nothing actionable: for
+      # sql.Rows the same failure surfaces through rows.Err(), which
+      # rowserrcheck enforces separately, and the Close calls on error paths
+      # here are already returning a more specific error to the caller.
+      exclude-functions:
+        - (*database/sql.Rows).Close
+        - (*database/sql.DB).Close
+        - (mime/multipart.File).Close
+        - (io.Closer).Close
+        # Deferred after Commit, where it always reports sql.ErrTxDone.
+        - (*database/sql.Tx).Rollback
+
+    revive:
+      rules:
+        - name: exported
+          disabled: true  # covered by review, and not every export needs a doc comment
+
+    gocritic:
+      disabled-checks:
+        - ifElseChain  # switch-vs-if is a judgement call, not a defect
+
+  exclusions:
+    generated: lax
+    rules:
+      # Test files legitimately ignore errors on cleanup and use long literals.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - bodyclose
+          - noctx
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

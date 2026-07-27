@@ -286,13 +286,16 @@ func (s *Server) apiRotateTargets(raw json.RawMessage) ([]string, error) {
 	if err := json.Unmarshal(raw, &targets); err != nil {
 		return nil, errors.New("rotate_targets must be a list of strings")
 	}
+	// The text of these errors is the API response body, reproduced verbatim
+	// from the previous release, so it keeps the capitalisation and trailing
+	// punctuation that ST1005 would otherwise have us strip.
 	if len(targets) > 50 {
-		return nil, errors.New("Maximum 50 rotate targets allowed")
+		return nil, errors.New("Maximum 50 rotate targets allowed") //nolint:staticcheck // verbatim API message
 	}
 	for i, t := range targets {
 		targets[i] = strings.TrimSpace(t)
 		if !s.safety.IsSafeURL(targets[i]) {
-			return nil, errors.New("One or more rotate target URLs are blocked or invalid.")
+			return nil, errors.New("One or more rotate target URLs are blocked or invalid.") //nolint:staticcheck // verbatim API message
 		}
 	}
 	return targets, nil
@@ -395,7 +398,8 @@ func parseOptionalISO(value *string, field string) (*time.Time, error) {
 			return &t, nil
 		}
 	}
-	return nil, fmt.Errorf("Invalid %s format. Use ISO 8601", field)
+	// Verbatim API message, as above.
+	return nil, fmt.Errorf("Invalid %s format. Use ISO 8601", field) //nolint:staticcheck // verbatim API message
 }
 
 // isoNaive and isoAware reproduce the two timestamp shapes the previous API

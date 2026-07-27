@@ -32,9 +32,9 @@ func Generate(length int) (string, error) {
 	}
 
 	b := make([]byte, length)
-	max := big.NewInt(int64(len(alphabet)))
+	limit := big.NewInt(int64(len(alphabet)))
 	for i := range b {
-		n, err := rand.Int(rand.Reader, max)
+		n, err := rand.Int(rand.Reader, limit)
 		if err != nil {
 			return "", fmt.Errorf("shortcode: %w", err)
 		}

@@ -166,7 +166,11 @@ func Load() (*Config, error) {
 		if !c.Debug {
 			return nil, errors.New("SECRET_KEY must be set in production environments for security")
 		}
-		secret = "dev-secret-key-do-not-use-in-production"
+		// A fixed value, deliberately: generating a random one per boot would
+		// silently invalidate every session on restart and make the insecure
+		// default indistinguishable from a real key. Production is guarded by
+		// the error above.
+		secret = "dev-secret-key-do-not-use-in-production" // #nosec G101 -- documented insecure dev default
 	}
 	c.SecretKey = []byte(secret)
 

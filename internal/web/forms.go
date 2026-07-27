@@ -404,7 +404,9 @@ func normalizeHexColor(v, def string) string {
 
 func isSimpleName(v string) bool {
 	for _, c := range v {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z') {
+		lower := c >= 'a' && c <= 'z'
+		upper := c >= 'A' && c <= 'Z'
+		if !lower && !upper {
 			return false
 		}
 	}

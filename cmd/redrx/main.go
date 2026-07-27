@@ -54,7 +54,7 @@ func run() error {
 	log.Info("database ready", "dialect", dialectName(db.Dialect()))
 
 	limiterBackend, cache := buildRateLimitBackend(cfg, log)
-	defer limiterBackend.Close()
+	defer func() { _ = limiterBackend.Close() }()
 
 	checker := safety.New(safety.Options{
 		Enabled:         cfg.EnablePhishingCheck,
@@ -71,7 +71,9 @@ func run() error {
 		Cache:         cache,
 		Logger:        log,
 	})
-	defer resolver.Close()
+	// srv.Shutdown closes this too on the graceful path; Close is idempotent, so
+	// this only covers the paths that return before the server is built.
+	defer func() { _ = resolver.Close() }()
 
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
@@ -166,7 +168,7 @@ func buildRateLimitBackend(cfg *config.Config, log *slog.Logger) (ratelimit.Back
 	defer cancel()
 	if err := backend.Ping(ctx); err != nil {
 		log.Warn("redis unreachable, using in-memory rate limiting", "error", err)
-		backend.Close()
+		_ = backend.Close()
 		return ratelimit.NewMemoryBackend(), nil
 	}
 

@@ -4,13 +4,41 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "go"
+    # One PR for the routine patch/minor churn, individual PRs for majors so a
+    # breaking bump is reviewed on its own.
+    groups:
+      go-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
+  # Keeps the SHA pins in .github/workflows current — Dependabot rewrites both
+  # the SHA and the trailing version comment.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "daily"
+    labels:
+      - "dependencies"
+      - "docker"

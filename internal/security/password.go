@@ -12,9 +12,12 @@ package security
 
 import (
 	"crypto/hmac"
-	"crypto/md5"
+	// md5 and sha1 are here to *verify* hashes Werkzeug wrote years ago, not to
+	// create new ones: GeneratePasswordHash only ever emits scrypt. Dropping
+	// them would lock out any account still on a legacy digest.
+	"crypto/md5" // #nosec G501
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/subtle"
@@ -47,9 +50,9 @@ var errBadHash = errors.New("security: malformed password hash")
 // GenerateSalt returns a Werkzeug-style alphanumeric salt.
 func GenerateSalt() (string, error) {
 	b := make([]byte, saltLength)
-	max := big.NewInt(int64(len(saltChars)))
+	limit := big.NewInt(int64(len(saltChars)))
 	for i := range b {
-		n, err := rand.Int(rand.Reader, max)
+		n, err := rand.Int(rand.Reader, limit)
 		if err != nil {
 			return "", err
 		}

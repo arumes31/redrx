@@ -101,7 +101,10 @@ func (m *Manager) Save(w http.ResponseWriter, s *Session) {
 	s.dirty = false
 
 	if s.isEmpty() {
-		http.SetCookie(w, &http.Cookie{
+		// Secure comes from the manager rather than a literal, which is why
+		// gosec cannot see it; it is false only when Debug is on, where the dev
+		// server is plain HTTP and a Secure cookie would never come back.
+		http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is set from config, see NewManager
 			Name: cookieName, Value: "", Path: "/", MaxAge: -1,
 			HttpOnly: true, Secure: m.secure, SameSite: http.SameSiteLaxMode,
 		})
@@ -114,7 +117,7 @@ func (m *Manager) Save(w http.ResponseWriter, s *Session) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is set from config, see NewManager
 		Name: cookieName, Value: value, Path: "/",
 		MaxAge: int(maxAge.Seconds()), HttpOnly: true,
 		Secure: m.secure, SameSite: http.SameSiteLaxMode,

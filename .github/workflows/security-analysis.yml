@@ -2,12 +2,25 @@ name: Security Analysis
 
 on:
   push:
-    branches: [ "main", "v2_test" ]
+    branches: [ "main", "v2_test", "v2.0.0" ]
   pull_request:
-    branches: [ "main", "v2_test" ]
+    branches: [ "main", "v2_test", "v2.0.0" ]
+  workflow_dispatch:
+
+# Every action is pinned to a full commit SHA. A tag — even a major one like
+# @v7 — can be repointed at new code by whoever owns the repository, so pinning
+# is what makes a third-party action reproducible rather than merely versioned.
+# Dependabot keeps these SHAs and their version comments up to date.
+
+permissions:
+  contents: read
 
 env:
   GO_VERSION: '1.26'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -15,79 +28,207 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
       - name: Verify formatting
         run: |
-          unformatted="$(gofmt -l . )"
+          unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then
             echo "These files need gofmt:"
             echo "$unformatted"
             exit 1
           fi
 
+      - name: Verify go.mod is tidy
+        run: |
+          cp go.mod go.mod.bak && cp go.sum go.sum.bak
+          go mod tidy
+          if ! diff -q go.mod go.mod.bak >/dev/null || ! diff -q go.sum go.sum.bak >/dev/null; then
+            echo "go.mod/go.sum are not tidy; run 'go mod tidy' and commit the result."
+            diff go.mod.bak go.mod || true
+            diff go.sum.bak go.sum || true
+            exit 1
+          fi
+          rm go.mod.bak go.sum.bak
+
       - name: Vet
         run: go vet ./...
 
+      - name: Build
+        run: go build ./...
+
       - name: Test
-        run: go test -race -coverprofile=coverage.out ./...
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -1
 
-  sast:
-    name: SAST Scan
+      - name: Upload coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+
+      # golangci-lint bundles staticcheck, errcheck, revive (the maintained
+      # successor to the archived golint) and the rest of the set configured in
+      # .golangci.yml, so one runner covers all of them consistently.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.12.2
+          args: --timeout=5m
+
+  sast:
+    name: SAST (gosec)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
       - name: Run gosec
         uses: securego/gosec@9e75c0576c9878035d4221392108d458abe10fc3 # v2.28.0
         with:
-          args: -severity medium ./...
+          args: -severity medium -fmt sarif -out gosec.sarif ./...
 
-  dependency-scan:
-    name: Dependency Check
+      - name: Upload gosec SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+  vulncheck:
+    name: Vulnerabilities (govulncheck)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
+      # govulncheck reports only vulnerabilities on a reachable call path, so a
+      # finding here is actionable rather than merely present in the graph.
       - name: Run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
+  dependencies:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+
       - name: Verify module checksums
         run: go mod verify
+
+      - name: List module graph
+        run: go list -m -mod=readonly all
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    # Only meaningful on a pull request, where there is a base to compare to.
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  licenses:
+    name: License Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+
+      # go-licenses is the maintained replacement for the archived
+      # mitchellh/golicense. "forbidden" covers the copyleft licences that
+      # would be incompatible with shipping this as an MIT binary.
+      - name: Check dependency licences
+        run: |
+          go install github.com/google/go-licenses@latest
+          go-licenses check ./... --disallowed_types=forbidden,restricted
+
+      - name: Generate licence report
+        if: always()
+        run: |
+          go-licenses report ./... > licenses.csv 2>/dev/null || true
+          cat licenses.csv
+
+      - name: Upload licence report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: licenses
+          path: licenses.csv
+          retention-days: 30
 
   secret-scan:
     name: Secret Scanning
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Gitleaks Scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -96,13 +237,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Run Trivy vulnerability scanner in fs mode
-        uses: aquasecurity/trivy-action@master
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+
+  image:
+    name: Image Build and Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # Build without pushing, so a broken Dockerfile fails the pull request
+      # rather than the publish job after merge.
+      - name: Build image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: redrx:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: 'image'
+          image-ref: 'redrx:ci'
           format: 'table'
           exit-code: '1'
           severity: 'CRITICAL,HIGH'

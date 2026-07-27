@@ -233,8 +233,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	sess.Login(user.ID)
 
+	// isSafeRedirect admits only same-site relative paths, which gosec's taint
+	// analysis cannot follow through the helper.
 	if next := r.URL.Query().Get("next"); next != "" && isSafeRedirect(next) {
-		http.Redirect(w, r, next, http.StatusSeeOther)
+		http.Redirect(w, r, next, http.StatusSeeOther) // #nosec G710 -- validated by isSafeRedirect
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)

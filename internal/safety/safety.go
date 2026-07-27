@@ -174,7 +174,7 @@ func (c *Checker) blockedDomains() (map[string]struct{}, error) {
 	if cached != nil {
 		return cached, nil
 	}
-	return nil, fmt.Errorf("%w: %v", ErrListUnavailable, statErr)
+	return nil, fmt.Errorf("%w: %w", ErrListUnavailable, statErr)
 }
 
 func (c *Checker) reload(info os.FileInfo) (map[string]struct{}, error) {
@@ -186,9 +186,9 @@ func (c *Checker) reload(info os.FileInfo) (map[string]struct{}, error) {
 		if cached != nil {
 			return cached, nil
 		}
-		return nil, fmt.Errorf("%w: %v", ErrListUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrListUnavailable, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	domains, err := parseDomainList(f)
 	if err != nil {
@@ -198,7 +198,7 @@ func (c *Checker) reload(info os.FileInfo) (map[string]struct{}, error) {
 		if cached != nil {
 			return cached, nil
 		}
-		return nil, fmt.Errorf("%w: %v", ErrListUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrListUnavailable, err)
 	}
 
 	c.mu.Lock()
@@ -285,7 +285,7 @@ func (c *Checker) Refresh(ctx context.Context) error {
 	}
 
 	if dir := filepath.Dir(c.listPath); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return fmt.Errorf("safety: create list directory: %w", err)
 		}
 	}
@@ -297,10 +297,12 @@ func (c *Checker) Refresh(ctx context.Context) error {
 		return fmt.Errorf("safety: create temp list: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	// Best-effort cleanup: after a successful rename there is nothing left to
+	// remove, and on failure the error being returned is the useful one.
+	defer func() { _ = os.Remove(tmpName) }()
 
 	if _, err := tmp.Write(combined); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("safety: write temp list: %w", err)
 	}
 	if err := tmp.Close(); err != nil {

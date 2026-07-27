@@ -191,11 +191,22 @@ func (r *Resolver) ensureReader() error {
 		r.log.Warn("cannot open GeoIP database", "path", r.dbPath, "error", err)
 		return err
 	}
-	if r.reader != nil {
-		r.reader.Close()
+	if err := r.closeReaderLocked(); err != nil {
+		r.log.Warn("closing the previous GeoIP database failed", "error", err)
 	}
 	r.reader, r.opened = reader, r.dbPath
 	return nil
+}
+
+// closeReaderLocked releases the current reader. The caller must hold the write
+// lock, so no lookup can be reading through it.
+func (r *Resolver) closeReaderLocked() error {
+	if r.reader == nil {
+		return nil
+	}
+	err := r.reader.Close()
+	r.reader, r.opened = nil, ""
+	return err
 }
 
 // Close releases the MaxMind reader, waiting for any in-flight lookup to
@@ -203,12 +214,7 @@ func (r *Resolver) ensureReader() error {
 func (r *Resolver) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.reader != nil {
-		err := r.reader.Close()
-		r.reader, r.opened = nil, ""
-		return err
-	}
-	return nil
+	return r.closeReaderLocked()
 }
 
 // AnonymizeIP masks an address down to the precision the privacy policy

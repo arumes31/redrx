@@ -99,7 +99,10 @@ func (s *Server) selectTarget(link *store.URL, ua useragent.UserAgent) string {
 			}
 		}
 		if len(safe) > 0 {
-			return safe[rand.IntN(len(safe))]
+			// Traffic splitting, not a security decision — an observer gaining
+			// nothing from predicting which of the operator's own targets is
+			// served next. A CSPRNG here would only cost entropy per redirect.
+			return safe[rand.IntN(len(safe))] // #nosec G404 -- load distribution, not secrecy
 		}
 	}
 	return link.LongURL

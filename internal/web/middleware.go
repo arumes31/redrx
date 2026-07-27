@@ -22,12 +22,6 @@ const (
 	ctxRoute
 )
 
-// reqContext bundles the per-request values handlers need.
-type reqContext struct {
-	Session *session.Session
-	User    *store.User
-}
-
 // handlerFunc is a handler that receives the resolved session and user.
 type handlerFunc func(http.ResponseWriter, *http.Request)
 

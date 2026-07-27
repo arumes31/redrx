@@ -5,12 +5,20 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+# Actions are pinned to full commit SHAs; see security-analysis.yml for why.
+
+permissions:
+  contents: read
+
 env:
   GO_VERSION: '1.26'
 
 jobs:
-  analyze:
-    name: Analyze
+  # NOTE: this job only runs when CodeQL *default setup* is disabled for the
+  # repository. GitHub refuses to process an advanced configuration while the
+  # default one is active, and skips this workflow instead.
+  codeql:
+    name: CodeQL
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -20,39 +28,48 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'go' ]
+        language: [ 'go', 'actions' ]
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        if: matrix.language == 'go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           languages: ${{ matrix.language }}
+          queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: "/language:${{ matrix.language }}"
 
   security-scan:
     name: Vulnerability and SAST
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
       - name: Run govulncheck
         run: |
@@ -62,4 +79,63 @@ jobs:
       - name: Run gosec
         uses: securego/gosec@9e75c0576c9878035d4221392108d458abe10fc3 # v2.28.0
         with:
-          args: -severity medium ./...
+          args: -severity medium -fmt sarif -out gosec.sarif ./...
+
+      - name: Upload gosec SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+      - name: Verify module checksums
+        run: go mod verify
+
+  licenses:
+    name: License Drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+
+      # Catches a transitive dependency that changes licence between releases,
+      # which the pull-request check would only see if that PR touched go.mod.
+      - name: Check dependency licences
+        run: |
+          go install github.com/google/go-licenses@latest
+          go-licenses check ./... --disallowed_types=forbidden,restricted
+
+  image-scan:
+    name: Published Image Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: redrx:nightly
+
+      # Nightly rather than only on change: a base-image CVE published after the
+      # last merge would otherwise go unnoticed until someone opened a PR.
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: 'image'
+          image-ref: 'redrx:nightly'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
