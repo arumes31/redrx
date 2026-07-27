@@ -27,7 +27,12 @@ body {
 
 .btn-shorten { 
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-    border: none; 
+    border: none;
+    /* Bootstrap derives its focus ring from --bs-btn-focus-shadow-rgb, which only
+       the .btn-* variant classes set. Without this the rgba() is invalid, the
+       ring collapses to none, and Bootstrap's outline:0 leaves no focus
+       indicator at all on the primary call to action of every form. */
+    --bs-btn-focus-shadow-rgb: 102, 126, 234; 
     color: white;
     font-weight: 600;
     transition: transform 0.2s, box-shadow 0.2s;
@@ -75,7 +80,6 @@ body {
     box-shadow: 0 0 0 0.25rem rgba(102, 126, 234, 0.25);
 }
 
-.form-control::placeholder { color: rgba(255,255,255,0.4); }
 
 .nav-tabs .nav-link { color: rgba(255,255,255,0.6); border: none; }
 .nav-tabs .nav-link.active { 
@@ -87,3 +91,39 @@ body {
 .alert-info { background: rgba(13, 202, 240, 0.15); border-left: 4px solid #0dc5e8; color: #fff; }
 .alert-danger { background: rgba(220, 53, 69, 0.15); border-left: 4px solid #dc3545; color: #fff; }
 .alert-success { background: rgba(25, 135, 84, 0.15); border-left: 4px solid #198754; color: #fff; }
+
+/* --------------------------------------------------------------------------
+   Touch and motion
+   -------------------------------------------------------------------------- */
+
+/* The fixed canvas repaints every frame underneath each blurred card, and a
+   backdrop-filter must re-sample its backdrop whenever that backdrop changes.
+   On the dashboard that is seven full-viewport blurs at 60fps for a page the
+   user is only reading, which is the most expensive thing here on a phone. */
+@media (max-width: 767.98px) {
+    .card {
+        backdrop-filter: none;
+        background: rgba(20, 20, 20, 0.9);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #canvas { display: none; }
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Bootstrap sizes checkboxes at 1em and switches at 2em x 1em, which lands
+   around 16px — well under the 24px WCAG 2.5.8 target size, and these
+   particular controls disable live links or select rows for deletion. */
+@media (pointer: coarse) {
+    .table .form-check-input { width: 1.5em; height: 1.5em; }
+    .table .form-switch .form-check-input { width: 3em; height: 1.5em; }
+    .btn-group .btn { padding: 0.5rem 0.75rem; font-size: 0.875rem; }
+    /* Negative margin grows the hit area without moving anything around it. */
+    .btn-link.p-0 { padding: 0.5rem !important; margin: -0.5rem; }
+}

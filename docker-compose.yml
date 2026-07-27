@@ -4,9 +4,12 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - SECRET_KEY=dev-secret-key-change-in-prod
-      - DATABASE_URL=postgresql://redrx:securepassword@db:5432/redrx_db
-      - BASE_DOMAIN=localhost:5000
+      # Required, with no default. A shipped constant would be a publicly known
+      # signing key: session cookies are HMACed with it, so anyone could forge
+      # one for any user id. `:?` makes compose refuse to start without it.
+      - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in .env, e.g. openssl rand -hex 32}
+      - DATABASE_URL=postgresql://redrx:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/redrx_db
+      - BASE_DOMAIN=${BASE_DOMAIN:-localhost:5000}
       - GEOIP_DB_PATH=/usr/share/GeoIP/GeoLite2-Country.mmdb
       - ANONYMIZE_LOGS=${ANONYMIZE_LOGS:-false}
       - RATELIMIT_STORAGE_URL=redis://redis:6379
@@ -32,7 +35,7 @@ services:
     image: postgres:15-alpine
     environment:
       - POSTGRES_USER=redrx
-      - POSTGRES_PASSWORD=securepassword
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       - POSTGRES_DB=redrx_db
     volumes:
       - postgres_data:/var/lib/postgresql/data

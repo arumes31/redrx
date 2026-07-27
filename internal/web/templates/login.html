@@ -15,7 +15,8 @@
                 <form method="POST">
                     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
                     <div class="mb-3">
-                        <input class="form-control form-control-lg text-center" type="password" name="password" placeholder="Password" autocomplete="current-password" required autofocus>
+                        <label class="form-label visually-hidden" for="link_password">Link password</label>
+                    <input class="form-control form-control-lg text-center" id="link_password" type="password" name="password" placeholder="Password" autocomplete="current-password" required autofocus>
                     </div>
                     <button type="submit" class="btn btn-primary w-100 btn-lg">Unlock</button>
                 </form>

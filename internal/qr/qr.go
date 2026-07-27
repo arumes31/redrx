@@ -169,8 +169,28 @@ func parseColor(s string, def color.RGBA) color.RGBA {
 	return color.RGBA{r, g, b, a}
 }
 
+// maxLogoPixels bounds the decoded size of an uploaded logo. The upload is
+// already capped at 1 MB, but compressed size says nothing about decoded size:
+// a ~40 KB PNG can declare 40000x40000, and image.Decode would allocate
+// width*height*4 bytes — around 6 GB — before any of our code runs. That is an
+// unrecoverable runtime OOM, not a panic, so the recover middleware cannot
+// contain it. Reading the header first keeps the allocation bounded.
+const maxLogoPixels = 4 << 20 // 4M pixels, e.g. 2048x2048
+
 // DecodeLogo reads an uploaded image for use as a QR overlay.
 func DecodeLogo(data []byte) (image.Image, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("qr: inspect logo: %w", err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return nil, fmt.Errorf("qr: logo has no dimensions")
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > maxLogoPixels {
+		return nil, fmt.Errorf("qr: logo is %dx%d, over the %d pixel limit",
+			cfg.Width, cfg.Height, maxLogoPixels)
+	}
+
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("qr: decode logo: %w", err)

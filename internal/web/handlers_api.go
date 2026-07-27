@@ -223,7 +223,8 @@ func (s *Server) handleAPIShorten(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAPIGetURL(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authenticateAPI(r); !ok {
+	user, ok := s.authenticateAPI(r)
+	if !ok {
 		apiError(w, http.StatusUnauthorized, "Valid API Key required. Access denied.")
 		return
 	}
@@ -237,6 +238,19 @@ func (s *Server) handleAPIGetURL(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.log.Error("api load link", "code", code, "error", err)
 		apiError(w, http.StatusInternalServerError, "Could not load the link")
+		return
+	}
+
+	// Only the owner may read a link's details. This is a deliberate change from
+	// the previous release, which returned any link to any valid key: since the
+	// response carries long_url, that let any registered user read the
+	// destination of someone else's password-protected link without the
+	// password, routing around the gate on the redirect path entirely.
+	//
+	// 404 rather than 403, so the endpoint does not become an oracle for which
+	// short codes exist.
+	if link.UserID == nil || *link.UserID != user.ID {
+		apiError(w, http.StatusNotFound, "URL not found")
 		return
 	}
 

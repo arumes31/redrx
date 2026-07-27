@@ -41,6 +41,12 @@ type Checker struct {
 	loadedAt time.Time
 	modTime  time.Time
 	size     int64
+
+	// reloadMu serialises reloads. Without it, every request arriving while the
+	// list is stale starts its own full parse of a multi-megabyte feed and
+	// builds its own map — hundreds of concurrent copies right after a refresh
+	// or at a cold start, which is enough to OOM a memory-capped container.
+	reloadMu sync.Mutex
 }
 
 type Options struct {
@@ -157,14 +163,10 @@ func (c *Checker) blockedDomains() (map[string]struct{}, error) {
 
 	info, statErr := os.Stat(c.listPath)
 	if statErr == nil {
-		c.mu.RLock()
-		fresh := c.domains != nil && info.ModTime().Equal(c.modTime) && info.Size() == c.size
-		cached := c.domains
-		c.mu.RUnlock()
-		if fresh {
+		if cached, fresh := c.cachedIfFresh(info); fresh {
 			return cached, nil
 		}
-		return c.reload(info)
+		return c.reload()
 	}
 
 	// Cannot stat the file: serve a previously loaded copy, else fail closed.
@@ -177,25 +179,57 @@ func (c *Checker) blockedDomains() (map[string]struct{}, error) {
 	return nil, fmt.Errorf("%w: %w", ErrListUnavailable, statErr)
 }
 
-func (c *Checker) reload(info os.FileInfo) (map[string]struct{}, error) {
+// cachedIfFresh returns the parsed list when it already matches the file on
+// disk described by info.
+func (c *Checker) cachedIfFresh(info os.FileInfo) (map[string]struct{}, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	fresh := c.domains != nil && info.ModTime().Equal(c.modTime) && info.Size() == c.size
+	return c.domains, fresh
+}
+
+func (c *Checker) cached() map[string]struct{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.domains
+}
+
+// reload parses the list from disk. Only one caller does the work; the rest
+// wait and take the result.
+func (c *Checker) reload() (map[string]struct{}, error) {
+	c.reloadMu.Lock()
+	defer c.reloadMu.Unlock()
+
+	// Another caller may have reloaded while this one waited for the lock.
+	if info, err := os.Stat(c.listPath); err == nil {
+		if cached, fresh := c.cachedIfFresh(info); fresh {
+			return cached, nil
+		}
+	}
+
 	f, err := os.Open(c.listPath)
 	if err != nil {
-		c.mu.RLock()
-		cached := c.domains
-		c.mu.RUnlock()
-		if cached != nil {
+		if cached := c.cached(); cached != nil {
 			return cached, nil
 		}
 		return nil, fmt.Errorf("%w: %w", ErrListUnavailable, err)
 	}
 	defer func() { _ = f.Close() }()
 
+	// Fingerprint the handle actually being read, not a stat taken earlier: a
+	// rename between the two would record the old file's metadata against the
+	// new file's contents, and every later request would re-parse.
+	info, err := f.Stat()
+	if err != nil {
+		if cached := c.cached(); cached != nil {
+			return cached, nil
+		}
+		return nil, fmt.Errorf("%w: %w", ErrListUnavailable, err)
+	}
+
 	domains, err := parseDomainList(f)
 	if err != nil {
-		c.mu.RLock()
-		cached := c.domains
-		c.mu.RUnlock()
-		if cached != nil {
+		if cached := c.cached(); cached != nil {
 			return cached, nil
 		}
 		return nil, fmt.Errorf("%w: %w", ErrListUnavailable, err)

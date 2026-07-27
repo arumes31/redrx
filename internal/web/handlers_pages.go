@@ -17,6 +17,13 @@ import (
 
 const dashboardPageSize = 10
 
+// dummyPasswordHash is verified against when a login names an account that does
+// not exist, so the response takes the same time either way. It is a real
+// scrypt hash of a random string; no password matches it.
+const dummyPasswordHash = "scrypt:32768:8:1$XmQ2yTnBd7pKwLr4$" +
+	"7c1a3f2b9d8e4c6a5b0f2d1e8a7c4b3d6e9f0a2c5b8d1e4f7a0c3b6d9e2f5a8c" +
+	"1b4d7e0a3c6f9b2e5d8a1c4f7b0e3d6a9c2f5b8e1d4a7c0f3b6e9d2a5c8f1b4e"
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	data := s.newPageData(r)
 	data.Data["form"] = newShortenForm(s.cfg.ShortCodeLength, s.cfg.ExpiryHours, s.cfg.DefaultQRColor, s.cfg.DefaultQRBG)
@@ -214,8 +221,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if user == nil || !security.CheckPasswordHash(user.PasswordHash, password) {
+	// Hash even when the account does not exist. scrypt costs ~100ms, so
+	// returning early on an unknown user would time-distinguish it from a wrong
+	// password and turn login into a username oracle.
+	ok := user != nil && security.CheckPasswordHash(user.PasswordHash, password)
+	if user == nil {
+		security.CheckPasswordHash(dummyPasswordHash, password)
+	}
+
+	if !ok {
 		sess.AddFlash("danger", "Login Unsuccessful. Please check username/email and password")
+		// Also attach it to the field, so the message appears next to the input
+		// rather than only in a banner that may be scrolled off a short screen.
+		form.Errors.add("password", "Incorrect username/email or password.")
 		data := s.newPageData(r)
 		data.Data["form"] = form
 		s.render(w, r, http.StatusOK, "login_user.html", data)

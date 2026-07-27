@@ -13,11 +13,17 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            /* min-height, not height: a long destination URL wraps to several
+               lines and would otherwise be clipped with no way to scroll to the
+               Proceed button. dvh keeps the mobile URL bar from stealing space. */
+            min-height: 100vh;
+            min-height: 100dvh;
             margin: 0;
+            padding: 1rem 0;
+            box-sizing: border-box;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             text-align: center;
-            overflow: hidden;
+            overflow-y: auto;
             position: relative;
         }
         #bg-canvas {
@@ -30,7 +36,7 @@
         }
         .container {
             background: rgba(255, 255, 255, 0.07);
-            padding: 3.5rem 2rem;
+            padding: 2rem 1.25rem;
             border-radius: 20px;
             backdrop-filter: blur(15px);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -192,16 +198,27 @@
             }
         }
 
-        for (let i = 0; i < 100; i++) {
-            particles.push(new Particle());
-        }
+        // Scale the particle count to the viewport, and skip the animation
+        // entirely for visitors who asked for reduced motion. This page lives
+        // for five seconds; it should not cost a phone a full-screen 60fps
+        // repaint to do it.
+        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const particleCount = Math.round(Math.min(window.innerWidth / 15, 100));
 
-        function animate() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            particles.forEach(p => { p.update(); p.draw(); });
-            requestAnimationFrame(animate);
+        if (!reduceMotion) {
+            for (let i = 0; i < particleCount; i++) {
+                particles.push(new Particle());
+            }
+
+            const animate = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                particles.forEach(p => { p.update(); p.draw(); });
+                requestAnimationFrame(animate);
+            };
+            animate();
+        } else {
+            canvas.style.display = 'none';
         }
-        animate();
     </script>
 </body>
 </html>
