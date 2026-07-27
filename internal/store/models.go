@@ -28,13 +28,18 @@ type URL struct {
 	PasswordHash     string
 	PreviewMode      bool
 	StatsEnabled     bool
-	IsEnabled        bool
-	ClicksCount      int64
-	CreatedAt        time.Time
-	ExpiresAt        *time.Time
-	StartAt          *time.Time
-	EndAt            *time.Time
-	LastAccessedAt   *time.Time
+	// QRColor and QRBackground remember what the creator chose, so the QR
+	// served at /{code}/qr matches the one previewed at creation time. Empty
+	// means "use the configured default".
+	QRColor        string
+	QRBackground   string
+	IsEnabled      bool
+	ClicksCount    int64
+	CreatedAt      time.Time
+	ExpiresAt      *time.Time
+	StartAt        *time.Time
+	EndAt          *time.Time
+	LastAccessedAt *time.Time
 }
 
 // IsActive reports whether the link should currently redirect, applying the

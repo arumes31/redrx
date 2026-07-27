@@ -12,6 +12,7 @@ import (
 const urlColumns = `id, user_id, short_code, long_url, COALESCE(rotate_targets, ''),
 	COALESCE(ios_target_url, ''), COALESCE(android_target_url, ''), COALESCE(password_hash, ''),
 	preview_mode, stats_enabled, is_enabled, COALESCE(clicks, 0),
+	COALESCE(qr_color, ''), COALESCE(qr_background, ''),
 	created_at, expires_at, start_at, end_at, last_accessed_at`
 
 func scanURL(row interface{ Scan(...any) error }) (*URL, error) {
@@ -27,6 +28,7 @@ func scanURL(row interface{ Scan(...any) error }) (*URL, error) {
 		&u.ID, &userID, &u.ShortCode, &u.LongURL, &rotateRaw,
 		&u.IOSTargetURL, &u.AndroidTargetURL, &u.PasswordHash,
 		&preview, &stats, &enabled, &u.ClicksCount,
+		&u.QRColor, &u.QRBackground,
 		&createdAt, &expiresAt, &startAt, &endAt, &lastAccessedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -68,13 +70,15 @@ func (d *DB) CreateURL(ctx context.Context, u *URL) error {
 	const q = `INSERT INTO urls (
 		user_id, short_code, long_url, rotate_targets, ios_target_url, android_target_url,
 		password_hash, preview_mode, stats_enabled, is_enabled, clicks,
+		qr_color, qr_background,
 		created_at, expires_at, start_at, end_at, last_accessed_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	id, err := d.insertReturningID(ctx, q, "urls",
 		nullInt64(u.UserID), u.ShortCode, u.LongURL, encodeRotateTargets(u.RotateTargets),
 		nullString(u.IOSTargetURL), nullString(u.AndroidTargetURL), nullString(u.PasswordHash),
 		u.PreviewMode, u.StatsEnabled, u.IsEnabled, u.ClicksCount,
+		nullString(u.QRColor), nullString(u.QRBackground),
 		createdAt, NewNullTime(d.dialect, u.ExpiresAt), NewNullTime(d.dialect, u.StartAt),
 		NewNullTime(d.dialect, u.EndAt), NewNullTime(d.dialect, u.LastAccessedAt),
 	)
@@ -86,15 +90,19 @@ func (d *DB) CreateURL(ctx context.Context, u *URL) error {
 }
 
 // UpdateURL persists the fields the edit form can change.
+//
+// is_enabled is deliberately absent: no edit-form field sets it, so writing it
+// back would carry whatever value was read when the form was opened and undo a
+// toggle made from the dashboard in the meantime.
 func (d *DB) UpdateURL(ctx context.Context, u *URL) error {
 	const q = `UPDATE urls SET
 		long_url = ?, ios_target_url = ?, android_target_url = ?, rotate_targets = ?,
-		preview_mode = ?, stats_enabled = ?, is_enabled = ?, expires_at = ?
+		preview_mode = ?, stats_enabled = ?, expires_at = ?
 		WHERE id = ?`
 	_, err := d.Exec(ctx, q,
 		u.LongURL, nullString(u.IOSTargetURL), nullString(u.AndroidTargetURL),
 		encodeRotateTargets(u.RotateTargets),
-		u.PreviewMode, u.StatsEnabled, u.IsEnabled,
+		u.PreviewMode, u.StatsEnabled,
 		NewNullTime(d.dialect, u.ExpiresAt), u.ID)
 	return err
 }
@@ -110,12 +118,45 @@ func (d *DB) TouchLastAccessed(ctx context.Context, id int64, at time.Time) erro
 	return err
 }
 
+// DeleteURL removes a link and its click history in one transaction, so an
+// interruption between the two statements cannot leave the link live with its
+// history gone — which is the opposite of what every caller intends.
 func (d *DB) DeleteURL(ctx context.Context, id int64) error {
-	if _, err := d.Exec(ctx, "DELETE FROM clicks WHERE url_id = ?", id); err != nil {
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
 		return err
 	}
-	_, err := d.Exec(ctx, "DELETE FROM urls WHERE id = ?", id)
-	return err
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, d.rebind("DELETE FROM clicks WHERE url_id = ?"), id); err != nil {
+		return fmt.Errorf("delete clicks: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, d.rebind("DELETE FROM urls WHERE id = ?"), id); err != nil {
+		return fmt.Errorf("delete url: %w", err)
+	}
+	return tx.Commit()
+}
+
+// SetURLEnabledToggle flips is_enabled in a single statement and reports the new
+// value. Read-modify-write across two requests loses updates: two toggles racing
+// both read the old value and both write the same new one, so the link ends up
+// in the state one click should have produced, and the JSON response describes a
+// state the row may not be in.
+func (d *DB) SetURLEnabledToggle(ctx context.Context, id int64) (bool, error) {
+	q := "UPDATE urls SET is_enabled = NOT COALESCE(is_enabled, ?) WHERE id = ?"
+	if d.dialect == SQLite {
+		// SQLite has no NOT operator for its integer booleans in this position.
+		q = "UPDATE urls SET is_enabled = CASE WHEN COALESCE(is_enabled, ?) THEN 0 ELSE 1 END WHERE id = ?"
+	}
+	if _, err := d.Exec(ctx, q, true, id); err != nil {
+		return false, err
+	}
+
+	var enabled nullBool
+	if err := d.QueryRow(ctx, "SELECT is_enabled FROM urls WHERE id = ?", id).Scan(&enabled); err != nil {
+		return false, err
+	}
+	return enabled.orDefault(true), nil
 }
 
 // DeleteUserURLs removes the given links, ignoring any not owned by the user.

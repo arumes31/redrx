@@ -112,9 +112,13 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		PreviewMode:      in.PreviewMode,
 		StatsEnabled:     in.StatsEnabled,
 		IsEnabled:        true,
-		ExpiresAt:        in.ExpiresAt,
-		StartAt:          in.StartAt,
-		EndAt:            in.EndAt,
+		// Remember the chosen colours so /{code}/qr serves the same QR the
+		// creator previewed, rather than one in the instance defaults.
+		QRColor:      form.QRColor,
+		QRBackground: form.QRBg,
+		ExpiresAt:    in.ExpiresAt,
+		StartAt:      in.StartAt,
+		EndAt:        in.EndAt,
 	}
 	if user != nil {
 		link.UserID = &user.ID
@@ -497,14 +501,20 @@ func (s *Server) handleToggleStatus(w http.ResponseWriter, r *http.Request) {
 	if link == nil {
 		return
 	}
-	if err := s.db.SetURLEnabled(r.Context(), link.ID, !link.IsEnabled); err != nil {
+	enabled, err := s.db.SetURLEnabledToggle(r.Context(), link.ID)
+	if err != nil {
 		s.log.Error("toggle link status", "error", err)
 		apiError(w, http.StatusInternalServerError, "Could not update the link.")
 		return
 	}
+	// Report the schedule-aware state too. The badge means "resolving right
+	// now", which enabling cannot achieve for an expired or not-yet-started
+	// link — showing "Active" on one produces a link that 410s when clicked.
+	link.IsEnabled = enabled
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":     "success",
-		"is_enabled": !link.IsEnabled,
+		"is_enabled": enabled,
+		"is_active":  link.IsActive(),
 	})
 }
 

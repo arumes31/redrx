@@ -208,8 +208,34 @@ The suite includes a committed SQLite fixture written by the previous Python app
 | **Limits** | `RATELIMIT_STORAGE_URL` | `redis://redis:6379` | Rate limiting backend. Can fall back to local storage `memory://` in dev. |
 | **Access** | `DISABLE_ANONYMOUS_CREATE` | `false` | When true, only authenticated users can shorten links. |
 | **Access** | `DISABLE_REGISTRATION` | `false` | When true, public registration routes are disabled. |
+| **Proxy** | `TRUSTED_PROXIES` | - | Peers whose `X-Forwarded-*` / `CF-*` headers are believed (IPs or CIDRs, comma separated; `*` for any). Empty means the headers are ignored. |
+| **Proxy** | `USE_CLOUDFLARE` | `false` | Trust `CF-Connecting-IP` from a trusted proxy. Required for correct client IPs behind Cloudflare. |
 | **Server** | `LISTEN_ADDR` | `:5000` | Address the HTTP server binds to. |
 | **Server** | `REDRX_DEBUG` | `false` | Development mode. Relaxes the canonical-domain redirect and allows a fallback `SECRET_KEY`. |
+
+### Running behind a reverse proxy
+
+Rate limiting, analytics and the abuse controls all key off the client IP, so
+redrx has to be told who is allowed to tell it what that IP is. **By default it
+trusts nobody and uses the peer address**, which is correct for a directly
+exposed service: a client that can set its own `X-Forwarded-For` can otherwise
+pick its own rate-limit bucket and bypass every limit, including the one in
+front of login.
+
+For the common **Cloudflare → nginx → redrx** chain:
+
+```env
+TRUSTED_PROXIES=172.18.0.0/16   # nginx, as redrx sees it
+USE_CLOUDFLARE=true
+```
+
+`USE_CLOUDFLARE` matters more than it looks. nginx appends the address it
+received from to `X-Forwarded-For`, so the header arrives as
+`<visitor>, <cloudflare-edge>` — the *last* entry is a Cloudflare server, not
+your user. `CF-Connecting-IP` names the real visitor, so redrx prefers it. The
+alternative is to add Cloudflare's published ranges to `TRUSTED_PROXIES`, which
+lets redrx walk back past them; without one of the two, every visitor on the
+internet shares the handful of buckets belonging to the edge servers.
 
 Rate limits use the same syntax as before (`"200 per day;50 per hour"`, `"10 per minute"`, `"5/hour"`). `RATELIMIT_STORAGE_URL` accepts `memory://` or a `redis://` URL; when Redis is configured it also backs the GeoIP lookup cache. If Redis is unreachable at boot the service logs a warning and falls back to in-memory limiting rather than refusing to start.
 

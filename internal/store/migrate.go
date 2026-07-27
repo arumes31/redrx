@@ -47,6 +47,8 @@ var schema = []table{
 			{"ios_target_url", "TEXT", "TEXT"},
 			{"android_target_url", "TEXT", "TEXT"},
 			{"password_hash", "VARCHAR(255)", "VARCHAR(255)"},
+			{"qr_color", "VARCHAR(32)", "VARCHAR(32)"},
+			{"qr_background", "VARCHAR(32)", "VARCHAR(32)"},
 			{"preview_mode", "BOOLEAN", "BOOLEAN"},
 			{"stats_enabled", "BOOLEAN", "BOOLEAN"},
 			{"is_enabled", "BOOLEAN", "BOOLEAN"},
@@ -91,6 +93,25 @@ var indexes = []struct{ name, ddl string }{
 // an existing database keeps all of its rows, and columns that are already
 // present are left untouched.
 func (d *DB) Migrate(ctx context.Context) error {
+	// Serialise migrating instances. The checks below are read-then-act, so two
+	// replicas starting together can both see a column missing and both try to
+	// add it; the loser's error propagates out of run() and exits the process,
+	// flapping a rolling deploy. SQLite needs nothing here — it already allows
+	// a single connection.
+	if d.dialect == Postgres {
+		// An arbitrary but stable key, scoped to this application.
+		const migrationLockID = 0x7265647278 // "redrx"
+		if _, err := d.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrationLockID); err != nil {
+			return fmt.Errorf("acquire migration lock: %w", err)
+		}
+		defer func() {
+			if _, err := d.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", migrationLockID); err != nil {
+				// The lock is released when the session ends regardless.
+				_ = err
+			}
+		}()
+	}
+
 	for _, t := range schema {
 		exists, err := d.tableExists(ctx, t.name)
 		if err != nil {
@@ -146,6 +167,11 @@ func (d *DB) addMissingColumns(ctx context.Context, t table) error {
 		typ = stripUnaddableQualifiers(typ)
 		stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", t.name, c.name, typ)
 		if _, err := d.ExecContext(ctx, stmt); err != nil {
+			// Another instance may have added it between the inspection above
+			// and this statement. That is the outcome we wanted either way.
+			if isDuplicateColumn(err) {
+				continue
+			}
 			return fmt.Errorf("add column %s.%s: %w", t.name, c.name, err)
 		}
 	}

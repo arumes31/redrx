@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net"
 	"strings"
 	"testing"
 )
@@ -13,7 +14,7 @@ func clearEnv(t *testing.T) {
 		"SECRET_KEY", "FLASK_DEBUG", "REDRX_DEBUG", "DATABASE_URL", "BASE_DOMAIN",
 		"BLOCKED_DOMAINS", "EXPIRY_HOURS", "SHORT_CODE_LENGTH", "ENABLE_PHISHING_CHECK",
 		"DISABLE_REGISTRATION", "RATELIMIT_DEFAULT", "RATELIMIT_STORAGE_URL", "LISTEN_ADDR",
-		"USE_CLOUDFLARE", "ENABLE_SEO", "PHISHING_LIST_URLS", "MAXMIND_LICENSE_KEY",
+		"TRUSTED_PROXIES", "USE_CLOUDFLARE", "ENABLE_SEO", "PHISHING_LIST_URLS", "MAXMIND_LICENSE_KEY",
 	} {
 		t.Setenv(k, "")
 		_ = k
@@ -212,4 +213,83 @@ func TestPlaceholderBaseDomainRejectedInProduction(t *testing.T) {
 	if cfg.BaseDomain != "links.example.org" {
 		t.Errorf("BaseDomain = %q", cfg.BaseDomain)
 	}
+}
+
+// TestTrustedProxyChain covers the deployed topology: Cloudflare -> nginx -> app.
+// The peer is nginx, and X-Forwarded-For arrives as "<client>, <cloudflare edge>",
+// so the rightmost entry is an edge address rather than the visitor.
+func TestTrustedProxyChain(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("SECRET_KEY", "k")
+	t.Setenv("BASE_DOMAIN", "links.example.org")
+	t.Setenv("TRUSTED_PROXIES", "172.18.0.0/16,127.0.0.1")
+	t.Setenv("USE_CLOUDFLARE", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if !cfg.IsTrustedProxy("172.18.0.5:41234") {
+		t.Error("nginx on the compose network should be trusted")
+	}
+	if cfg.IsTrustedProxy("203.0.113.9:1234") {
+		t.Error("an arbitrary internet peer must not be trusted")
+	}
+
+	// With Cloudflare in front, CF-Connecting-IP names the real visitor.
+	if got := cfg.ClientIPFromForwarded("198.51.100.7, 172.71.1.1", "198.51.100.7"); got != "198.51.100.7" {
+		t.Errorf("client = %q, want the CF-Connecting-IP value", got)
+	}
+
+	// Without the Cloudflare header, and with the edge range not configured,
+	// the last hop is indistinguishable from a client — so it is returned. This
+	// is the documented reason a Cloudflare deployment must either set
+	// USE_CLOUDFLARE=true or list Cloudflare's ranges in TRUSTED_PROXIES;
+	// otherwise every visitor buckets under a few edge addresses.
+	cfg.UseCloudflare = false
+	if got := cfg.ClientIPFromForwarded("198.51.100.7, 172.71.1.1", ""); got != "172.71.1.1" {
+		t.Errorf("client = %q; with no CF header and no edge range configured "+
+			"the last hop is all we can identify", got)
+	}
+
+	// Listing the edge range as trusted makes the walk skip it.
+	cfg.TrustedProxies = append(cfg.TrustedProxies, mustCIDR(t, "172.71.0.0/16"))
+	if got := cfg.ClientIPFromForwarded("198.51.100.7, 172.71.1.1", ""); got != "198.51.100.7" {
+		t.Errorf("client = %q, want 198.51.100.7 after skipping the trusted hop", got)
+	}
+}
+
+func TestUntrustedPeerIsNeverTrusted(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("SECRET_KEY", "k")
+	t.Setenv("BASE_DOMAIN", "links.example.org")
+	// No TRUSTED_PROXIES at all: the default must be to trust nothing, or the
+	// rate-limit key becomes client-controlled.
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.IsTrustedProxy("10.0.0.1:1234") || cfg.IsTrustedProxy("127.0.0.1:1234") {
+		t.Error("no proxy should be trusted when TRUSTED_PROXIES is unset")
+	}
+}
+
+func TestTrustedProxiesRejectsGarbage(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("SECRET_KEY", "k")
+	t.Setenv("BASE_DOMAIN", "links.example.org")
+	t.Setenv("TRUSTED_PROXIES", "not-an-ip")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load accepted an invalid TRUSTED_PROXIES entry")
+	}
+}
+
+func mustCIDR(t *testing.T, s string) *net.IPNet {
+	t.Helper()
+	_, n, err := net.ParseCIDR(s)
+	if err != nil {
+		t.Fatalf("ParseCIDR(%q): %v", s, err)
+	}
+	return n
 }

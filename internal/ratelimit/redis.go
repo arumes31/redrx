@@ -20,6 +20,15 @@ func NewRedisBackend(url string) (*RedisBackend, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ratelimit: parse redis url: %w", err)
 	}
+	// Bound every phase. The defaults are a 5s dial with three retries and
+	// backoff, so a Redis outage turns each request into a multi-second stall
+	// rather than an error — and the limiter's fail-open path only handles
+	// errors, not hangs.
+	opts.DialTimeout = 500 * time.Millisecond
+	opts.ReadTimeout = 300 * time.Millisecond
+	opts.WriteTimeout = 300 * time.Millisecond
+	opts.MaxRetries = -1 // -1 disables retries; 0 would mean "use the default"
+	opts.PoolTimeout = time.Second
 	return &RedisBackend{client: redis.NewClient(opts)}, nil
 }
 

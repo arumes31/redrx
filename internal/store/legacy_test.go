@@ -30,6 +30,15 @@ func openLegacyFixture(t *testing.T) *DB {
 		t.Fatalf("open fixture: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
+
+	// Migrate first, exactly as run() does before the listener binds. Columns
+	// this build added after the Python release only exist afterwards, so a
+	// query issued against the raw fixture is testing a state the service never
+	// serves from. TestMigrateLeavesLegacyDataIntact covers the migration
+	// itself preserving every row.
+	if err := db.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate fixture: %v", err)
+	}
 	return db
 }
 

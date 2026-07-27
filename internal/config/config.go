@@ -7,6 +7,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -34,6 +35,10 @@ type Config struct {
 	EnablePhishingCheck    bool
 	EnableAutoRemovePhish  bool
 	PhishingRemoveInterval int
+
+	// TrustedProxies lists the peer addresses and CIDR blocks whose
+	// X-Forwarded-* and CF-* headers are believed. Empty means trust none.
+	TrustedProxies []*net.IPNet
 
 	DisableAnonymousCreate bool
 	DisableRegistration    bool
@@ -160,6 +165,15 @@ func Load() (*Config, error) {
 		c.BlockedDomains = append(c.BlockedDomains, strings.ToLower(b))
 	}
 
+	// TRUSTED_PROXIES accepts addresses and CIDR blocks, e.g.
+	// "10.0.0.0/8,172.18.0.1". "*" trusts any peer, which is only correct when
+	// nothing but a proxy can reach the listener.
+	proxies, err := parseTrustedProxies(envList("TRUSTED_PROXIES", ""))
+	if err != nil {
+		return nil, err
+	}
+	c.TrustedProxies = proxies
+
 	c.DatabaseURL = env("DATABASE_URL", "")
 	if c.DatabaseURL == "" {
 		c.DatabaseURL = "sqlite:///" + filepath.Join(baseDir, "db", "shortener.db")
@@ -188,6 +202,104 @@ func Load() (*Config, error) {
 	}
 
 	return c, nil
+}
+
+// parseTrustedProxies turns the configured entries into networks. A bare
+// address becomes a single-host network so both forms compare the same way.
+func parseTrustedProxies(entries []string) ([]*net.IPNet, error) {
+	var out []*net.IPNet
+	for _, raw := range entries {
+		e := strings.TrimSpace(raw)
+		switch {
+		case e == "":
+			continue
+		case e == "*":
+			// Trust every peer. Correct only when the listener is unreachable
+			// except through a proxy.
+			_, all4, _ := net.ParseCIDR("0.0.0.0/0")
+			_, all6, _ := net.ParseCIDR("::/0")
+			out = append(out, all4, all6)
+		case strings.Contains(e, "/"):
+			_, network, err := net.ParseCIDR(e)
+			if err != nil {
+				return nil, fmt.Errorf("TRUSTED_PROXIES: %q is not a valid CIDR block: %w", e, err)
+			}
+			out = append(out, network)
+		default:
+			ip := net.ParseIP(e)
+			if ip == nil {
+				return nil, fmt.Errorf("TRUSTED_PROXIES: %q is not a valid IP address or CIDR block", e)
+			}
+			bits := 32
+			if ip.To4() == nil {
+				bits = 128
+			}
+			out = append(out, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+		}
+	}
+	return out, nil
+}
+
+// IsTrustedProxy reports whether headers from this peer may be believed.
+func (c *Config) IsTrustedProxy(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	return c.isTrustedIP(strings.TrimSpace(host))
+}
+
+func (c *Config) isTrustedIP(host string) bool {
+	if len(c.TrustedProxies) == 0 {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range c.TrustedProxies {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// ClientIPFromForwarded resolves the originating client address from a chain of
+// proxies. The caller must already have established that the immediate peer is
+// trusted.
+//
+// The typical deployment is Cloudflare -> nginx -> app, which is two hops. In
+// that shape X-Forwarded-For arrives as "<client>, <cloudflare edge>", so the
+// rightmost entry is an edge address, not the visitor: taking it would collapse
+// the whole internet into the handful of Cloudflare IPs serving this zone and
+// make every per-IP rate limit effectively global.
+//
+// Cloudflare's CF-Connecting-IP always names the true client, so it wins when
+// USE_CLOUDFLARE is on. Otherwise the chain is walked right to left, skipping
+// addresses that are themselves configured proxies, and the first address that
+// is not one is the client.
+func (c *Config) ClientIPFromForwarded(xff, cfConnectingIP string) string {
+	if c.UseCloudflare {
+		if ip := strings.TrimSpace(cfConnectingIP); net.ParseIP(ip) != nil {
+			return ip
+		}
+	}
+
+	parts := strings.Split(xff, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		ip := strings.TrimSpace(parts[i])
+		if net.ParseIP(ip) == nil {
+			// A malformed hop means the chain cannot be reasoned about; fall
+			// back to the peer rather than trusting a guess.
+			return ""
+		}
+		if c.isTrustedIP(ip) {
+			continue
+		}
+		return ip
+	}
+	return ""
 }
 
 // CanonicalHost strips any scheme from BaseDomain, leaving just host[:port].

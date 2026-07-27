@@ -19,6 +19,21 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// trustedProxyKey marks a request whose forwarding headers arrived from a
+// proxy listed in TRUSTED_PROXIES.
+type trustedProxyKey struct{}
+
+// WithTrustedProxy marks ctx as having come through a trusted proxy.
+func WithTrustedProxy(ctx context.Context) context.Context {
+	return context.WithValue(ctx, trustedProxyKey{}, true)
+}
+
+// IsFromTrustedProxy reports whether WithTrustedProxy marked this context.
+func IsFromTrustedProxy(ctx context.Context) bool {
+	v, _ := ctx.Value(trustedProxyKey{}).(bool)
+	return v
+}
+
 const (
 	cachePrefix = "geo:"
 	cacheTTL    = 5 * time.Minute
@@ -71,15 +86,13 @@ func New(opts Options) *Resolver {
 	}
 }
 
-// ClientIP returns the caller's address, preferring Cloudflare's header when
-// USE_CLOUDFLARE is set. RemoteAddr is used otherwise; the proxy middleware has
-// already applied X-Forwarded-For by this point.
+// ClientIP returns the caller's address.
+//
+// The proxy middleware has already resolved the real visitor out of the
+// forwarding chain and written it to RemoteAddr, and it only does so for a
+// trusted peer -- so reading RemoteAddr here is both correct and the single
+// place that decision is made.
 func (r *Resolver) ClientIP(req *http.Request) string {
-	if r.useCloudflare {
-		if ip := strings.TrimSpace(req.Header.Get("CF-Connecting-IP")); ip != "" {
-			return ip
-		}
-	}
 	host, _, err := net.SplitHostPort(req.RemoteAddr)
 	if err != nil {
 		return req.RemoteAddr
@@ -98,8 +111,12 @@ func (r *Resolver) Country(ctx context.Context, ip string, req *http.Request) st
 		return v
 	}
 
-	if r.useCloudflare && req != nil {
-		if cc := strings.TrimSpace(req.Header.Get("CF-IPCountry")); cc != "" {
+	if r.useCloudflare && req != nil && IsFromTrustedProxy(req.Context()) {
+		// Validate the shape before it becomes a stored analytics value: the
+		// column is VARCHAR(100), so an over-long header fails the insert on
+		// Postgres, and any value poisons the geo cache for this IP.
+		if cc := strings.TrimSpace(req.Header.Get("CF-IPCountry")); isCountryCode(cc) {
+			cc = strings.ToUpper(cc)
 			r.store(ctx, ip, cc)
 			return cc
 		}
@@ -134,6 +151,21 @@ func (r *Resolver) store(ctx context.Context, ip, country string) {
 	if err := r.cache.Set(ctx, cachePrefix+ip, country, cacheTTL).Err(); err != nil {
 		r.log.Debug("geo cache write failed", "error", err)
 	}
+}
+
+// isCountryCode reports whether s looks like an ISO 3166-1 alpha-2 code, the
+// only thing CF-IPCountry is documented to carry (plus "XX"/"T1").
+func isCountryCode(s string) bool {
+	if len(s) != 2 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i] | 0x20 // lowercase
+		if c < 'a' || c > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 func isLocal(ip string) bool {

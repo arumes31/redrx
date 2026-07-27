@@ -75,7 +75,10 @@
                             <a class="nav-link" href="/dashboard">Dashboard</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="/logout">Logout ({{.User.Username}})</a>
+                            <form action="/logout" method="POST" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                                <button type="submit" class="nav-link btn btn-link">Logout ({{.User.Username}})</button>
+                            </form>
                         </li>
                     {{else}}
                         <li class="nav-item">

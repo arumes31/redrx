@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arumes31/redrx/internal/geo"
 	"github.com/arumes31/redrx/internal/ratelimit"
 	"github.com/arumes31/redrx/internal/session"
 	"github.com/arumes31/redrx/internal/store"
@@ -179,16 +180,31 @@ func (w *sessionWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 // the ProxyFix middleware the previous deployment used.
 func (s *Server) proxyHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			// The rightmost entry is the one the trusted proxy appended; the
-			// leftmost is client-controlled and must not be trusted blindly.
-			parts := strings.Split(xff, ",")
-			if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
-				if _, port, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-					r.RemoteAddr = net.JoinHostPort(ip, port)
-				} else {
-					r.RemoteAddr = ip
-				}
+		// Only believe forwarding headers from a configured proxy. Applied
+		// unconditionally, they let any client choose its own RemoteAddr — and
+		// since that address is the rate-limit key, rotating the header defeats
+		// every limit, including the one protecting login from brute force.
+		if !s.cfg.IsTrustedProxy(r.RemoteAddr) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Mark the request so lower layers know the forwarding headers on it
+		// came from a proxy we configured, not from the client.
+		r = r.WithContext(geo.WithTrustedProxy(r.Context()))
+
+		// Resolve the visitor from the whole chain rather than one entry; see
+		// Config.ClientIPFromForwarded for why the rightmost is wrong behind
+		// Cloudflare.
+		client := s.cfg.ClientIPFromForwarded(
+			r.Header.Get("X-Forwarded-For"),
+			r.Header.Get("CF-Connecting-IP"),
+		)
+		if client != "" {
+			if _, port, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+				r.RemoteAddr = net.JoinHostPort(client, port)
+			} else {
+				r.RemoteAddr = client
 			}
 		}
 		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
@@ -206,7 +222,11 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Content-Security-Policy",
-			"default-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://fonts.gstatic.com data:;")
+			"default-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://fonts.gstatic.com data:; "+
+				// unsafe-inline/unsafe-eval mean this policy will not contain an
+				// injection, but these three are free and independently useful:
+				// no plugins, no <base> hijack, no framing by third parties.
+				"object-src 'none'; base-uri 'self'; frame-ancestors 'self';")
 		h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		h.Set("X-Frame-Options", "SAMEORIGIN")
 		h.Set("X-Content-Type-Options", "nosniff")

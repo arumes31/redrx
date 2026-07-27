@@ -25,6 +25,8 @@ services:
         condition: service_started
     volumes:
       - geoip_data:/usr/share/GeoIP
+    # The shutdown path budgets 20s to drain plus 20s to release resources.
+    stop_grace_period: 45s
     restart: always
 
   redis:

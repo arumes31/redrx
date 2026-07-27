@@ -28,6 +28,29 @@ func (e errorMap) any() bool { return len(e) > 0 }
 // Get returns the message for a field, for template use.
 func (e errorMap) Get(field string) string { return e[field] }
 
+// Any reports whether the form failed validation, for templates.
+func (e errorMap) Any() bool { return len(e) > 0 }
+
+// advancedFields are the ones rendered inside the collapsed "Advanced Options"
+// section on the create form.
+var advancedFields = []string{
+	"custom_code", "code_length", "rotate_targets",
+	"ios_target_url", "android_target_url", "logo_file",
+	"start_date", "end_date",
+}
+
+// AnyAdvanced reports whether an error landed in the collapsed section. The
+// template uses it to expand that section on re-render — otherwise the only
+// message is hidden and the form looks as though pressing submit did nothing.
+func (e errorMap) AnyAdvanced() bool {
+	for _, f := range advancedFields {
+		if _, ok := e[f]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // ShortenForm backs the home page's create-link form. Fields hold the raw
 // submitted strings so an invalid submission can be re-rendered as typed.
 type ShortenForm struct {

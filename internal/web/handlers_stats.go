@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"net/url"
 	"sort"
 	"time"
 
@@ -35,12 +36,22 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Anonymous links have public stats; owned links are private to the owner.
+	owner := false
 	if link.UserID != nil {
 		user := userFrom(r)
 		if user == nil || *link.UserID != user.ID {
 			s.renderError(w, r, http.StatusForbidden)
 			return
 		}
+		owner = true
+	}
+
+	// A password-protected link's stats page shows its destination and rotation
+	// targets, so serving it without the password would route straight around
+	// the gate on the redirect path. Owners still see their own.
+	if !owner && link.IsPasswordProtected() && !sessionFrom(r).IsLinkAuthorized(link.ShortCode) {
+		http.Redirect(w, r, "/link-auth/"+url.PathEscape(link.ShortCode), http.StatusSeeOther)
+		return
 	}
 
 	rangeType := r.URL.Query().Get("range")

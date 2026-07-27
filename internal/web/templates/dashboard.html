@@ -347,7 +347,15 @@ function toggleStatus(code, checkbox) {
         if (!r.ok) throw new Error(`request failed with ${r.status}`);
         return r.json();
     })
-    .then(data => setStatusBadge(checkbox, data.is_enabled))
+    .then(data => {
+        // Drive the badge and the filter's dataset from is_active, not
+        // is_enabled: an expired or not-yet-started link stays inactive however
+        // the switch is set, and labelling it "Active" promises a redirect that
+        // would return 410.
+        setStatusBadge(checkbox, data.is_active);
+        const row = checkbox.closest('tr');
+        if (row) row.dataset.status = data.is_active ? 'active' : 'inactive';
+    })
     .catch(() => {
         // Snapping the switch back is the signal that the change did not take.
         checkbox.checked = !intended;

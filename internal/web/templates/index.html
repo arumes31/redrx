@@ -84,7 +84,7 @@
                                 </a>
                             </div>
 
-                            <div class="collapse" id="advancedOptions">
+                            <div class="collapse{{if $form.Errors.AnyAdvanced}} show{{end}}" id="advancedOptions">
                                 <div class="row">
                                     <div class="col-md-6 form-section">
                                         <label class="form-label" for="custom_code">Custom Code</label>
@@ -120,6 +120,7 @@
                                     <div class="col-md-12">
                                         <label class="form-label" for="password">Password</label>
                                         <input class="form-control" id="password" name="password" type="password" placeholder="Optional" autocomplete="new-password">
+                                        {{if $form.Errors.Any}}<div class="form-text text-warning">Re-enter the password &mdash; browsers do not keep password fields across a failed submission, and the link would otherwise be created unprotected.</div>{{end}}
                                     </div>
                                 </div>
                                 <div class="row form-section">
@@ -152,11 +153,18 @@
                                     <div class="col-md-12 mt-2">
                                         <label class="form-label" for="logo_file">QR Logo</label>
                                         <input class="form-control" id="logo_file" name="logo_file" type="file" accept=".png,.jpg,.jpeg">
+                                        <div class="form-text">PNG or JPG, up to 1 MB and 2048&times;2048.</div>
+                                        {{if $form.Errors.Any}}<div class="form-text text-warning">Re-select the logo &mdash; file inputs cannot be restored after a failed submission.</div>{{end}}
                                         {{with $form.Errors.Get "logo_file"}}<div class="text-danger small">{{.}}</div>{{end}}
                                     </div>
                                 </div>
                             </div>
 
+                            {{if $form.Errors.Any}}
+                            <div class="alert alert-danger mt-3" role="alert">
+                                Please correct the highlighted fields and submit again.
+                            </div>
+                            {{end}}
                             <button type="submit" class="btn btn-shorten btn-lg w-100 mt-3">Shorten URL</button>
                         </form>
 

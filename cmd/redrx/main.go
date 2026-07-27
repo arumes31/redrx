@@ -207,6 +207,34 @@ func maintainBlocklist(ctx context.Context, cfg *config.Config, checker *safety.
 		}
 	}
 
+	// Retry the first load with backoff. Until the list is on disk every URL is
+	// rejected, so a brief upstream blip at container start would otherwise cost
+	// a full interval — 24 hours by default — of the service refusing every
+	// redirect and every new link.
+	backoff := 5 * time.Second
+	for attempt := 1; ; attempt++ {
+		if err := checker.Refresh(ctx); err == nil {
+			break
+		} else if attempt >= 8 {
+			log.Error("giving up on the initial phishing list download; "+
+				"every URL will be rejected until the next scheduled refresh",
+				"attempts", attempt, "error", err)
+			break
+		} else {
+			log.Warn("phishing list download failed, retrying",
+				"attempt", attempt, "retry_in", backoff, "error", err)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < 2*time.Minute {
+			backoff *= 2
+		}
+	}
+
 	run()
 
 	ticker := time.NewTicker(interval)

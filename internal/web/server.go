@@ -139,7 +139,8 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("POST /login", s.limit("login", s.limits.Login, s.handleLogin))
 	mux.Handle("GET /register", s.limit("register", s.limits.Register, s.handleRegisterForm))
 	mux.Handle("POST /register", s.limit("register", s.limits.Register, s.handleRegister))
-	mux.Handle("GET /logout", s.wrap(s.handleLogout))
+	// POST only: a GET logout is triggered by any third-party <img> tag, and by
+	// link prefetchers. The nav uses a form.
 	mux.Handle("POST /logout", s.wrap(s.handleLogout))
 
 	// Dashboard and link management.
@@ -259,15 +260,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	checks := map[string]string{}
 
 	if err := s.db.PingContext(ctx); err != nil {
+		// The message is logged, not returned: driver errors routinely name the
+		// host, port, database and user, and this endpoint is unauthenticated.
+		s.log.Error("health check: database unreachable", "error", err)
 		health["status"] = "unhealthy"
-		checks["database"] = "error: " + err.Error()
+		checks["database"] = "error"
 	} else {
 		checks["database"] = "ok"
 	}
 
 	if backend := s.limiter.Backend(); backend != nil {
 		if err := backend.Ping(ctx); err != nil {
-			checks["ratelimit"] = "error: " + err.Error()
+			s.log.Warn("health check: rate limit backend unreachable", "error", err)
+			checks["ratelimit"] = "error"
 			if health["status"] == "healthy" {
 				health["status"] = "degraded"
 			}

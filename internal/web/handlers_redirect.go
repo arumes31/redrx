@@ -190,9 +190,11 @@ func (s *Server) handleQR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fall back to the instance defaults for links created before the colours
+	// were stored, and for anyone who left them alone.
 	png, err := qr.PNG(s.cfg.ShortURL(link.ShortCode), qr.Options{
-		Foreground: s.cfg.DefaultQRColor,
-		Background: s.cfg.DefaultQRBG,
+		Foreground: firstNonEmpty(link.QRColor, s.cfg.DefaultQRColor),
+		Background: firstNonEmpty(link.QRBackground, s.cfg.DefaultQRBG),
 	})
 	if err != nil {
 		s.log.Error("render qr", "code", code, "error", err)

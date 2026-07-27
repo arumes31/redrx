@@ -164,7 +164,23 @@ func IsUniqueViolation(err error) bool {
 	return false
 }
 
+// isDuplicateColumn reports whether err says the column already exists, which
+// is what a concurrent migration by another instance looks like.
+func isDuplicateColumn(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == pgDuplicateColumn
+	}
+	// SQLite reports this only as message text.
+	return strings.Contains(strings.ToLower(err.Error()), "duplicate column name")
+}
+
 const (
+	// 42701 is duplicate_column in the SQLSTATE table.
+	pgDuplicateColumn = "42701"
 	// 23505 is unique_violation in the SQLSTATE table.
 	pgUniqueViolation = "23505"
 	// Extended SQLite result codes for the two constraints that can reject a
