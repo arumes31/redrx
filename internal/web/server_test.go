@@ -576,6 +576,31 @@ func TestTimeBucketsAreUnique(t *testing.T) {
 	}
 }
 
+// TestTimeBucketsCutoffAlignsWithFirstLabel is the assertion that actually
+// catches the double count. Unique labels are not enough: the labels can be
+// distinct while the cutoff still admits an extra partial hour whose
+// hour-of-day collides with the current hour, so that one bucket carries two
+// hours of clicks and inflates both the total and the daily average.
+func TestTimeBucketsCutoffAlignsWithFirstLabel(t *testing.T) {
+	now := time.Date(2026, 5, 4, 15, 37, 0, 0, time.UTC)
+	labels, cutoff, hourly := timeBuckets("24h", now)
+
+	if !hourly {
+		t.Fatal("24h range should use hourly buckets")
+	}
+	if got := cutoff.Format("15:00"); got != labels[0] {
+		t.Errorf("cutoff is at %s but the first label is %s — clicks before the "+
+			"first labelled hour land in a later bucket", got, labels[0])
+	}
+	if cutoff.Minute() != 0 || cutoff.Second() != 0 || cutoff.Nanosecond() != 0 {
+		t.Errorf("cutoff %v is mid-hour; it must be the start of an hour", cutoff)
+	}
+	// The window must cover exactly the 24 labelled hours.
+	if span := now.Sub(cutoff); span <= 23*time.Hour || span > 24*time.Hour {
+		t.Errorf("window is %v, want more than 23h and at most 24h", span)
+	}
+}
+
 func TestTruncateKeepsRunesIntact(t *testing.T) {
 	// "€" is three bytes, so a byte-wise cut at 4 would split the second one.
 	if got := truncate("a€€", 4); !utf8.ValidString(got) {

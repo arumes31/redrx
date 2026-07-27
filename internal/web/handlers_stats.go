@@ -149,10 +149,12 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 func timeBuckets(rangeType string, now time.Time) (labels []string, cutoff time.Time, hourly bool) {
 	switch rangeType {
 	case "24h":
-		cutoff = now.Add(-24 * time.Hour)
-		// Exactly 24 hourly labels. Starting at -24h would repeat the current
-		// hour at both ends, and since the labels are hour-of-day only, the two
-		// would collide on one bucket and count its clicks twice in the total.
+		// The cutoff is the start of the oldest labelled hour, not simply 24h
+		// ago. Labels are hour-of-day only, so a cutoff mid-hour would let the
+		// leading partial hour fall under the same label as the current hour --
+		// one bucket holding two hours' clicks, double-counted in the total and
+		// so in the daily average too.
+		cutoff = now.Truncate(time.Hour).Add(-23 * time.Hour)
 		for i := 23; i >= 0; i-- {
 			labels = append(labels, now.Add(-time.Duration(i)*time.Hour).Format("15:00"))
 		}

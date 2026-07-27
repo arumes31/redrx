@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -359,8 +360,10 @@ func decodeInt(raw json.RawMessage) (int, error) {
 	}
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		var parsed int
-		if _, err := fmt.Sscanf(strings.TrimSpace(s), "%d", &parsed); err == nil {
+		// Atoi, not Sscanf: Sscanf stops at the first non-digit and reports
+		// success, so "12abc" became 12 and "3.9" became 3, where the previous
+		// API's int() raised and returned 400.
+		if parsed, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
 			return parsed, nil
 		}
 	}

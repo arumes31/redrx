@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/arumes31/redrx/internal/qr"
 	"github.com/arumes31/redrx/internal/security"
@@ -79,6 +80,15 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		form.Errors.add("android_target_url", "Android target URL is blocked or invalid.")
 		s.render(w, r, http.StatusOK, "index.html", data)
 		return
+	}
+
+	// An empty expiry field means "not specified", not "never". Without this,
+	// clearing the box produced a nil ExpiresAt and so a permanent link — which
+	// is exactly what the "Please log in to create permanent links" check on the
+	// explicit 0 exists to prevent.
+	if in.ExpiresAt == nil && !in.ExpiryNever && s.cfg.ExpiryHours > 0 {
+		expires := nowUTC().Add(time.Duration(s.cfg.ExpiryHours) * time.Hour)
+		in.ExpiresAt = &expires
 	}
 
 	code, err := s.resolveShortCode(r, in.CustomCode, in.CodeLength)

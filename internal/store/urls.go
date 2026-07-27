@@ -200,8 +200,12 @@ func (d *DB) DashboardStats(ctx context.Context, userID int64) (*DashboardStats,
 		return nil, err
 	}
 
+	// COALESCE to match scanURL, which reads a NULL is_enabled as true. Migrate
+	// adds the column to an older table with no default, so every pre-existing
+	// row is NULL — and `NULL = TRUE` is unknown, which would report 0 active
+	// links while every row in the table below showed as enabled.
 	if err := d.QueryRow(ctx,
-		"SELECT COUNT(*) FROM urls WHERE user_id = ? AND is_enabled = ?", userID, true,
+		"SELECT COUNT(*) FROM urls WHERE user_id = ? AND COALESCE(is_enabled, ?) = ?", userID, true, true,
 	).Scan(&s.ActiveLinks); err != nil {
 		return nil, err
 	}

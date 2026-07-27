@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -191,6 +192,13 @@ func maintainBlocklist(ctx context.Context, cfg *config.Config, checker *safety.
 	run := func() {
 		if err := checker.Refresh(ctx); err != nil {
 			log.Warn("phishing list refresh failed", "error", err)
+			// Do not sweep on a stale or absent list: the sweep deletes rows,
+			// and acting on a list we could not refresh risks deleting on the
+			// basis of data we do not have.
+			if cfg.EnableAutoRemovePhish {
+				log.Warn("skipping phishing sweep because the list could not be refreshed")
+			}
+			return
 		}
 		if cfg.EnableAutoRemovePhish {
 			if err := sweepBlockedLinks(ctx, checker, db, log); err != nil {
@@ -215,16 +223,47 @@ func maintainBlocklist(ctx context.Context, cfg *config.Config, checker *safety.
 
 // sweepBlockedLinks deletes links whose destination or any rotation target is
 // now on the blocklist.
+//
+// It deletes only on a positive blocklist match. IsSafeURL cannot be used here:
+// it reports false both for "this domain is blocked" and for "the blocklist
+// could not be consulted", and the second collapses into the first. Serving
+// traffic that way is the correct fail-closed choice — deleting rows on it is
+// not. An unreadable list would otherwise mean every URL is unsafe and this
+// function would empty the links table, which is exactly the state a fresh
+// container is in before its first feed download succeeds.
 func sweepBlockedLinks(ctx context.Context, checker *safety.Checker, db *store.DB, log *slog.Logger) error {
+	// blocked reports a definite match. An error means the list is unavailable,
+	// which aborts the sweep rather than condemning the row.
+	blocked := func(target string) (bool, error) {
+		// A row whose URL does not parse cannot match a domain. Skip it instead
+		// of treating "unparseable" as "blocked".
+		if !safety.IsAbsoluteHTTPURL(target) {
+			return false, nil
+		}
+		ok, err := checker.CheckURL(target)
+		if err != nil {
+			return false, err
+		}
+		return !ok, nil
+	}
+
 	var doomed []int64
 
 	err := db.EachURL(ctx, func(u *store.URL) error {
-		if !checker.IsSafeURL(u.LongURL) {
+		hit, err := blocked(u.LongURL)
+		if err != nil {
+			return err
+		}
+		if hit {
 			doomed = append(doomed, u.ID)
 			return nil
 		}
 		for _, t := range u.RotateTargets {
-			if !checker.IsSafeURL(t) {
+			hit, err := blocked(t)
+			if err != nil {
+				return err
+			}
+			if hit {
 				doomed = append(doomed, u.ID)
 				return nil
 			}
@@ -232,7 +271,7 @@ func sweepBlockedLinks(ctx context.Context, checker *safety.Checker, db *store.D
 		return nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("sweep aborted without deleting anything: %w", err)
 	}
 
 	for _, id := range doomed {

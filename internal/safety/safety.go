@@ -113,6 +113,14 @@ func (c *Checker) CheckURL(target string) (bool, error) {
 	return !matchesDomainOrParent(host, domains), nil
 }
 
+// IsAbsoluteHTTPURL reports whether target is an absolute http(s) URL with a
+// host. CheckURL answers false for such a URL and for a blocked one alike, so
+// callers that act destructively on "unsafe" need this to tell them apart.
+func IsAbsoluteHTTPURL(target string) bool {
+	_, ok := parseHost(target)
+	return ok
+}
+
 // parseHost extracts the lowercase hostname, rejecting anything that is not an
 // absolute http(s) URL.
 func parseHost(target string) (string, bool) {
