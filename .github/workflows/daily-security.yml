@@ -13,48 +13,12 @@ permissions:
 env:
   GO_VERSION: '1.26'
 
+# CodeQL is not defined here. The repository uses CodeQL *default setup*
+# (Settings > Code security), configured for go and actions, and GitHub refuses
+# to process an advanced configuration while the default one is active — an
+# advanced job in this file would only ever be skipped.
+
 jobs:
-  # NOTE: this job only runs when CodeQL *default setup* is disabled for the
-  # repository. GitHub refuses to process an advanced configuration while the
-  # default one is active, and skips this workflow instead.
-  codeql:
-    name: CodeQL
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [ 'go', 'actions' ]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Go
-        if: matrix.language == 'go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          check-latest: true
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
-        with:
-          languages: ${{ matrix.language }}
-          queries: security-extended
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
-        with:
-          category: "/language:${{ matrix.language }}"
-
   security-scan:
     name: Vulnerability and SAST
     runs-on: ubuntu-latest
