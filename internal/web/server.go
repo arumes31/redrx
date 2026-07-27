@@ -159,9 +159,13 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("GET /robots.txt", s.wrap(s.handleRobots))
 	mux.Handle("GET /sitemap.xml", s.wrap(s.handleSitemap))
 
-	// Operations.
-	mux.Handle("GET /health", s.limit("health", s.limits.Health, s.handleHealth))
-	mux.Handle("GET /metrics", s.limit("metrics", s.limits.Metrics, s.handleMetrics))
+	// Operations. Deliberately unlimited: a Kubernetes liveness+readiness pair
+	// at the default 10s interval is 12 requests a minute, which the 10/min
+	// default would 429 into a CrashLoopBackOff, and a scrape that drops
+	// metrics under load drops them exactly when they are needed. These are
+	// also exempted from the canonical-domain redirect below.
+	mux.Handle("GET /health", s.wrap(s.handleHealth))
+	mux.Handle("GET /metrics", s.wrap(s.handleMetrics))
 
 	// JSON API.
 	mux.Handle("POST /api/v1/shorten", s.limit("api", s.limits.API, s.handleAPIShorten))

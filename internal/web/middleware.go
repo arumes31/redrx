@@ -222,8 +222,19 @@ func (s *Server) canonicalDomain(next http.Handler) http.Handler {
 		base := s.cfg.CanonicalHost()
 		host := r.Host
 
+		// Probes and scrapes address the pod or container directly, so their
+		// Host is never canonical. Redirecting them means kubelet sees a 301,
+		// treats anything under 400 as success, and never reaches handleHealth
+		// — liveness passes unconditionally even with the database down.
+		if r.URL.Path == "/health" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Exact matches, not prefixes: "localhost.attacker.com" starts with
+		// "localhost".
 		if s.cfg.Debug || base == "" || host == base ||
-			strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") {
+			isLoopbackHost(host) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -235,16 +246,44 @@ func (s *Server) canonicalDomain(next http.Handler) http.Handler {
 	})
 }
 
+// isLoopbackHost reports whether a Host header addresses this machine. It
+// matches exactly, with or without a port, so a registered domain that merely
+// begins with "localhost" does not slip through.
+func isLoopbackHost(host string) bool {
+	name, _, err := net.SplitHostPort(host)
+	if err != nil {
+		name = host
+	}
+	switch strings.ToLower(name) {
+	case "localhost", "127.0.0.1", "::1", "[::1]":
+		return true
+	}
+	return false
+}
+
 // instrument records request counts and latency.
 func (s *Server) instrument(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(rec, r)
 
-		route := routeLabel(r)
-		s.metrics.requests.WithLabelValues(r.Method, route, statusClass(rec.status)).Inc()
-		s.metrics.duration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
+		// The short-code router runs handlers on a *copy* of the request made by
+		// WithContext, so a label it stored in that copy's context would never
+		// be visible here. Passing a pointer through the context means both
+		// requests share the same cell and the label survives the copy.
+		label := &routeName{}
+		r = r.WithContext(context.WithValue(r.Context(), ctxRoute, label))
+
+		// Deferred, so a panicking request is still counted. recoverPanics sits
+		// outside this middleware, so without the defer the one class of failure
+		// most worth alerting on is the one missing from the metrics.
+		defer func() {
+			route := routeLabel(r, label)
+			s.metrics.requests.WithLabelValues(r.Method, route, statusClass(rec.status)).Inc()
+			s.metrics.duration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
+		}()
+
+		next.ServeHTTP(rec, r)
 	})
 }
 
@@ -284,11 +323,14 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter 
 
 // routeLabel keeps metric cardinality bounded by reporting the matched pattern
 // rather than the raw path, which contains user-chosen short codes.
-func routeLabel(r *http.Request) string {
-	// The short-code router sets its own label, since its requests all match
-	// the catch-all pattern.
-	if v, ok := r.Context().Value(ctxRoute).(string); ok && v != "" {
-		return v
+// routeName is the shared cell the short-code router writes its label into.
+type routeName struct{ value string }
+
+func routeLabel(r *http.Request, label *routeName) string {
+	// The short-code router names its own routes, since its requests all match
+	// the catch-all pattern and would otherwise all report as "/".
+	if label != nil && label.value != "" {
+		return label.value
 	}
 	if p := r.Pattern; p != "" {
 		return p

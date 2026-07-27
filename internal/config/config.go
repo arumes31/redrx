@@ -105,6 +105,10 @@ func envList(key, def string) []string {
 	return out
 }
 
+// placeholderBaseDomain is the example value shipped in the dockerfile; it is
+// never a host anyone actually serves from.
+const placeholderBaseDomain = "short.example.com"
+
 // Load reads configuration from the environment and validates it.
 func Load() (*Config, error) {
 	baseDir, err := os.Getwd()
@@ -116,7 +120,7 @@ func Load() (*Config, error) {
 		Debug:         envBool("FLASK_DEBUG", false) || envBool("REDRX_DEBUG", false),
 		MaxUploadSize: 1 * 1024 * 1024,
 
-		BaseDomain:      env("BASE_DOMAIN", "short.example.com"),
+		BaseDomain:      env("BASE_DOMAIN", placeholderBaseDomain),
 		ExpiryHours:     envInt("EXPIRY_HOURS", 24),
 		ShortCodeLength: envInt("SHORT_CODE_LENGTH", 6),
 		DefaultQRColor:  env("DEFAULT_QR_COLOR", "black"),
@@ -173,6 +177,15 @@ func Load() (*Config, error) {
 		secret = "dev-secret-key-do-not-use-in-production" // #nosec G101 -- documented insecure dev default
 	}
 	c.SecretKey = []byte(secret)
+
+	// The dockerfile bakes in the placeholder and the ghcr compose file passes
+	// ${BASE_DOMAIN}, which interpolates to empty when unset. Left unnoticed,
+	// canonicalDomain 301s every short link to a domain the operator does not
+	// own — and browsers and CDNs cache a 301, so it outlives the fix.
+	if !c.Debug && c.BaseDomain == placeholderBaseDomain {
+		return nil, errors.New("BASE_DOMAIN is still " + placeholderBaseDomain +
+			"; set it to the host this instance serves, or every link will redirect off-site")
+	}
 
 	return c, nil
 }

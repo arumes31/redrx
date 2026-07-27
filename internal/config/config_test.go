@@ -13,7 +13,7 @@ func clearEnv(t *testing.T) {
 		"SECRET_KEY", "FLASK_DEBUG", "REDRX_DEBUG", "DATABASE_URL", "BASE_DOMAIN",
 		"BLOCKED_DOMAINS", "EXPIRY_HOURS", "SHORT_CODE_LENGTH", "ENABLE_PHISHING_CHECK",
 		"DISABLE_REGISTRATION", "RATELIMIT_DEFAULT", "RATELIMIT_STORAGE_URL", "LISTEN_ADDR",
-		"USE_CLOUDFLARE", "ENABLE_SEO", "PHISHING_LIST_URLS",
+		"USE_CLOUDFLARE", "ENABLE_SEO", "PHISHING_LIST_URLS", "MAXMIND_LICENSE_KEY",
 	} {
 		t.Setenv(k, "")
 		_ = k
@@ -76,6 +76,9 @@ func TestLegacyFlaskDebugStillWorks(t *testing.T) {
 
 func TestDefaultsMatchPreviousDeployment(t *testing.T) {
 	clearEnv(t)
+	// The BASE_DOMAIN default under test is the placeholder, which Load refuses
+	// outside debug, so observe it in debug mode.
+	t.Setenv("REDRX_DEBUG", "true")
 	t.Setenv("SECRET_KEY", "a-key")
 
 	cfg, err := Load()
@@ -121,6 +124,9 @@ func TestDefaultsMatchPreviousDeployment(t *testing.T) {
 // when the operator has not defined it.
 func TestEmptyEnvVarFallsBackToDefault(t *testing.T) {
 	clearEnv(t)
+	// The BASE_DOMAIN default under test is the placeholder, which Load refuses
+	// outside debug, so observe it in debug mode.
+	t.Setenv("REDRX_DEBUG", "true")
 	t.Setenv("SECRET_KEY", "a-key")
 	t.Setenv("BASE_DOMAIN", "")
 	t.Setenv("RATELIMIT_DEFAULT", "   ")
@@ -139,6 +145,8 @@ func TestEmptyEnvVarFallsBackToDefault(t *testing.T) {
 
 func TestBlockedDomainsAreNormalised(t *testing.T) {
 	clearEnv(t)
+	// Load refuses to start on the placeholder BASE_DOMAIN outside debug.
+	t.Setenv("BASE_DOMAIN", "links.example.org")
 	t.Setenv("SECRET_KEY", "a-key")
 	t.Setenv("BLOCKED_DOMAINS", " Evil.COM , spam.example ,, ")
 
@@ -177,5 +185,31 @@ func TestShortURL(t *testing.T) {
 	c := &Config{BaseDomain: "https://short.example.com"}
 	if got := c.ShortURL("ABC123"); got != "https://short.example.com/ABC123" {
 		t.Errorf("ShortURL = %q", got)
+	}
+}
+
+// TestPlaceholderBaseDomainRejectedInProduction guards against shipping the
+// example host. canonicalDomain 301s every request to BASE_DOMAIN, so booting
+// with the placeholder sends every short link to a domain the operator does not
+// control — and a 301 is cached, so it outlives the misconfiguration.
+func TestPlaceholderBaseDomainRejectedInProduction(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("SECRET_KEY", "a-real-key")
+	t.Setenv("REDRX_DEBUG", "false")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load accepted the placeholder BASE_DOMAIN in production mode")
+	} else if !strings.Contains(err.Error(), "BASE_DOMAIN") {
+		t.Errorf("error = %v, want it to name BASE_DOMAIN", err)
+	}
+
+	// A real host boots.
+	t.Setenv("BASE_DOMAIN", "links.example.org")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load with a real BASE_DOMAIN: %v", err)
+	}
+	if cfg.BaseDomain != "links.example.org" {
+		t.Errorf("BaseDomain = %q", cfg.BaseDomain)
 	}
 }

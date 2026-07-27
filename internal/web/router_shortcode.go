@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"net/http"
 	"strings"
 )
@@ -44,7 +43,12 @@ func (s *Server) shortCodeRouter() http.Handler {
 // attached, standing in for the PathValue and Pattern a ServeMux match sets.
 func (s *Server) dispatch(w http.ResponseWriter, r *http.Request, h http.Handler, code, label string) {
 	r.SetPathValue("code", code)
-	r = r.WithContext(context.WithValue(r.Context(), ctxRoute, label))
+	// Write through the pointer instrument put in the context. Storing the
+	// label as a context value here would be invisible to instrument, which
+	// holds the request from before this call.
+	if name, ok := r.Context().Value(ctxRoute).(*routeName); ok {
+		name.value = label
+	}
 	h.ServeHTTP(w, r)
 }
 
