@@ -40,10 +40,11 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
+      # Installed rather than run through securego/gosec; see security-analysis.yml.
       - name: Run gosec
-        uses: securego/gosec@9e75c0576c9878035d4221392108d458abe10fc3 # v2.28.0
-        with:
-          args: -severity medium -fmt sarif -out gosec.sarif ./...
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
+          gosec -severity medium -fmt sarif -out gosec.sarif -stdout -verbose=text ./...
 
       - name: Upload gosec SARIF
         if: always()

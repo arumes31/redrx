@@ -114,10 +114,16 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
 
+      # Installed rather than run through securego/gosec: that action executes
+      # in its own container with its own Go toolchain, which cannot build a
+      # module requiring a newer Go than the image ships. Installing at a pinned
+      # version runs the same binary against the toolchain set up above, and
+      # `go install pkg@version` is checksum-verified against the Go module
+      # proxy, so the supply chain is no weaker than the pinned image was.
       - name: Run gosec
-        uses: securego/gosec@9e75c0576c9878035d4221392108d458abe10fc3 # v2.28.0
-        with:
-          args: -severity medium -fmt sarif -out gosec.sarif ./...
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
+          gosec -severity medium -fmt sarif -out gosec.sarif -stdout -verbose=text ./...
 
       - name: Upload gosec SARIF
         if: always()
@@ -221,6 +227,10 @@ jobs:
   secret-scan:
     name: Secret Scanning
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # gitleaks posts its findings as a pull-request comment.
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
