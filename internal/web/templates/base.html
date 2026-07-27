@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {{if .Config.EnableSEO}}
+    <meta name="description" content="{{block "meta_description" .}}Redrx - A fast, secure, and free URL shortener with detailed statistics, QR codes, and custom links. Shorten your long URLs easily.{{end}}">
+    <meta name="keywords" content="{{block "meta_keywords" .}}URL shortener, link shortener, redrx, custom links, QR code generator, link analytics{{end}}">
+    <meta name="author" content="Redrx">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{.RequestURL}}">
+    <meta property="og:title" content="{{template "title" .}}">
+    <meta property="og:description" content="{{template "meta_description" .}}">
+    <meta property="og:image" content="https://{{.Config.CanonicalHost}}/static/img/logo.png">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="{{.RequestURL}}">
+    <meta property="twitter:title" content="{{template "title" .}}">
+    <meta property="twitter:description" content="{{template "meta_description" .}}">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {{block "structured_data" .}}
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Redrx",
+      "url": "https://{{.Config.CanonicalHost}}/",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://{{.Config.CanonicalHost}}/?q={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+    {{end}}
+    </script>
+    {{end}}
+
+    <title>{{block "title" .}}Redrx | Fast &amp; Secure URL Shortener{{end}}</title>
+    <link rel="icon" type="image/png" href="/static/img/logo.png">
+    <link href="/static/css/lib/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/fontawesome.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    {{block "head" .}}{{end}}
+</head>
+<body data-animation="{{block "animation" .}}circles{{end}}">
+    <canvas id="canvas"></canvas>
+
+    <nav class="navbar navbar-expand-lg navbar-dark bg-transparent">
+        <div class="container">
+            <a class="navbar-brand fw-bold d-flex align-items-center" href="/">
+                <img src="/static/img/logo.png" alt="Redrx Logo - Fast and Secure URL Shortener" width="30" height="30" class="me-2">
+                Redrx
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/api-docs">API</a>
+                    </li>
+                    {{if .IsAuthenticated}}
+                        <li class="nav-item">
+                            <a class="nav-link" href="/dashboard">Dashboard</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/logout">Logout ({{.User.Username}})</a>
+                        </li>
+                    {{else}}
+                        <li class="nav-item">
+                            <a class="nav-link" href="/login"><i class="fas fa-sign-in-alt me-1"></i> Login</a>
+                        </li>
+                        {{if not .Config.DisableRegistration}}
+                        <li class="nav-item">
+                            <a class="nav-link" href="/register"><i class="fas fa-user-plus me-1"></i> Register</a>
+                        </li>
+                        {{end}}
+                    {{end}}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        {{if .Flashes}}
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                {{range .Flashes}}
+                <div class="alert alert-{{.Category}} alert-dismissible fade show" role="alert">
+                    {{.Message}}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+
+        {{block "content" .}}{{end}}
+    </div>
+
+    <footer class="footer mt-auto py-3 bg-transparent">
+        <div class="container text-center">
+            <a href="/data-usage" class="text-light opacity-50 text-decoration-none small me-3">Data Usage</a>
+            <a href="/terms" class="text-light opacity-50 text-decoration-none small me-3">Terms</a>
+            <a href="https://github.com/arumes31/redrx" target="_blank" rel="noopener" class="text-light opacity-50 text-decoration-none small">
+                <i class="fab fa-github me-1"></i> GitHub
+            </a>
+        </div>
+    </footer>
+
+    <script src="/static/js/lib/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/main.js"></script>
+    {{block "scripts" .}}{{end}}
+</body>
+</html>

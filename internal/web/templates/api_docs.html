@@ -1,0 +1,237 @@
+{{define "title"}}Redrx API Documentation - Developer Guide{{end}}
+
+{{define "meta_description"}}Complete API documentation for Redrx URL shortener. Learn how to programmatically shorten links, retrieve stats, and manage URLs using our REST API.{{end}}
+
+{{define "structured_data"}}
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Redrx API Documentation",
+  "description": "Developer guide for integrating Redrx URL shortening services.",
+  "articleSection": "API Reference",
+  "author": {
+      "@type": "Organization",
+      "name": "Redrx"
+  }
+}
+{{end}}
+
+{{define "content"}}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <h1 class="text-white mb-4"><i class="fas fa-plug me-2 text-info"></i>API Documentation</h1>
+            <div class="card bg-dark border-secondary">
+                <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                    <h2 class="h5 mb-0 text-white">Developer Guide</h2>
+                    <span class="badge bg-info text-dark">v1.0</span>
+                </div>
+                <div class="card-body">
+                    <p class="lead text-light">Integrate Redrx directly into your applications.</p>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-key me-2"></i><strong>Authentication:</strong> 
+                        Include your API key in the <code>X-API-KEY</code> header. You can find your key in the Dashboard.
+                    </div>
+
+                    <h2 class="mt-4 text-info h4">1. Shorten a URL</h2>
+                    <p class="text-muted">Create a new shortened link with optional customization.</p>
+                    
+                    <div class="card bg-black border-secondary mb-4">
+                        <div class="card-header border-secondary p-2">
+                            <span class="badge bg-success me-2">POST</span> <code class="text-light">/api/v1/shorten</code>
+                        </div>
+                        <div class="card-body p-0">
+<pre class="m-0 p-3 text-light" style="overflow-x: auto;"><code>curl -X POST https://{{.Config.CanonicalHost}}/api/v1/shorten \
+  -H "X-API-KEY: your_api_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "long_url": "https://example.com/my-long-link",
+    "custom_code": "my-code",
+    "code_length": 6,
+    "preview_mode": true,
+    "stats_enabled": true,
+    "rotate_targets": ["https://alt1.com", "https://alt2.com"],
+    "ios_target_url": "https://apps.apple.com/app/id123",
+    "android_target_url": "https://play.google.com/store/apps/details?id=com.example",
+    "password": "secret-password",
+    "expiry_hours": 24,
+    "start_at": "2026-06-05T22:00:00Z",
+    "end_at": "2026-06-30T23:59:59Z"
+}'</code></pre>
+                        </div>
+                    </div>
+
+                    <h3 class="text-light mt-4 mb-3 h5"><i class="fas fa-list-ul text-info me-2"></i>Request Parameters</h3>
+                    <div class="table-responsive mb-4">
+                        <table class="table table-dark table-hover border-secondary align-middle">
+                            <thead>
+                                <tr class="text-info">
+                                    <th scope="col" style="width: 20%;">Field</th>
+                                    <th scope="col" style="width: 15%;">Type</th>
+                                    <th scope="col" style="width: 15%;">Default</th>
+                                    <th scope="col">Description & Constraints</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code class="text-warning">long_url</code></td>
+                                    <td><span class="badge bg-danger">Required</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>The original long URL to shorten. Must be a valid and safe destination URL.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">custom_code</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>A custom alias for the short code. Must be <strong>3 to 20 characters</strong> long and contain only alphanumeric characters, hyphens, or underscores.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">code_length</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">integer</code></td>
+                                    <td><code>6</code></td>
+                                    <td>Length of the auto-generated short code. Must be between <strong>3 and 20</strong>.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">preview_mode</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">boolean</code></td>
+                                    <td><code>true</code></td>
+                                    <td>Enable preview mode. If <code>true</code>, users see a preview page before redirecting. Accepts boolean value or string representations (<code>true</code>/<code>false</code>, <code>1</code>/<code>0</code>, <code>yes</code>/<code>no</code>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">stats_enabled</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">boolean</code></td>
+                                    <td><code>true</code></td>
+                                    <td>Enable stats collection for this link. If <code>true</code>, click analytics are recorded. Accepts boolean value or string representations.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">rotate_targets</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">array[string]</code></td>
+                                    <td><code>[]</code></td>
+                                    <td>A list of fallback/alternate redirect destination URLs. Max <strong>50 target URLs</strong>. The short link will dynamically rotate through these target URLs.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">ios_target_url</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>A special redirect URL for iOS devices. Must be a valid and safe URL.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">android_target_url</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>A special redirect URL for Android devices. Must be a valid and safe URL.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">password</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>Password protection for the short link. If set, visitors must enter this password to unlock the destination URL.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">expiry_hours</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">integer</code></td>
+                                    <td><code>24</code></td>
+                                    <td>Relative expiration time in hours from creation. Must be between <code>0</code> and <code>876,000</code>. Set to <code>0</code> for permanent links (requires authentication).</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">start_at</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>The scheduling activation date and time in <strong>ISO 8601 format</strong> (e.g. <code>2026-06-05T22:00:00Z</code>). The link remains inactive until this time.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">end_at</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">string</code></td>
+                                    <td>—</td>
+                                    <td>The scheduling expiration date and time in <strong>ISO 8601 format</strong> (e.g. <code>2026-06-30T23:59:59Z</code>). The link becomes inactive after this time.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 class="text-light mt-3 h5">Response</h3>
+                    <div class="card bg-black border-secondary mb-4">
+                        <div class="card-body p-0">
+<pre class="m-0 p-3 text-success" style="overflow-x: auto;"><code>{
+  "short_code": "my-code",
+  "short_url": "https://{{.Config.CanonicalHost}}/my-code",
+  "long_url": "https://example.com/my-long-link",
+  "rotate_targets": ["https://alt1.com", "https://alt2.com"],
+  "ios_target_url": "https://apps.apple.com/app/id123",
+  "android_target_url": "https://play.google.com/store/apps/details?id=com.example",
+  "expires_at": "2026-06-06T22:00:00+00:00",
+  "start_at": "2026-06-05T22:00:00+00:00",
+  "end_at": "2026-06-30T23:59:59+00:00",
+  "password_protected": true,
+  "preview_mode": true,
+  "stats_enabled": true
+}</code></pre>
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary my-5">
+
+                    <h2 class="mt-4 text-info h4">2. Get Link Info</h2>
+                    <p class="text-muted">Retrieve details and statistics for a specific link.</p>
+                    
+                    <div class="card bg-black border-secondary mb-4">
+                        <div class="card-header border-secondary p-2">
+                            <span class="badge bg-primary me-2">GET</span> <code class="text-light">/api/v1/&lt;short_code&gt;</code>
+                        </div>
+                        <div class="card-body p-0">
+<pre class="m-0 p-3 text-light" style="overflow-x: auto;"><code>curl -X GET https://{{.Config.CanonicalHost}}/api/v1/my-code \
+  -H "X-API-KEY: your_api_key_here"</code></pre>
+                        </div>
+                    </div>
+
+                    <h5 class="text-light mt-3 h5">Response</h5>
+                    <div class="card bg-black border-secondary">
+                        <div class="card-body p-0">
+<pre class="m-0 p-3 text-success" style="overflow-x: auto;"><code>{
+  "short_code": "my-code",
+  "short_url": "https://{{.Config.CanonicalHost}}/my-code",
+  "long_url": "https://example.com/my-long-link",
+  "rotate_targets": ["https://alt1.com", "https://alt2.com"],
+  "ios_target_url": "https://apps.apple.com/app/id123",
+  "android_target_url": "https://play.google.com/store/apps/details?id=com.example",
+  "preview_mode": true,
+  "stats_enabled": true,
+  "clicks_count": 42,
+  "clicks": 42,
+  "created_at": "2026-06-05T22:00:00+00:00",
+  "expires_at": "2026-06-06T22:00:00+00:00",
+  "start_at": "2026-06-05T22:00:00+00:00",
+  "end_at": "2026-06-30T23:59:59+00:00",
+  "active": true
+}</code></pre>
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary my-5">
+
+                    <h2 class="mt-4 text-info h4">3. Metrics & Monitoring</h2>
+                    <p class="text-muted">Redrx exports real-time system and application metrics in Prometheus format.</p>
+                    
+                    <div class="card bg-black border-secondary mb-4">
+                        <div class="card-header border-secondary p-2">
+                            <span class="badge bg-info me-2 text-dark">GET</span> <code class="text-light">/metrics</code>
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-light mb-2"><strong>Custom Metrics Available:</strong></p>
+                            <ul class="text-muted small">
+                                <li><code>redrx_shortened_links_total</code>: Total links created (Web + API).</li>
+                                <li><code>redrx_redirections_total</code>: Total successful link redirections.</li>
+                                <li><code>redrx_ratelimit_hits_total</code>: Total requests blocked by rate limiting (429 errors).</li>
+                            </ul>
+<pre class="m-0 p-3 text-light bg-dark rounded mt-2" style="overflow-x: auto;"><code># Example Usage:
+curl https://{{.Config.CanonicalHost}}/metrics</code></pre>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -1,32 +1,50 @@
-FROM python:3.14-slim
+# syntax=docker/dockerfile:1
+
+# ---- build ----
+FROM golang:1.26-alpine AS build
+
+WORKDIR /src
+
+# Download modules first so dependency layers cache across source edits.
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+COPY . .
+
+# CGO is off because the SQLite driver is pure Go, which keeps the runtime image
+# free of libc and lets the binary run on any base.
+ENV CGO_ENABLED=0 GOOS=linux
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -trimpath -ldflags="-s -w" -o /out/redrx ./cmd/redrx
+
+# ---- runtime ----
+FROM alpine:3.22
+
+# ca-certificates is needed to fetch the phishing blocklists over HTTPS;
+# tzdata so timestamps render correctly outside UTC.
+RUN apk add --no-cache ca-certificates tzdata wget \
+    && addgroup -S redrx && adduser -S -G redrx redrx \
+    && mkdir -p /app/db && chown -R redrx:redrx /app
 
 WORKDIR /app
+COPY --from=build /out/redrx /usr/local/bin/redrx
 
-# Install system dependencies for potential build requirements
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+# HTML templates and static assets are compiled into the binary, so nothing
+# else needs to be copied.
 
-COPY requirements.lock.txt .
-RUN pip install --no-cache-dir --require-hashes -r requirements.lock.txt
+USER redrx
 
-# Copy the application code
-COPY app/ ./app/
-COPY config.py .
-COPY run.py .
-
-# Create the database directory for SQLite fallback
-RUN mkdir -p db
+ENV BASE_DOMAIN=short.example.com \
+    EXPIRY_HOURS=24 \
+    SHORT_CODE_LENGTH=6 \
+    DEFAULT_QR_COLOR=black \
+    DEFAULT_QR_BACKGROUND=white \
+    LISTEN_ADDR=:5000
 
 EXPOSE 5000
 
-ENV BASE_DOMAIN=short.example.com
-ENV EXPIRY_HOURS=24
-ENV SHORT_CODE_LENGTH=6
-ENV DEFAULT_QR_COLOR="black"
-ENV DEFAULT_QR_BACKGROUND="white"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:5000/health >/dev/null || exit 1
 
-# Use the entry point with gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:create_app()", "--workers", "4", "--threads", "2", "--preload", "--access-logfile", "-", "--error-logfile", "-"]
-
+ENTRYPOINT ["redrx"]

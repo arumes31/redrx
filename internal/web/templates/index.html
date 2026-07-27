@@ -1,0 +1,228 @@
+{{define "meta_description"}}Shorten URLs, generate QR codes, and track clicks with Redrx. The advanced open-source URL shortener with password protection, device targeting, and detailed analytics.{{end}}
+
+{{define "structured_data"}}
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Redrx",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "Web",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "featureList": "URL Shortening, QR Codes, Link Analytics, Password Protection, Device Targeting"
+}
+{{end}}
+
+{{define "content"}}
+{{$form := .Get "form"}}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body p-4 p-md-5">
+                <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="single-tab" data-bs-toggle="tab" data-bs-target="#single" type="button">Shorten Link</button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="myTabContent">
+                    <div class="tab-pane fade show active" id="single" role="tabpanel">
+                        <form method="POST" enctype="multipart/form-data">
+                            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+                            <div class="row">
+                                <div class="col-md-12 form-section">
+                                    <label class="form-label" for="long_url">Long URL</label>
+                                    <input class="form-control" id="long_url" name="long_url" type="text" placeholder="https://example.com/long/path" value="{{$form.LongURL}}">
+                                    {{with $form.Errors.Get "long_url"}}<div class="text-danger small">{{.}}</div>{{end}}
+                                </div>
+                                <div class="col-md-12 mb-3">
+                                    <div class="d-flex gap-4">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" role="switch" type="checkbox" id="preview_mode" name="preview_mode" value="y"{{if $form.PreviewMode}} checked{{end}}>
+                                            <label class="form-check-label fw-bold" for="preview_mode">Enable Preview Mode</label>
+                                            <i class="fas fa-info-circle text-muted small ms-1"
+                                               data-bs-toggle="tooltip"
+                                               title="When enabled, users will see a preview page showing the destination URL and a security check before being redirected. This helps prevent accidental clicks and increases transparency."></i>
+                                        </div>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" role="switch" type="checkbox" id="stats_enabled" name="stats_enabled" value="y"{{if $form.StatsEnabled}} checked{{end}}>
+                                            <label class="form-check-label fw-bold" for="stats_enabled">Enable Statistics</label>
+                                            <i class="fas fa-info-circle text-muted small ms-1"
+                                               data-bs-toggle="tooltip"
+                                               title="{{if .IsAuthenticated}}Enable this to collect anonymized data on link performance. Since you are logged in, these statistics will be PRIVATE and accessible only to you via your dashboard.{{else}}Enable this to collect anonymized data on link performance. Note: Since you are not logged in, these statistics will be PUBLIC and anyone with the statistics link will be able to view them.{{end}} We track total clicks, geographic location (country), browser type, operating system, and referring websites."></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-12 form-section">
+                                    <label class="form-label" for="expiry_input">Expiry (Hours)</label>
+                                    <div class="input-group">
+                                        <input class="form-control" id="expiry_input" name="expiry_hours" type="number" placeholder="24" value="{{$form.ExpiryHours}}">
+                                        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="document.getElementById('expiry_input').value=0">Never</button>
+                                    </div>
+                                    {{with $form.Errors.Get "expiry_hours"}}<div class="text-danger small">{{.}}</div>{{end}}
+                                    <div class="form-text text-light opacity-50 small">
+                                        Max: 100 years.
+                                        {{if .IsAuthenticated}}
+                                            Set to 0 for "Never".
+                                        {{else}}
+                                            <span class="text-info">Login required for &gt; 1 year or "Never".</span>
+                                        {{end}}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <a class="text-decoration-none text-light" data-bs-toggle="collapse" href="#advancedOptions" role="button">
+                                    <i class="fas fa-cog me-1"></i> Advanced Options
+                                </a>
+                            </div>
+
+                            <div class="collapse" id="advancedOptions">
+                                <div class="row">
+                                    <div class="col-md-6 form-section">
+                                        <label class="form-label" for="custom_code">Custom Code</label>
+                                        <input class="form-control" id="custom_code" name="custom_code" type="text" placeholder="e.g. MYLINK" value="{{$form.CustomCode}}">
+                                        {{with $form.Errors.Get "custom_code"}}<div class="text-danger small">{{.}}</div>{{end}}
+                                    </div>
+                                    <div class="col-md-6 form-section">
+                                        <label class="form-label" for="code_length">Auto-gen Length</label>
+                                        <input class="form-control" id="code_length" name="code_length" type="number" min="3" max="20" value="{{$form.CodeLength}}">
+                                        {{with $form.Errors.Get "code_length"}}<div class="text-danger small">{{.}}</div>{{end}}
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-12 form-section">
+                                        <label class="form-label" for="rotate_targets">Rotate Targets</label>
+                                        <input class="form-control" id="rotate_targets" name="rotate_targets" type="text" placeholder="https://alt1.com, https://alt2.com" value="{{$form.RotateTargets}}">
+                                        {{with $form.Errors.Get "rotate_targets"}}<div class="text-danger small">{{.}}</div>{{end}}
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 form-section">
+                                        <label class="form-label" for="ios_target_url">iOS Target URL</label> <i class="fab fa-apple text-muted"></i>
+                                        <input class="form-control" id="ios_target_url" name="ios_target_url" type="text" placeholder="https://apps.apple.com/..." value="{{$form.IOSTargetURL}}">
+                                        {{with $form.Errors.Get "ios_target_url"}}<div class="text-danger small">{{.}}</div>{{end}}
+                                    </div>
+                                    <div class="col-md-6 form-section">
+                                        <label class="form-label" for="android_target_url">Android Target URL</label> <i class="fab fa-android text-muted"></i>
+                                        <input class="form-control" id="android_target_url" name="android_target_url" type="text" placeholder="https://play.google.com/..." value="{{$form.AndroidTargetURL}}">
+                                        {{with $form.Errors.Get "android_target_url"}}<div class="text-danger small">{{.}}</div>{{end}}
+                                    </div>
+                                </div>
+                                <div class="row form-section">
+                                    <div class="col-md-12">
+                                        <label class="form-label" for="password">Password</label>
+                                        <input class="form-control" id="password" name="password" type="password" placeholder="Optional" autocomplete="new-password">
+                                    </div>
+                                </div>
+                                <div class="row form-section">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Start Time (Optional)</label>
+                                        <input class="form-control mb-1" name="start_date" type="date" value="{{$form.StartDate}}">
+                                        <input class="form-control" name="start_time" type="time" value="{{$form.StartTime}}">
+                                        {{with $form.Errors.Get "start_date"}}<div class="text-danger small">{{.}}</div>{{end}}
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">End Time (Optional)</label>
+                                        <input class="form-control mb-1" name="end_date" type="date" value="{{$form.EndDate}}">
+                                        <input class="form-control" name="end_time" type="time" value="{{$form.EndTime}}">
+                                        {{with $form.Errors.Get "end_date"}}<div class="text-danger small">{{.}}</div>{{end}}
+                                    </div>
+                                </div>
+                                <div class="row form-section">
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="qr_color">QR Color</label>
+                                        <input class="form-control form-control-color w-100" id="qr_color" name="qr_color" type="color" value="{{$form.QRColor}}">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="qr_bg">QR Background</label>
+                                        <input class="form-control form-control-color w-100" id="qr_bg" name="qr_bg" type="color" value="{{$form.QRBg}}">
+                                    </div>
+                                    <div class="col-md-12 mt-2">
+                                        <label class="form-label" for="logo_file">QR Logo</label>
+                                        <input class="form-control" id="logo_file" name="logo_file" type="file" accept=".png,.jpg,.jpeg">
+                                        {{with $form.Errors.Get "logo_file"}}<div class="text-danger small">{{.}}</div>{{end}}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-shorten btn-lg w-100 mt-3">Shorten URL</button>
+                        </form>
+
+                        {{with .Get "short_url"}}
+                            <div class="mt-4 text-center animate__animated animate__fadeIn">
+                                <h5 class="text-success"><i class="fas fa-check-circle"></i> Shortened!</h5>
+                                <div class="short-url mb-3" id="shortUrlValue">{{.}}</div>
+
+                                <button class="btn btn-outline-light me-2" onclick="copyShortUrl(this)">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                                <a href="{{$.Get "stats_url"}}" class="btn btn-outline-info me-2">
+                                    <i class="fas fa-chart-bar"></i> Stats
+                                </a>
+                                <a href="/{{$.Get "short_code"}}/qr" class="btn btn-outline-light" download>
+                                    <i class="fas fa-download"></i> QR
+                                </a>
+
+                                <div class="qr-container mt-3">
+                                    <img src="data:image/png;base64,{{$.Get "qr_data"}}" alt="QR Code" class="qr-img">
+                                </div>
+                            </div>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SEO Feature Section -->
+        <div class="row mt-5 text-center g-4">
+            <div class="col-md-4">
+                <div class="p-3">
+                    <i class="fas fa-link text-info fa-2x mb-3"></i>
+                    <h3 class="h5 text-light">URL Shortener</h3>
+                    <p class="text-muted small">Create branded, short links with custom aliases and optional password protection for total control over your traffic.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-3">
+                    <i class="fas fa-qrcode text-success fa-2x mb-3"></i>
+                    <h3 class="h5 text-light">Custom QR Code Generator</h3>
+                    <p class="text-muted small">Generate unique QR codes for every link. Customize colors and add your own logo to match your brand identity.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-3">
+                    <i class="fas fa-chart-line text-primary fa-2x mb-3"></i>
+                    <h3 class="h5 text-light">Advanced Link Analytics</h3>
+                    <p class="text-muted small">Track real-time click data, geographic locations, and device types to understand how your audience interacts with your content.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    function copyShortUrl(btn) {
+        const value = document.getElementById('shortUrlValue').innerText.trim();
+        navigator.clipboard.writeText(value);
+        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i> Copy', 2000);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl)
+        })
+    });
+</script>
+{{end}}

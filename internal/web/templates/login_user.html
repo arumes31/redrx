@@ -1,0 +1,31 @@
+{{define "title"}}Login - Redrx{{end}}
+
+{{define "content"}}
+{{$form := .Get "form"}}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card p-4">
+            <h2 class="text-center mb-4">Login</h2>
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <div class="mb-3">
+                    <label class="form-label" for="username">Username or Email</label>
+                    <input class="form-control" id="username" name="username" type="text" value="{{$form.Username}}" autocomplete="username" required autofocus>
+                    {{with $form.Errors.Get "username"}}<div class="text-danger small">{{.}}</div>{{end}}
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="password">Password</label>
+                    <input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required>
+                    {{with $form.Errors.Get "password"}}<div class="text-danger small">{{.}}</div>{{end}}
+                </div>
+                <button type="submit" class="btn btn-shorten btn-lg w-100 mt-2">Login</button>
+            </form>
+            {{if not .Config.DisableRegistration}}
+            <div class="mt-3 text-center small">
+                Need an account? <a href="/register" class="text-info">Register Now</a>
+            </div>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}

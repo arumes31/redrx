@@ -1,0 +1,31 @@
+{{define "title"}}Too Many Requests - Redrx{{end}}
+
+{{define "content"}}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-6 text-center animate__animated animate__fadeIn">
+        <div class="display-1 text-warning mb-3">
+            <i class="fas fa-hourglass-half"></i>
+        </div>
+        <h1 class="display-5 fw-bold text-light mb-3">Whoa, slow down!</h1>
+        <p class="lead text-muted mb-4">
+            You&#39;ve hit the rate limit. We&#39;re just making sure the service stays fast for everyone.
+        </p>
+        <div class="card bg-dark border-warning mx-auto" style="max-width: 400px;">
+            <div class="card-body">
+                <p class="mb-2 text-light">Please wait a few moments before trying again.</p>
+                <div class="small text-muted border-top border-secondary pt-2">
+                    IP: <span class="text-warning font-monospace">{{.Get "client_ip"}}</span>
+                    {{with .Get "client_country"}}
+                    <span class="ms-2">Country: <span class="text-info">{{.}}</span></span>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+        <div class="mt-4">
+            <a href="/" class="btn btn-outline-light">
+                <i class="fas fa-home me-2"></i> Return Home
+            </a>
+        </div>
+    </div>
+</div>
+{{end}}
