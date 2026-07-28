@@ -73,11 +73,33 @@ body {
     color: #fff; 
 }
 
-.form-control:focus, .form-select:focus { 
-    background: rgba(255,255,255,0.1); 
-    border-color: #667eea; 
-    color: #fff; 
+.form-control:focus, .form-select:focus {
+    background: rgba(255,255,255,0.1);
+    border-color: #667eea;
+    color: #fff;
     box-shadow: 0 0 0 0.25rem rgba(102, 126, 234, 0.25);
+}
+
+/* Placeholders default to a low-contrast grey on these dark controls; set an
+   explicit, legible colour (and reset Firefox's reduced placeholder opacity). */
+.form-control::placeholder,
+.form-control-color::placeholder,
+.form-select::placeholder {
+    color: rgba(255, 255, 255, 0.7);
+    opacity: 1;
+}
+
+/* Bootstrap dims disabled controls; keep their text and placeholder readable on
+   the dark background. -webkit-text-fill-color is needed for Safari/iOS. */
+.form-control:disabled, .form-control-color:disabled, .form-select:disabled,
+.form-control[readonly] {
+    color: #fff;
+    -webkit-text-fill-color: #fff;
+    opacity: 1;
+}
+.form-control:disabled::placeholder, .form-select:disabled::placeholder {
+    color: rgba(255, 255, 255, 0.7);
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.7);
 }
 
 

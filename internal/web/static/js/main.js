@@ -125,6 +125,25 @@ const initCanvas = () => {
     animate();
 };
 
+// Copy any server-rendered flash messages into the aria-live region so they are
+// announced to screen readers. The visible alerts render as before; the live
+// region only exists to trigger the announcement, and populating it after load
+// is what makes aria-live fire.
+const announceFlashes = () => {
+    const liveStatus = document.getElementById('liveStatus');
+    if (!liveStatus) return;
+    const flashes = document.querySelectorAll('#flashMessages [data-flash-message]');
+    if (!flashes.length) return;
+    const text = Array.from(flashes)
+        .map((el) => el.getAttribute('data-flash-message').trim())
+        .filter(Boolean)
+        .join('. ');
+    if (text) {
+        setTimeout(() => { liveStatus.textContent = text; }, 200);
+    }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     initCanvas();
+    announceFlashes();
 });

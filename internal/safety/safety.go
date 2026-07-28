@@ -291,8 +291,15 @@ func (c *Checker) Refresh(ctx context.Context) error {
 		return nil
 	}
 
+	// Floor the interval: an unset or zero refresheAge would make every call see
+	// the file as "older than 0" and re-download the multi-megabyte feed, at
+	// boot (across the backoff retries) and on every tick.
+	minAge := c.refresheAge
+	if minAge <= 0 {
+		minAge = time.Hour
+	}
 	if info, err := os.Stat(c.listPath); err == nil {
-		if time.Since(info.ModTime()) < c.refresheAge {
+		if time.Since(info.ModTime()) < minAge {
 			return nil
 		}
 	}

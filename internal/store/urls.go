@@ -151,17 +151,40 @@ func (d *DB) DeleteURL(ctx context.Context, id int64) error {
 // in the state one click should have produced, and the JSON response describes a
 // state the row may not be in.
 func (d *DB) SetURLEnabledToggle(ctx context.Context, id int64) (bool, error) {
-	q := "UPDATE urls SET is_enabled = NOT COALESCE(is_enabled, ?) WHERE id = ?"
-	if d.dialect == SQLite {
-		// SQLite has no NOT operator for its integer booleans in this position.
-		q = "UPDATE urls SET is_enabled = CASE WHEN COALESCE(is_enabled, ?) THEN 0 ELSE 1 END WHERE id = ?"
-	}
-	if _, err := d.Exec(ctx, q, true, id); err != nil {
-		return false, err
+	if d.dialect == Postgres {
+		// RETURNING reads back the value this UPDATE wrote, in the same
+		// statement, so an interleaving toggle cannot slip between the write and
+		// the read.
+		var enabled nullBool
+		if err := d.QueryRow(ctx,
+			"UPDATE urls SET is_enabled = NOT COALESCE(is_enabled, ?) WHERE id = ? RETURNING is_enabled",
+			true, id).Scan(&enabled); err != nil {
+			return false, err
+		}
+		return enabled.orDefault(true), nil
 	}
 
+	// SQLite has no NOT operator for its integer booleans in this position, so
+	// the flip and the read-back go in one transaction — otherwise two toggles
+	// racing could each read the other's value and report a state this call did
+	// not produce.
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx,
+		d.rebind("UPDATE urls SET is_enabled = CASE WHEN COALESCE(is_enabled, ?) THEN 0 ELSE 1 END WHERE id = ?"),
+		true, id); err != nil {
+		return false, err
+	}
 	var enabled nullBool
-	if err := d.QueryRow(ctx, "SELECT is_enabled FROM urls WHERE id = ?", id).Scan(&enabled); err != nil {
+	if err := tx.QueryRowContext(ctx,
+		d.rebind("SELECT is_enabled FROM urls WHERE id = ?"), id).Scan(&enabled); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
 		return false, err
 	}
 	return enabled.orDefault(true), nil
@@ -281,12 +304,20 @@ func (d *DB) DashboardStats(ctx context.Context, userID int64) (*DashboardStats,
 		return nil, err
 	}
 
-	// COALESCE to match scanURL, which reads a NULL is_enabled as true. Migrate
-	// adds the column to an older table with no default, so every pre-existing
-	// row is NULL — and `NULL = TRUE` is unknown, which would report 0 active
-	// links while every row in the table below showed as enabled.
+	// Mirror URL.IsActive(), not just the enable flag, so the count matches the
+	// rows the table below renders as active: an enabled link that has expired or
+	// not yet started is inactive. COALESCE keeps a NULL is_enabled reading as
+	// true, as scanURL does — Migrate adds the column with no default, so every
+	// pre-existing row is NULL, and `NULL = TRUE` is unknown.
+	nowT := NewTime(d.dialect, now())
 	if err := d.QueryRow(ctx,
-		"SELECT COUNT(*) FROM urls WHERE user_id = ? AND COALESCE(is_enabled, ?) = ?", userID, true, true,
+		`SELECT COUNT(*) FROM urls
+		 WHERE user_id = ?
+		   AND COALESCE(is_enabled, ?) = ?
+		   AND (start_at IS NULL OR start_at <= ?)
+		   AND (end_at IS NULL OR end_at >= ?)
+		   AND (expires_at IS NULL OR expires_at >= ?)`,
+		userID, true, true, nowT, nowT, nowT,
 	).Scan(&s.ActiveLinks); err != nil {
 		return nil, err
 	}
@@ -302,23 +333,32 @@ func (d *DB) DashboardStats(ctx context.Context, userID int64) (*DashboardStats,
 	return &s, nil
 }
 
-// EachURL streams every link, for the phishing sweep.
+// EachURL calls fn for every link, for the phishing sweep. The rows are fully
+// materialised and the query closed before any callback runs: on SQLite the
+// pool is a single connection, so a callback that touched the database while the
+// rows were still open would deadlock.
 func (d *DB) EachURL(ctx context.Context, fn func(*URL) error) error {
-	rows, err := d.Query(ctx, "SELECT "+urlColumns+" FROM urls ORDER BY id")
+	urls, err := d.allURLs(ctx)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		u, err := scanURL(rows)
-		if err != nil {
-			return err
-		}
+	for _, u := range urls {
 		if err := fn(u); err != nil {
 			return err
 		}
 	}
-	return rows.Err()
+	return nil
+}
+
+// allURLs reads every link into memory, closing the query before returning so
+// the caller can iterate without holding the connection open.
+func (d *DB) allURLs(ctx context.Context) ([]*URL, error) {
+	rows, err := d.Query(ctx, "SELECT "+urlColumns+" FROM urls ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectURLs(rows)
 }
 
 func nullInt64(v *int64) any {

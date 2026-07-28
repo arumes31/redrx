@@ -13,5 +13,6 @@ graphify-out/
 *.test
 coverage.out
 
-# Local environment
+# Local environment (.env, .env.local, .env.production, ...), as .dockerignore
 .env
+.env.*

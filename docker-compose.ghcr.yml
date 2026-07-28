@@ -4,7 +4,12 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - SECRET_KEY=${SECRET_KEY}
+      # Required, with no default. A shipped constant would be a publicly known
+      # signing key: session cookies are HMACed with it, so anyone could forge
+      # one for any user id. `:?` makes compose refuse to start without it.
+      - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in .env, e.g. openssl rand -hex 32}
+      # POSTGRES_PASSWORD is embedded in this URL, so it must be URL-safe: use
+      # only alphanumerics, or percent-encode reserved characters (@ : / ? # etc.).
       - DATABASE_URL=postgresql://${POSTGRES_USER:-redrx}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-redrx_db}
       - BASE_DOMAIN=${BASE_DOMAIN}
       - GEOIP_DB_PATH=/usr/share/GeoIP/GeoLite2-Country.mmdb

@@ -39,16 +39,20 @@
                 <div class="form-check mb-3">
                     <input class="form-check-input" id="preview_mode" name="preview_mode" type="checkbox" value="y"{{if $form.PreviewMode}} checked{{end}}>
                     <label class="form-check-label" for="preview_mode">Preview Mode</label>
-                    <i class="fas fa-info-circle text-muted small ms-1"
-                       data-bs-toggle="tooltip"
-                       title="When enabled, users will see a preview page showing the destination URL and a security check before being redirected. This helps prevent accidental clicks and increases transparency."></i>
+                    <button type="button" class="fas fa-info-circle text-muted small ms-1"
+                            style="background:none;border:0;padding:0;cursor:help;vertical-align:baseline;"
+                            data-bs-toggle="tooltip"
+                            aria-label="About Preview Mode"
+                            title="When enabled, users will see a preview page showing the destination URL and a security check before being redirected. This helps prevent accidental clicks and increases transparency."></button>
                 </div>
                 <div class="form-check mb-3">
                     <input class="form-check-input" id="stats_enabled" name="stats_enabled" type="checkbox" value="y"{{if $form.StatsEnabled}} checked{{end}}>
                     <label class="form-check-label" for="stats_enabled">Enable Statistics</label>
-                    <i class="fas fa-info-circle text-muted small ms-1"
-                       data-bs-toggle="tooltip"
-                       title="Enable this to collect anonymized data on link performance. Since this link is associated with your account, these statistics are PRIVATE and accessible only to you. We track clicks, countries, browsers, and platforms."></i>
+                    <button type="button" class="fas fa-info-circle text-muted small ms-1"
+                            style="background:none;border:0;padding:0;cursor:help;vertical-align:baseline;"
+                            data-bs-toggle="tooltip"
+                            aria-label="About Enable Statistics"
+                            title="Enable this to collect anonymized data on link performance. Since this link is associated with your account, these statistics are PRIVATE and accessible only to you. We track clicks, countries, browsers, and platforms."></button>
                 </div>
                 <div class="d-flex justify-content-between mt-4">
                     <a href="/dashboard" class="btn btn-outline-light">Cancel</a>

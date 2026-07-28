@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -96,8 +97,15 @@ func run() error {
 	}
 
 	// Refresh the phishing feed in the background so a slow or unreachable
-	// upstream never delays the first request.
-	go maintainBlocklist(ctx, cfg, checker, db, log)
+	// upstream never delays the first request. The WaitGroup lets shutdown wait
+	// for the worker to stop touching db, checker and the limiter before the
+	// deferred Close calls release them.
+	var bg sync.WaitGroup
+	bg.Add(1)
+	go func() {
+		defer bg.Done()
+		maintainBlocklist(ctx, cfg, checker, db, log)
+	}()
 
 	httpServer := &http.Server{
 		Addr:              cfg.Listen,
@@ -119,6 +127,10 @@ func run() error {
 
 	select {
 	case err := <-errCh:
+		// The server never ran; stop the background worker and wait for it
+		// before the deferred db/limiter Close calls run.
+		stop()
+		bg.Wait()
 		return err
 	case <-ctx.Done():
 		log.Info("shutting down")
@@ -132,6 +144,10 @@ func run() error {
 	if err := httpServer.Shutdown(httpCtx); err != nil {
 		log.Error("graceful shutdown failed", "error", err)
 	}
+
+	// ctx is already cancelled, so the worker's refresh/sweep return promptly.
+	// Wait for it before the deferred db.Close and limiterBackend.Close run.
+	bg.Wait()
 
 	srvCtx, cancelSrv := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelSrv()

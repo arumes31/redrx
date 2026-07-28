@@ -66,8 +66,10 @@ type Config struct {
 // and taking that literally would blank out settings the operator never
 // intended to override.
 func env(key, def string) string {
-	if v, ok := os.LookupEnv(key); ok && strings.TrimSpace(v) != "" {
-		return v
+	if v, ok := os.LookupEnv(key); ok {
+		if v = strings.TrimSpace(v); v != "" {
+			return v
+		}
 	}
 	return def
 }

@@ -689,6 +689,7 @@ func TestScheduledLinkNotBornExpired(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/shorten", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-KEY", key)
+	req.Host = "short.example.com"
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {

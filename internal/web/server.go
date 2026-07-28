@@ -38,21 +38,21 @@ type Server struct {
 
 // limits holds the parsed rate-limit rules, resolved once at boot.
 type limits struct {
-	Default  ratelimit.Rules
-	Login    ratelimit.Rules
-	Register ratelimit.Rules
-	Auth     ratelimit.Rules
-	API      ratelimit.Rules
-	Create   ratelimit.Rules
-	Redirect ratelimit.Rules
-	Health   ratelimit.Rules
-	Metrics  ratelimit.Rules
-	Stats    ratelimit.Rules
-	QR       ratelimit.Rules
-	Pages    ratelimit.Rules
-	Dashboar ratelimit.Rules
-	Export   ratelimit.Rules
-	Bulk     ratelimit.Rules
+	Default   ratelimit.Rules
+	Login     ratelimit.Rules
+	Register  ratelimit.Rules
+	Auth      ratelimit.Rules
+	API       ratelimit.Rules
+	Create    ratelimit.Rules
+	Redirect  ratelimit.Rules
+	Health    ratelimit.Rules
+	Metrics   ratelimit.Rules
+	Stats     ratelimit.Rules
+	QR        ratelimit.Rules
+	Pages     ratelimit.Rules
+	Dashboard ratelimit.Rules
+	Export    ratelimit.Rules
+	Bulk      ratelimit.Rules
 }
 
 type Options struct {
@@ -92,21 +92,21 @@ func NewServer(opts Options) (*Server, error) {
 	}
 
 	s.limits = limits{
-		Default:  ratelimit.MustParse(s.cfg.RateLimitDefault),
-		Login:    ratelimit.MustParse(s.cfg.RateLimitLogin),
-		Register: ratelimit.MustParse(s.cfg.RateLimitRegister),
-		Auth:     ratelimit.MustParse(s.cfg.RateLimitAuth),
-		API:      ratelimit.MustParse(s.cfg.RateLimitAPI),
-		Create:   ratelimit.MustParse(s.cfg.RateLimitCreate),
-		Redirect: ratelimit.MustParse(s.cfg.RateLimitRedirect),
-		Health:   ratelimit.MustParse(s.cfg.RateLimitHealth),
-		Metrics:  ratelimit.MustParse(s.cfg.RateLimitMetrics),
-		Stats:    ratelimit.MustParse("20 per minute"),
-		QR:       ratelimit.MustParse("30 per minute"),
-		Pages:    ratelimit.MustParse("30 per minute"),
-		Dashboar: ratelimit.MustParse("60 per minute"),
-		Export:   ratelimit.MustParse("5 per minute"),
-		Bulk:     ratelimit.MustParse("10 per minute"),
+		Default:   ratelimit.MustParse(s.cfg.RateLimitDefault),
+		Login:     ratelimit.MustParse(s.cfg.RateLimitLogin),
+		Register:  ratelimit.MustParse(s.cfg.RateLimitRegister),
+		Auth:      ratelimit.MustParse(s.cfg.RateLimitAuth),
+		API:       ratelimit.MustParse(s.cfg.RateLimitAPI),
+		Create:    ratelimit.MustParse(s.cfg.RateLimitCreate),
+		Redirect:  ratelimit.MustParse(s.cfg.RateLimitRedirect),
+		Health:    ratelimit.MustParse(s.cfg.RateLimitHealth),
+		Metrics:   ratelimit.MustParse(s.cfg.RateLimitMetrics),
+		Stats:     ratelimit.MustParse("20 per minute"),
+		QR:        ratelimit.MustParse("30 per minute"),
+		Pages:     ratelimit.MustParse("30 per minute"),
+		Dashboard: ratelimit.MustParse("60 per minute"),
+		Export:    ratelimit.MustParse("5 per minute"),
+		Bulk:      ratelimit.MustParse("10 per minute"),
 	}
 
 	s.handler, err = s.routes()
@@ -149,16 +149,16 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("POST /logout", s.wrap(s.handleLogout))
 
 	// Dashboard and link management.
-	mux.Handle("GET /dashboard", s.limit("dashboard", s.limits.Dashboar, s.requireLogin(s.handleDashboard)))
+	mux.Handle("GET /dashboard", s.limit("dashboard", s.limits.Dashboard, s.requireLogin(s.handleDashboard)))
 	// Its own scope: regenerating a key is unrelated to unlocking a link, and
 	// the two shared the "auth" counter before.
 	mux.Handle("POST /regenerate-api-key", s.limit("regen_key", s.limits.Auth, s.requireLogin(s.handleRegenerateAPIKey)))
-	mux.Handle("POST /toggle-status/{code}", s.limit("dashboard", s.limits.Dashboar, s.requireLogin(s.handleToggleStatus)))
+	mux.Handle("POST /toggle-status/{code}", s.limit("dashboard", s.limits.Dashboard, s.requireLogin(s.handleToggleStatus)))
 	mux.Handle("GET /export-links", s.limit("export", s.limits.Export, s.requireLogin(s.handleExportLinks)))
 	mux.Handle("POST /bulk-delete", s.limit("bulk", s.limits.Bulk, s.requireLogin(s.handleBulkDelete)))
-	mux.Handle("GET /edit/{code}", s.limit("dashboard", s.limits.Dashboar, s.requireLogin(s.handleEditForm)))
-	mux.Handle("POST /edit/{code}", s.limit("dashboard", s.limits.Dashboar, s.requireLogin(s.handleEdit)))
-	mux.Handle("POST /delete/{code}", s.limit("dashboard", s.limits.Dashboar, s.requireLogin(s.handleDelete)))
+	mux.Handle("GET /edit/{code}", s.limit("dashboard", s.limits.Dashboard, s.requireLogin(s.handleEditForm)))
+	mux.Handle("POST /edit/{code}", s.limit("dashboard", s.limits.Dashboard, s.requireLogin(s.handleEdit)))
+	mux.Handle("POST /delete/{code}", s.limit("dashboard", s.limits.Dashboard, s.requireLogin(s.handleDelete)))
 
 	// Static content pages, each on its own counter.
 	mux.Handle("GET /api-docs", s.limit("apidocs", s.limits.Pages, s.handleAPIDocs))
@@ -298,8 +298,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	health["checks"] = checks
 
+	// Only a hard failure (the database) is Unavailable. A "degraded" status —
+	// the rate-limit backend being down, which the limiter fails open on — must
+	// still return 200, or a Redis blip would pull every replica out of the load
+	// balancer over a dependency the request path tolerates.
 	status := http.StatusOK
-	if health["status"] != "healthy" {
+	if health["status"] == "unhealthy" {
 		status = http.StatusServiceUnavailable
 	}
 	writeJSON(w, status, health)

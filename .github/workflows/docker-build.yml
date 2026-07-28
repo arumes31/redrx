@@ -73,6 +73,31 @@ jobs:
             type=raw,value=latest
             type=sha,format=long
 
+      # Build the image into the local daemon first, so it can be scanned before
+      # anything is published. The layers are cached, so the push build below
+      # reuses them and costs almost nothing.
+      - name: Build image for scanning
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.lowercase_image_name }}:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Fail the publish on a CRITICAL or HIGH vulnerability, so :latest is never
+      # pushed with a known one. ignore-unfixed keeps an un-patchable base-image
+      # CVE from blocking every release until upstream ships a fix.
+      - name: Scan image with Trivy (gate the publish)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: 'image'
+          image-ref: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.lowercase_image_name }}:scan
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
       - name: Build and push Docker image
         id: push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -85,12 +110,3 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Scan the published image
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: 'image'
-          image-ref: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.lowercase_image_name }}:latest
-          format: 'table'
-          exit-code: '0'
-          severity: 'CRITICAL,HIGH'

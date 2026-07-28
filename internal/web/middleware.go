@@ -221,13 +221,26 @@ func (s *Server) proxyHeaders(next http.Handler) http.Handler {
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
+		// script-src and style-src are stated independently rather than inherited
+		// from a permissive default-src, so 'unsafe-inline' no longer leaks to
+		// fetch/connect and the rest. 'unsafe-eval' is dropped — nothing here
+		// uses eval(). 'unsafe-inline' stays on script-src because the templates
+		// still carry inline <script> blocks (the stats charts inject templated
+		// data) and onclick handlers; removing it needs those migrated to
+		// external files first, which is a separate, larger change.
 		h.Set("Content-Security-Policy",
-			"default-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://fonts.gstatic.com data:; "+
-				// unsafe-inline/unsafe-eval mean this policy will not contain an
-				// injection, but these three are free and independently useful:
-				// no plugins, no <base> hijack, no framing by third parties.
+			"default-src 'self'; "+
+				"script-src 'self' 'unsafe-inline'; "+
+				"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+
+				"font-src 'self' https://fonts.gstatic.com; "+
+				"img-src 'self' data:; "+
 				"object-src 'none'; base-uri 'self'; frame-ancestors 'self';")
-		h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		// HSTS only outside debug: dev serves plain HTTP on localhost, and a
+		// max-age header there would pin localhost to HTTPS in the browser for a
+		// year. Production terminates TLS at the proxy in front of this.
+		if !s.cfg.Debug {
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		h.Set("X-Frame-Options", "SAMEORIGIN")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")

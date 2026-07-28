@@ -24,12 +24,12 @@
             <div class="card-body p-4 p-md-5">
                 <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="single-tab" data-bs-toggle="tab" data-bs-target="#single" type="button">Shorten Link</button>
+                        <button class="nav-link active" id="single-tab" data-bs-toggle="tab" data-bs-target="#single" type="button" role="tab" aria-selected="true" aria-controls="single">Shorten Link</button>
                     </li>
                 </ul>
 
                 <div class="tab-content" id="myTabContent">
-                    <div class="tab-pane fade show active" id="single" role="tabpanel">
+                    <div class="tab-pane fade show active" id="single" role="tabpanel" aria-labelledby="single-tab">
                         <form method="POST" enctype="multipart/form-data">
                             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 

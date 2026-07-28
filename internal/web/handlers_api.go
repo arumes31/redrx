@@ -91,12 +91,17 @@ func (s *Server) handleAPIShorten(w http.ResponseWriter, r *http.Request) {
 
 	custom := ""
 	if req.CustomCode != nil {
-		validated, err := shortcode.ValidateCustom(*req.CustomCode)
-		if err != nil {
-			apiError(w, http.StatusBadRequest, err.Error())
-			return
+		// An empty or whitespace-only custom_code means "no custom code", the
+		// same as omitting it, so fall through to a generated one rather than
+		// rejecting it. A non-empty value still has to validate.
+		if trimmed := strings.TrimSpace(*req.CustomCode); trimmed != "" {
+			validated, err := shortcode.ValidateCustom(trimmed)
+			if err != nil {
+				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			custom = validated
 		}
-		custom = validated
 	}
 
 	code, err := s.resolveShortCode(r, custom, codeLength)

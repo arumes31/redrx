@@ -29,10 +29,15 @@ func (d *DB) UserByID(ctx context.Context, id int64) (*User, error) {
 	return scanUser(d.QueryRow(ctx, "SELECT "+userColumns+" FROM users WHERE id = ?", id))
 }
 
-// UserByLogin resolves the "username or email" login field.
+// UserByLogin resolves the "username or email" login field. When the same
+// string is one account's username and another's email, the username match
+// wins, so the result is deterministic rather than whichever row the planner
+// returned first.
 func (d *DB) UserByLogin(ctx context.Context, login string) (*User, error) {
 	return scanUser(d.QueryRow(ctx,
-		"SELECT "+userColumns+" FROM users WHERE username = ? OR email = ?", login, login))
+		"SELECT "+userColumns+" FROM users WHERE username = ? OR email = ? "+
+			"ORDER BY CASE WHEN username = ? THEN 0 ELSE 1 END LIMIT 1",
+		login, login, login))
 }
 
 func (d *DB) UserByAPIKey(ctx context.Context, key string) (*User, error) {
@@ -43,8 +48,12 @@ func (d *DB) UserByAPIKey(ctx context.Context, key string) (*User, error) {
 }
 
 // UsernameTaken and EmailTaken back the registration form's uniqueness checks.
+//
+// A username is rejected when it collides with an existing username OR email:
+// UserByLogin matches on either column, so allowing a username equal to some
+// account's email would make that login string ambiguous.
 func (d *DB) UsernameTaken(ctx context.Context, username string) (bool, error) {
-	return d.exists(ctx, "SELECT COUNT(*) FROM users WHERE username = ?", username)
+	return d.exists(ctx, "SELECT COUNT(*) FROM users WHERE username = ? OR email = ?", username, username)
 }
 
 func (d *DB) EmailTaken(ctx context.Context, email string) (bool, error) {

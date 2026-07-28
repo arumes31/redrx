@@ -99,10 +99,10 @@
         <!-- Announces flash messages that appear after a navigation. -->
         <div id="liveStatus" class="visually-hidden" role="status" aria-live="polite"></div>
         {{if .Flashes}}
-        <div class="row justify-content-center">
+        <div class="row justify-content-center" id="flashMessages">
             <div class="col-md-8">
                 {{range .Flashes}}
-                <div class="alert alert-{{.Category}} alert-dismissible fade show" role="alert">
+                <div class="alert alert-{{.Category}} alert-dismissible fade show" role="alert" data-flash-message="{{.Message}}">
                     {{.Message}}
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>

@@ -323,10 +323,18 @@ function copyApiKey(btn) {
 }
 
 function copyLink(code, btn) {
-    navigator.clipboard.writeText(`https://${baseDomain}/${code}`);
+    // Only show the checkmark once the write resolves; a rejected write (non-secure
+    // origin, permission denied) shows a failure mark instead of a false success.
     const originalIcon = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-check text-success"></i>';
-    setTimeout(() => btn.innerHTML = originalIcon, 2000);
+    navigator.clipboard.writeText(`https://${baseDomain}/${code}`)
+        .then(() => {
+            btn.innerHTML = '<i class="fas fa-check text-success"></i>';
+            setTimeout(() => btn.innerHTML = originalIcon, 2000);
+        })
+        .catch(() => {
+            btn.innerHTML = '<i class="fas fa-times text-danger"></i>';
+            setTimeout(() => btn.innerHTML = originalIcon, 2000);
+        });
 }
 
 function setStatusBadge(checkbox, enabled) {

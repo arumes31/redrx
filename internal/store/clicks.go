@@ -86,8 +86,8 @@ func (d *DB) ClicksByTimeBucket(ctx context.Context, urlID int64, cutoff time.Ti
 	}
 
 	rows, err := d.Query(ctx, fmt.Sprintf(
-		"SELECT %s, COUNT(id) FROM clicks WHERE url_id = ? AND timestamp >= ? GROUP BY %s",
-		expr, expr), urlID, NewTime(d.dialect, cutoff))
+		"SELECT %s, COUNT(id) FROM clicks WHERE url_id = ? AND timestamp >= ? GROUP BY %s ORDER BY %s",
+		expr, expr, expr), urlID, NewTime(d.dialect, cutoff))
 	if err != nil {
 		return nil, err
 	}
@@ -111,8 +111,8 @@ func (d *DB) ClicksGroupedBy(ctx context.Context, urlID int64, cutoff time.Time,
 	}
 
 	rows, err := d.Query(ctx, fmt.Sprintf(
-		"SELECT %s, COUNT(id) FROM clicks WHERE url_id = ? AND timestamp >= ? GROUP BY %s",
-		column, column), urlID, NewTime(d.dialect, cutoff))
+		"SELECT %s, COUNT(id) FROM clicks WHERE url_id = ? AND timestamp >= ? GROUP BY %s ORDER BY %s",
+		column, column, column), urlID, NewTime(d.dialect, cutoff))
 	if err != nil {
 		return nil, err
 	}

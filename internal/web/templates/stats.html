@@ -202,9 +202,29 @@
         // callback once the event has finished dispatching.
         const btn = event.currentTarget;
         const originalText = btn.innerHTML;
+        const fail = () => {
+            btn.innerHTML = '<i class="fas fa-times me-1"></i> Copy failed';
+            // A failure inside the 2s window after a success would otherwise
+            // keep the green btn-success left over from that success.
+            btn.classList.replace('btn-success', 'btn-outline-warning');
+            setTimeout(() => { btn.innerHTML = originalText; }, 2000);
+        };
+        // On a non-secure origin navigator.clipboard is undefined, so the call
+        // throws synchronously instead of rejecting; route that through the
+        // same failure path a rejected write takes.
+        let write;
+        try {
+            if (!navigator.clipboard || !navigator.clipboard.writeText) {
+                throw new Error('clipboard unavailable');
+            }
+            write = navigator.clipboard.writeText(window.location.href);
+        } catch (e) {
+            fail();
+            return;
+        }
         // Only restyle once the write resolves; a rejected write follows the
         // failure path instead of falsely reporting success.
-        navigator.clipboard.writeText(window.location.href)
+        Promise.resolve(write)
             .then(() => {
                 btn.innerHTML = '<i class="fas fa-check me-1"></i> Copied!';
                 btn.classList.replace('btn-outline-warning', 'btn-success');
@@ -213,10 +233,7 @@
                     btn.classList.replace('btn-success', 'btn-outline-warning');
                 }, 2000);
             })
-            .catch(() => {
-                btn.innerHTML = '<i class="fas fa-times me-1"></i> Copy failed';
-                setTimeout(() => { btn.innerHTML = originalText; }, 2000);
-            });
+            .catch(fail);
     }
 
     const chartOptions = {
