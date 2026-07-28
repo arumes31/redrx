@@ -117,7 +117,7 @@
 
         <div class="countdown" id="countdown">Redirecting in 5 seconds...</div>
 
-        <a href="{{.TargetURL}}" class="btn" rel="noopener nofollow">Proceed Now</a>
+        <a href="{{.TargetURL}}" id="proceedBtn" class="btn" rel="noopener nofollow">Proceed Now</a>
 
         <div class="url-box">
             <div class="url-label">Destination URL</div>
@@ -147,6 +147,17 @@
 
         if (!canNavigate) {
             countdownEl.innerText = 'This destination was blocked for safety reasons.';
+            // The manual button must obey the same verdict as the timer, or a
+            // blocked destination stays reachable through a click. Strip the
+            // href so it cannot navigate to .TargetURL at all.
+            const proceedBtn = document.getElementById('proceedBtn');
+            if (proceedBtn) {
+                proceedBtn.removeAttribute('href');
+                proceedBtn.setAttribute('aria-disabled', 'true');
+                proceedBtn.style.opacity = '0.5';
+                proceedBtn.style.pointerEvents = 'none';
+                proceedBtn.addEventListener('click', (e) => e.preventDefault());
+            }
         }
 
         const timer = setInterval(() => {

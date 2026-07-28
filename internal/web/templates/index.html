@@ -225,9 +225,17 @@
 <script>
     function copyShortUrl(btn) {
         const value = document.getElementById('shortUrlValue').innerText.trim();
-        navigator.clipboard.writeText(value);
-        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-        setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i> Copy', 2000);
+        // Only claim success once the write resolves: on a non-secure origin or
+        // with clipboard permission denied it rejects and nothing is copied.
+        navigator.clipboard.writeText(value)
+            .then(() => {
+                btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i> Copy', 2000);
+            })
+            .catch(() => {
+                btn.innerHTML = '<i class="fas fa-times"></i> Copy failed';
+                setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i> Copy', 2000);
+            });
     }
 
     document.addEventListener('DOMContentLoaded', function () {

@@ -9,6 +9,7 @@ package ratelimit
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,13 +52,21 @@ func Parse(spec string) (Rules, error) {
 	return rules, nil
 }
 
+// safeDefaultRules is applied when a configured limit string cannot be parsed.
+// It fails closed to a conservative limit: a typo must not silently remove the
+// protection a limit was there to provide.
+var safeDefaultRules = Rules{{Limit: 60, Window: time.Minute}}
+
 // MustParse is Parse for configuration defaults that are known to be valid.
-// An invalid spec yields no rules rather than panicking, so a typo in an
-// environment variable cannot take the service down at boot.
+// A malformed spec neither panics (a typo cannot take the service down at boot)
+// nor disables the limit: it logs and falls back to a conservative default. An
+// empty spec still means unlimited, which Parse reports without error.
 func MustParse(spec string) Rules {
 	r, err := Parse(spec)
 	if err != nil {
-		return nil
+		slog.Warn("ratelimit: invalid limit spec, applying a conservative default",
+			"spec", spec, "default", "60 per minute", "error", err)
+		return safeDefaultRules
 	}
 	return r
 }

@@ -608,6 +608,26 @@ func TestTimeBucketsCutoffAlignsWithFirstLabel(t *testing.T) {
 	}
 }
 
+// TestNormalizeHexColorExpandsShorthand checks that a valid "#rgb" is expanded
+// to "#rrggbb": the <input type="color"> that renders the value accepts only
+// the six-digit form and coerces "#f00" to black otherwise.
+func TestNormalizeHexColorExpandsShorthand(t *testing.T) {
+	cases := map[string]string{
+		"#f00":    "#ff0000",
+		"#ABC":    "#aabbcc",
+		"#00ff00": "#00ff00",
+		"red":     "#ff0000",
+		"":        "#000000",
+		"#12345":  "#000000", // invalid length falls back to the default
+		"#gggggg": "#000000", // non-hex falls back to the default
+	}
+	for in, want := range cases {
+		if got := normalizeHexColor(in, "#000000"); got != want {
+			t.Errorf("normalizeHexColor(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestTruncateKeepsRunesIntact(t *testing.T) {
 	// "€" is three bytes, so a byte-wise cut at 4 would split the second one.
 	if got := truncate("a€€", 4); !utf8.ValidString(got) {

@@ -101,12 +101,25 @@ func (d *DB) Migrate(ctx context.Context) error {
 	if d.dialect == Postgres {
 		// An arbitrary but stable key, scoped to this application.
 		const migrationLockID = 0x7265647278 // "redrx"
-		if _, err := d.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrationLockID); err != nil {
+
+		// A session-scoped advisory lock is released only by a pg_advisory_unlock
+		// on the same connection that acquired it. Going through the pool could
+		// unlock on a different connection — leaving the real lock held for the
+		// life of the process and blocking the next replica's migration — so pin
+		// one connection for both. It stays open for the whole migration, so the
+		// lock is held throughout even though the DDL below runs on the pool.
+		conn, err := d.Conn(ctx)
+		if err != nil {
+			return fmt.Errorf("acquire migration connection: %w", err)
+		}
+		defer func() { _ = conn.Close() }()
+
+		if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrationLockID); err != nil {
 			return fmt.Errorf("acquire migration lock: %w", err)
 		}
 		defer func() {
-			if _, err := d.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", migrationLockID); err != nil {
-				// The lock is released when the session ends regardless.
+			if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", migrationLockID); err != nil {
+				// The lock is released when the pinned connection closes regardless.
 				_ = err
 			}
 		}()

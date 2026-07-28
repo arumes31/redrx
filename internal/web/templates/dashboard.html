@@ -402,7 +402,15 @@ document.addEventListener('DOMContentLoaded', () => {
         rows.forEach(row => {
             const matchesSearch = row.dataset.code.includes(searchTerm) || row.dataset.url.includes(searchTerm);
             const matchesStatus = statusValue === 'all' || row.dataset.status === statusValue;
-            row.style.display = (matchesSearch && matchesStatus) ? '' : 'none';
+            const visible = matchesSearch && matchesStatus;
+            if (!visible) {
+                // Deselect a row before hiding it, or a filtered-out link stays
+                // checked and gets swept up by a bulk delete the user can no
+                // longer see it in.
+                const cb = row.querySelector('.link-checkbox');
+                if (cb) cb.checked = false;
+            }
+            row.style.display = visible ? '' : 'none';
         });
 
         const visibleRows = rows.filter(r => r.style.display !== 'none');
@@ -413,6 +421,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         visibleRows.forEach(r => tableBody.appendChild(r));
+
+        // Selection may have changed above, so keep the bulk controls in sync.
+        updateBulkUI();
     }
 
     searchInput.addEventListener('input', updateTable);

@@ -443,16 +443,22 @@ func normalizeHexColor(v, def string) string {
 		}
 		return def
 	}
-	hex := v[1:]
+	hex := strings.ToLower(v[1:])
 	if len(hex) != 3 && len(hex) != 6 {
 		return def
 	}
 	for _, c := range hex {
-		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+		if !strings.ContainsRune("0123456789abcdef", c) {
 			return def
 		}
 	}
-	return strings.ToLower(v)
+	// Expand the "#rgb" shorthand to "#rrggbb": the <input type="color"> that
+	// renders this value accepts only the six-digit form and coerces anything
+	// else to #000000, so a valid "#f00" would otherwise come back black.
+	if len(hex) == 3 {
+		hex = string([]byte{hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]})
+	}
+	return "#" + hex
 }
 
 // sanitizeCSVField neutralises spreadsheet formula injection in exports.

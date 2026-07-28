@@ -98,6 +98,16 @@ func envInt(key string, def int) int {
 	return n
 }
 
+// envPositiveInt is envInt for settings that must be positive, so a zero or
+// negative value in the environment falls back to the default rather than
+// reaching link generation where a length or expiry of 0 makes no sense.
+func envPositiveInt(key string, def int) int {
+	if n := envInt(key, def); n > 0 {
+		return n
+	}
+	return def
+}
+
 // envList splits a comma-separated variable, trimming and dropping empties.
 func envList(key, def string) []string {
 	raw := env(key, def)
@@ -110,9 +120,13 @@ func envList(key, def string) []string {
 	return out
 }
 
-// placeholderBaseDomain is the example value shipped in the dockerfile; it is
+// placeholderBaseDomain is the example value shipped in the Dockerfile; it is
 // never a host anyone actually serves from.
 const placeholderBaseDomain = "short.example.com"
+
+// maxForwardedHops caps how many entries of X-Forwarded-For are parsed, so a
+// client cannot pad the header without bound.
+const maxForwardedHops = 20
 
 // Load reads configuration from the environment and validates it.
 func Load() (*Config, error) {
@@ -126,8 +140,8 @@ func Load() (*Config, error) {
 		MaxUploadSize: 1 * 1024 * 1024,
 
 		BaseDomain:      env("BASE_DOMAIN", placeholderBaseDomain),
-		ExpiryHours:     envInt("EXPIRY_HOURS", 24),
-		ShortCodeLength: envInt("SHORT_CODE_LENGTH", 6),
+		ExpiryHours:     envPositiveInt("EXPIRY_HOURS", 24),
+		ShortCodeLength: envPositiveInt("SHORT_CODE_LENGTH", 6),
 		DefaultQRColor:  env("DEFAULT_QR_COLOR", "black"),
 		DefaultQRBG:     env("DEFAULT_QR_BACKGROUND", "white"),
 		GeoIPDBPath:     env("GEOIP_DB_PATH", filepath.Join(baseDir, "GeoLite2-Country.mmdb")),
@@ -192,7 +206,7 @@ func Load() (*Config, error) {
 	}
 	c.SecretKey = []byte(secret)
 
-	// The dockerfile bakes in the placeholder and the ghcr compose file passes
+	// The Dockerfile bakes in the placeholder and the ghcr compose file passes
 	// ${BASE_DOMAIN}, which interpolates to empty when unset. Left unnoticed,
 	// canonicalDomain 301s every short link to a domain the operator does not
 	// own — and browsers and CDNs cache a 301, so it outlives the fix.
@@ -284,6 +298,14 @@ func (c *Config) ClientIPFromForwarded(xff, cfConnectingIP string) string {
 		if ip := strings.TrimSpace(cfConnectingIP); net.ParseIP(ip) != nil {
 			return ip
 		}
+	}
+
+	// A real chain is a couple of hops. A long one is either broken or a client
+	// padding the header to bury its own address past the trusted proxies, or to
+	// make the split allocate. Count commas first — that does not allocate — and
+	// fall back to the peer when the chain is implausibly long.
+	if strings.Count(xff, ",")+1 > maxForwardedHops {
+		return ""
 	}
 
 	parts := strings.Split(xff, ",")

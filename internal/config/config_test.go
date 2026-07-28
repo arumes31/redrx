@@ -10,14 +10,22 @@ import (
 // another through the process environment.
 func clearEnv(t *testing.T) {
 	t.Helper()
+	// Every variable Load reads is listed, so a value in the tester's own
+	// environment cannot leak into a defaults assertion.
 	for _, k := range []string{
 		"SECRET_KEY", "FLASK_DEBUG", "REDRX_DEBUG", "DATABASE_URL", "BASE_DOMAIN",
-		"BLOCKED_DOMAINS", "EXPIRY_HOURS", "SHORT_CODE_LENGTH", "ENABLE_PHISHING_CHECK",
-		"DISABLE_REGISTRATION", "RATELIMIT_DEFAULT", "RATELIMIT_STORAGE_URL", "LISTEN_ADDR",
-		"TRUSTED_PROXIES", "USE_CLOUDFLARE", "ENABLE_SEO", "PHISHING_LIST_URLS", "MAXMIND_LICENSE_KEY",
+		"BLOCKED_DOMAINS", "BLOCKED_DOMAINS_PATH", "EXPIRY_HOURS", "SHORT_CODE_LENGTH",
+		"DEFAULT_QR_COLOR", "DEFAULT_QR_BACKGROUND", "GEOIP_DB_PATH",
+		"PHISHING_LIST_URLS", "PHISHING_CHECK_INTERVAL", "PHISHING_REMOVE_INTERVAL",
+		"ENABLE_PHISHING_CHECK", "ENABLE_AUTO_REMOVE_PHISHING",
+		"DISABLE_ANONYMOUS_CREATE", "DISABLE_REGISTRATION", "USE_CLOUDFLARE",
+		"ANONYMIZE_LOGS", "ENABLE_SEO", "SEO_DOMAIN", "TRUSTED_PROXIES",
+		"RATELIMIT_DEFAULT", "RATELIMIT_STORAGE_URL", "RATELIMIT_LOGIN",
+		"RATELIMIT_REGISTER", "RATELIMIT_AUTH", "RATELIMIT_API", "RATELIMIT_CREATE",
+		"RATELIMIT_REDIRECT", "RATELIMIT_HEALTH", "RATELIMIT_METRICS",
+		"LISTEN_ADDR", "MAXMIND_LICENSE_KEY",
 	} {
 		t.Setenv(k, "")
-		_ = k
 	}
 	// t.Setenv cannot unset, so clear by setting empty and rely on Load
 	// treating empty SECRET_KEY as missing.
@@ -257,6 +265,55 @@ func TestTrustedProxyChain(t *testing.T) {
 	cfg.TrustedProxies = append(cfg.TrustedProxies, mustCIDR(t, "172.71.0.0/16"))
 	if got := cfg.ClientIPFromForwarded("198.51.100.7, 172.71.1.1", ""); got != "198.51.100.7" {
 		t.Errorf("client = %q, want 198.51.100.7 after skipping the trusted hop", got)
+	}
+}
+
+// TestNonPositiveIntsFallBackToDefault covers a zero or negative EXPIRY_HOURS /
+// SHORT_CODE_LENGTH, which must not reach link generation.
+func TestNonPositiveIntsFallBackToDefault(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("SECRET_KEY", "k")
+	t.Setenv("BASE_DOMAIN", "links.example.org")
+	t.Setenv("EXPIRY_HOURS", "0")
+	t.Setenv("SHORT_CODE_LENGTH", "-4")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ExpiryHours != 24 {
+		t.Errorf("ExpiryHours = %d, want the default 24 for a non-positive value", cfg.ExpiryHours)
+	}
+	if cfg.ShortCodeLength != 6 {
+		t.Errorf("ShortCodeLength = %d, want the default 6 for a non-positive value", cfg.ShortCodeLength)
+	}
+
+	// A valid positive value is still honoured.
+	t.Setenv("EXPIRY_HOURS", "48")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ExpiryHours != 48 {
+		t.Errorf("ExpiryHours = %d, want 48", cfg.ExpiryHours)
+	}
+}
+
+// TestForwardedChainCapped rejects an implausibly long X-Forwarded-For by
+// falling back to the peer, so a client cannot pad the header without bound.
+func TestForwardedChainCapped(t *testing.T) {
+	c := &Config{}
+	parts := make([]string, 0, maxForwardedHops+5)
+	for i := 0; i < maxForwardedHops+5; i++ {
+		parts = append(parts, "203.0.113.1")
+	}
+	if got := c.ClientIPFromForwarded(strings.Join(parts, ", "), ""); got != "" {
+		t.Errorf("client = %q, want the peer fallback for an over-long chain", got)
+	}
+
+	// A chain within the cap still resolves.
+	if got := c.ClientIPFromForwarded("198.51.100.7, 172.71.1.1", ""); got != "172.71.1.1" {
+		t.Errorf("client = %q, want the last hop for a normal chain", got)
 	}
 }
 

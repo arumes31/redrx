@@ -3,9 +3,46 @@ package safety
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+// TestParseDomainListStripsInlineComments guards the hosts-format parsing: a
+// trailing "# note" must not be stored as the domain, and neither the address
+// prefix nor a full-line comment should leak in.
+func TestParseDomainListStripsInlineComments(t *testing.T) {
+	const list = `
+# a full-line comment
+0.0.0.0 evil.com # inline note
+bad.example
+127.0.0.1 phish.test#tight-comment
+   spaced.example   # trailing
+localhost
+`
+	domains, err := parseDomainList(strings.NewReader(list))
+	if err != nil {
+		t.Fatalf("parseDomainList: %v", err)
+	}
+
+	want := map[string]bool{
+		"evil.com": true, "bad.example": true,
+		"phish.test": true, "spaced.example": true,
+	}
+	for d := range want {
+		if _, ok := domains[d]; !ok {
+			t.Errorf("expected %q in the parsed list", d)
+		}
+	}
+	for _, unwanted := range []string{"note", "inline", "comment", "tight-comment", "localhost", "0.0.0.0"} {
+		if _, ok := domains[unwanted]; ok {
+			t.Errorf("%q should not have been stored as a domain", unwanted)
+		}
+	}
+	if len(domains) != len(want) {
+		t.Errorf("parsed %d domains, want %d: %v", len(domains), len(want), domains)
+	}
+}
 
 func writeList(t *testing.T, lines string) string {
 	t.Helper()

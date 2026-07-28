@@ -4,6 +4,13 @@ const initCanvas = () => {
     const canvas = document.getElementById('canvas');
     if (!canvas) return;
 
+    // Respect a reduced-motion preference: skip the particles, the interaction
+    // and resize handlers, and the animation loop entirely. A full-screen 60fps
+    // repaint is exactly what these visitors asked not to have.
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        return;
+    }
+
     const ctx = canvas.getContext('2d');
     let width, height;
 

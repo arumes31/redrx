@@ -7,6 +7,8 @@ package geo
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"net"
 	"net/http"
@@ -59,6 +61,10 @@ type Resolver struct {
 	size    int64
 	// checkedAt bounds how often that fingerprint is re-stat'ed.
 	checkedAt time.Time
+	// missingAt records when the database was last found absent, so repeated
+	// lookups short-circuit for one recheck interval instead of taking the
+	// write lock and re-stat'ing on every single one.
+	missingAt time.Time
 	closed    bool
 }
 
@@ -133,11 +139,19 @@ func (r *Resolver) Country(ctx context.Context, ip string, req *http.Request) st
 	return country
 }
 
+// cacheKey hashes the IP so the cache never persists a visitor's raw address.
+// The same deterministic hash is used for reads and writes, so cache hits are
+// unaffected.
+func cacheKey(ip string) string {
+	sum := sha256.Sum256([]byte(ip))
+	return cachePrefix + hex.EncodeToString(sum[:16])
+}
+
 func (r *Resolver) cached(ctx context.Context, ip string) string {
 	if r.cache == nil {
 		return ""
 	}
-	v, err := r.cache.Get(ctx, cachePrefix+ip).Result()
+	v, err := r.cache.Get(ctx, cacheKey(ip)).Result()
 	if err != nil {
 		return ""
 	}
@@ -148,7 +162,7 @@ func (r *Resolver) store(ctx context.Context, ip, country string) {
 	if r.cache == nil || country == "" {
 		return
 	}
-	if err := r.cache.Set(ctx, cachePrefix+ip, country, cacheTTL).Err(); err != nil {
+	if err := r.cache.Set(ctx, cacheKey(ip), country, cacheTTL).Err(); err != nil {
 		r.log.Debug("geo cache write failed", "error", err)
 	}
 }
@@ -196,6 +210,12 @@ func (r *Resolver) lookupDB(ip string) string {
 		return country
 	}
 
+	// Equally, once the database has been found missing, do not take the write
+	// lock and re-stat on every lookup until the recheck interval elapses.
+	if r.recentlyMissing() {
+		return "Unknown (DB Missing)"
+	}
+
 	if err := r.ensureReader(); err != nil {
 		return "Unknown (DB Missing)"
 	}
@@ -231,6 +251,16 @@ func (r *Resolver) lookupWithOpenReader(addr net.IP) (string, bool) {
 	return "Unknown", true
 }
 
+// recentlyMissing reports whether a recent stat already found no database, so
+// the caller can skip the write lock and the syscall until the recheck window
+// expires and the database is worth looking for again.
+func (r *Resolver) recentlyMissing() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.reader == nil && !r.missingAt.IsZero() &&
+		time.Since(r.missingAt) < readerRecheckInterval
+}
+
 // ensureReader opens the database, or reopens it when the file on disk has been
 // replaced. It takes the write lock, so it must never be called while the read
 // lock is held.
@@ -242,11 +272,13 @@ func (r *Resolver) ensureReader() error {
 		return os.ErrClosed
 	}
 	if r.dbPath == "" {
+		r.missingAt = time.Now()
 		return os.ErrNotExist
 	}
 
 	info, err := os.Stat(r.dbPath)
 	if err != nil {
+		r.missingAt = time.Now()
 		return err
 	}
 
@@ -259,6 +291,7 @@ func (r *Resolver) ensureReader() error {
 
 	reader, err := geoip2.Open(r.dbPath)
 	if err != nil {
+		r.missingAt = time.Now()
 		r.log.Warn("cannot open GeoIP database", "path", r.dbPath, "error", err)
 		return err
 	}
@@ -267,6 +300,8 @@ func (r *Resolver) ensureReader() error {
 	}
 	r.reader, r.opened = reader, r.dbPath
 	r.modTime, r.size, r.checkedAt = info.ModTime(), info.Size(), time.Now()
+	// The database is open again, so clear the negative cache.
+	r.missingAt = time.Time{}
 	return nil
 }
 

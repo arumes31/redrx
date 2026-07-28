@@ -43,6 +43,14 @@ const (
 	scryptP = 1
 	// Werkzeug passes dklen=64 to hashlib.scrypt.
 	scryptKeyLen = 64
+
+	// Bounds on values read out of a stored hash. Our own hashes sit far below
+	// these; the caps stop a crafted hash from making a single verify derive a
+	// huge key or, since scrypt's memory is ~128*N*r bytes, exhaust memory.
+	maxDeriveKeyLen = 128
+	maxScryptN      = 1 << 17 // 131072, 4x Werkzeug's default (~128 MB at r=8)
+	maxScryptR      = 16
+	maxScryptP      = 16
 )
 
 var errBadHash = errors.New("security: malformed password hash")
@@ -81,7 +89,13 @@ func CheckPasswordHash(stored, password string) bool {
 	if err != nil {
 		return false
 	}
-	got, err := derive(method, salt, password, len(want)/2)
+	wantLen := len(want) / 2
+	if wantLen > maxDeriveKeyLen {
+		// A digest longer than any real hash is a crafted one; refuse it rather
+		// than derive that many bytes of key material.
+		return false
+	}
+	got, err := derive(method, salt, password, wantLen)
 	if err != nil {
 		return false
 	}
@@ -115,6 +129,12 @@ func derive(method, salt, password string, wantLen int) ([]byte, error) {
 		n, r, p, err := parseScryptParams(method)
 		if err != nil {
 			return nil, err
+		}
+		// Bound the cost parameters. scrypt's memory use is ~128*N*r bytes, so a
+		// crafted hash with a huge N or r would otherwise let one verify exhaust
+		// memory. Our own hashes use the fixed defaults, well under these.
+		if n < 2 || n > maxScryptN || r < 1 || r > maxScryptR || p < 1 || p > maxScryptP {
+			return nil, errBadHash
 		}
 		if wantLen <= 0 {
 			wantLen = scryptKeyLen

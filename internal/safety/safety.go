@@ -263,6 +263,15 @@ func parseDomainList(r io.Reader) (map[string]struct{}, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		// Strip an inline comment first. A domain never contains '#', so any '#'
+		// starts a comment: "0.0.0.0 evil.com # note" must keep evil.com, not the
+		// trailing "note" that taking the last field would otherwise store.
+		if i := strings.IndexByte(line, '#'); i >= 0 {
+			line = strings.TrimSpace(line[:i])
+		}
+		if line == "" {
+			continue
+		}
 		// Hosts-file feeds prefix entries with an address; keep the last field.
 		if fields := strings.Fields(line); len(fields) > 1 {
 			line = fields[len(fields)-1]
@@ -288,11 +297,8 @@ func (c *Checker) Refresh(ctx context.Context) error {
 		}
 	}
 
-	type result struct {
-		idx  int
-		body []byte
-	}
-	results := make([]result, len(c.feedURLs))
+	bodies := make([][]byte, len(c.feedURLs))
+	errs := make([]error, len(c.feedURLs))
 	var wg sync.WaitGroup
 	client := &http.Client{Timeout: 60 * time.Second}
 
@@ -307,19 +313,30 @@ func (c *Checker) Refresh(ctx context.Context) error {
 			body, err := fetch(ctx, client, feed)
 			if err != nil {
 				c.log.Warn("phishing feed download failed", "url", feed, "error", err)
+				errs[i] = err
 				return
 			}
-			results[i] = result{idx: i, body: body}
+			bodies[i] = body
 		}(i, feed)
 	}
 	wg.Wait()
 
+	// Every configured feed must succeed before the list is replaced. A partial
+	// download would install a shorter list and silently un-block every domain
+	// only the failing feed carried, so keep the existing list instead.
+	for i, err := range errs {
+		if err != nil {
+			return fmt.Errorf("safety: phishing feed %q failed, keeping the existing list: %w",
+				strings.TrimSpace(c.feedURLs[i]), err)
+		}
+	}
+
 	var combined []byte
-	for _, r := range results {
-		if len(r.body) == 0 {
+	for _, body := range bodies {
+		if len(body) == 0 {
 			continue
 		}
-		combined = append(combined, r.body...)
+		combined = append(combined, body...)
 		combined = append(combined, '\n')
 	}
 	if len(combined) == 0 {

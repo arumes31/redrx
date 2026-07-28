@@ -167,34 +167,66 @@ func (d *DB) SetURLEnabledToggle(ctx context.Context, id int64) (bool, error) {
 	return enabled.orDefault(true), nil
 }
 
+// deleteBatchSize caps how many ids go into one IN clause, so a large
+// multi-select stays within the driver's bind-parameter ceiling (SQLite is a
+// few hundred to ~32k depending on the build; Postgres is 65535). Each id costs
+// one parameter and the query adds one for user_id, so 500 is safe everywhere.
+const deleteBatchSize = 500
+
 // DeleteUserURLs removes the given links, ignoring any not owned by the user.
-// It returns the number of links actually deleted.
+// It returns the number of links actually deleted. Everything runs in one
+// transaction, matching DeleteURL, so an interruption cannot leave a link's
+// click history deleted while the link itself survives.
 func (d *DB) DeleteUserURLs(ctx context.Context, userID int64, ids []int64) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
 
-	args := make([]any, 0, len(ids)+1)
-	for _, id := range ids {
-		args = append(args, id)
-	}
-	args = append(args, userID)
-
-	// Clear the child rows first; SQLite files created by SQLAlchemy have no
-	// ON DELETE CASCADE on this foreign key.
-	if _, err := d.Exec(ctx, fmt.Sprintf(
-		"DELETE FROM clicks WHERE url_id IN (SELECT id FROM urls WHERE id IN (%s) AND user_id = ?)",
-		placeholders), args...); err != nil {
-		return 0, err
-	}
-
-	res, err := d.Exec(ctx, fmt.Sprintf(
-		"DELETE FROM urls WHERE id IN (%s) AND user_id = ?", placeholders), args...)
+	tx, err := d.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
-	return res.RowsAffected()
+	defer func() { _ = tx.Rollback() }()
+
+	var deleted int64
+	for start := 0; start < len(ids); start += deleteBatchSize {
+		end := start + deleteBatchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunk := ids[start:end]
+
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",")
+		args := make([]any, 0, len(chunk)+1)
+		for _, id := range chunk {
+			args = append(args, id)
+		}
+		args = append(args, userID)
+
+		// Clear the child rows first; SQLite files created by SQLAlchemy have no
+		// ON DELETE CASCADE on this foreign key.
+		if _, err := tx.ExecContext(ctx, d.rebind(fmt.Sprintf(
+			"DELETE FROM clicks WHERE url_id IN (SELECT id FROM urls WHERE id IN (%s) AND user_id = ?)",
+			placeholders)), args...); err != nil {
+			return 0, err
+		}
+
+		res, err := tx.ExecContext(ctx, d.rebind(fmt.Sprintf(
+			"DELETE FROM urls WHERE id IN (%s) AND user_id = ?", placeholders)), args...)
+		if err != nil {
+			return 0, err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		deleted += n
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 // UserURLs returns one page of a user's links, newest first.

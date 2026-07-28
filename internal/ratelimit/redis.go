@@ -14,19 +14,25 @@ type RedisBackend struct {
 	client *redis.Client
 }
 
+// Per-phase timeouts. The go-redis defaults are a 5s dial with three retries
+// and backoff, so a Redis outage would turn each request into a multi-second
+// stall rather than an error — and the limiter's fail-open path only handles
+// errors, not hangs.
+const (
+	dialTimeout  = 500 * time.Millisecond
+	readTimeout  = 300 * time.Millisecond
+	writeTimeout = 300 * time.Millisecond
+)
+
 // NewRedisBackend connects to a redis:// URL.
 func NewRedisBackend(url string) (*RedisBackend, error) {
 	opts, err := redis.ParseURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("ratelimit: parse redis url: %w", err)
 	}
-	// Bound every phase. The defaults are a 5s dial with three retries and
-	// backoff, so a Redis outage turns each request into a multi-second stall
-	// rather than an error — and the limiter's fail-open path only handles
-	// errors, not hangs.
-	opts.DialTimeout = 500 * time.Millisecond
-	opts.ReadTimeout = 300 * time.Millisecond
-	opts.WriteTimeout = 300 * time.Millisecond
+	opts.DialTimeout = dialTimeout
+	opts.ReadTimeout = readTimeout
+	opts.WriteTimeout = writeTimeout
 	opts.MaxRetries = -1 // -1 disables retries; 0 would mean "use the default"
 	opts.PoolTimeout = time.Second
 	return &RedisBackend{client: redis.NewClient(opts)}, nil
@@ -39,7 +45,12 @@ func NewRedisBackend(url string) (*RedisBackend, error) {
 // pool dial and the command, so a deadline here bounds the whole thing
 // including DNS, and the limiter's fail-open path turns the resulting error
 // into an allowed request rather than a stall.
-const opTimeout = 400 * time.Millisecond
+//
+// It must sit above the sum of the per-phase timeouts, or a healthy Redis
+// reached over a cold pool — one that must dial, write and read — would be cut
+// off mid-connect and fail open needlessly. A small margin covers the second
+// read of a pipelined MULTI/EXEC.
+const opTimeout = dialTimeout + writeTimeout + readTimeout + 200*time.Millisecond
 
 // Client exposes the connection so other subsystems (the GeoIP cache) can reuse
 // it rather than opening a second one.

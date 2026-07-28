@@ -177,33 +177,32 @@ func buildRateLimitBackend(cfg *config.Config, log *slog.Logger) (ratelimit.Back
 	return backend, backend.Client()
 }
 
-// maintainBlocklist refreshes the phishing feed at boot and on a timer, and
-// optionally sweeps links that now point at blocked domains.
+// maintainBlocklist refreshes the phishing feed on PHISHING_CHECK_INTERVAL and,
+// when auto-removal is on, sweeps links pointing at blocked domains on its own
+// PHISHING_REMOVE_INTERVAL. The two are independent because they answer to
+// different operator settings.
 func maintainBlocklist(ctx context.Context, cfg *config.Config, checker *safety.Checker, db *store.DB, log *slog.Logger) {
 	if !cfg.EnablePhishingCheck {
 		return
 	}
 
-	interval := time.Duration(cfg.PhishingCheckInterval) * time.Hour
-	if interval <= 0 {
-		interval = 24 * time.Hour
-	}
-
-	run := func() {
+	refresh := func() {
 		if err := checker.Refresh(ctx); err != nil {
 			log.Warn("phishing list refresh failed", "error", err)
-			// Do not sweep on a stale or absent list: the sweep deletes rows,
-			// and acting on a list we could not refresh risks deleting on the
-			// basis of data we do not have.
-			if cfg.EnableAutoRemovePhish {
-				log.Warn("skipping phishing sweep because the list could not be refreshed")
-			}
+		}
+	}
+
+	// The sweep is safe to run on its own schedule: sweepBlockedLinks deletes
+	// only on a positive blocklist match and aborts without deleting anything
+	// when the list cannot be consulted, so it never empties the table on an
+	// unreadable or absent list — the case the old refresh-then-sweep coupling
+	// was guarding against.
+	sweep := func() {
+		if !cfg.EnableAutoRemovePhish {
 			return
 		}
-		if cfg.EnableAutoRemovePhish {
-			if err := sweepBlockedLinks(ctx, checker, db, log); err != nil {
-				log.Warn("phishing sweep failed", "error", err)
-			}
+		if err := sweepBlockedLinks(ctx, checker, db, log); err != nil {
+			log.Warn("phishing sweep failed", "error", err)
 		}
 	}
 
@@ -235,18 +234,40 @@ func maintainBlocklist(ctx context.Context, cfg *config.Config, checker *safety.
 		}
 	}
 
-	run()
+	// Apply the freshly loaded list once at boot.
+	sweep()
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	refreshTicker := time.NewTicker(intervalHours(cfg.PhishingCheckInterval))
+	defer refreshTicker.Stop()
+
+	// The sweep ticker exists only when auto-removal is enabled, so a disabled
+	// sweep costs nothing.
+	var sweepC <-chan time.Time
+	if cfg.EnableAutoRemovePhish {
+		sweepTicker := time.NewTicker(intervalHours(cfg.PhishingRemoveInterval))
+		defer sweepTicker.Stop()
+		sweepC = sweepTicker.C
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			run()
+		case <-refreshTicker.C:
+			refresh()
+		case <-sweepC:
+			sweep()
 		}
 	}
+}
+
+// intervalHours turns an hour count into a ticker interval, falling back to a
+// day for a non-positive value.
+func intervalHours(hours int) time.Duration {
+	if hours <= 0 {
+		return 24 * time.Hour
+	}
+	return time.Duration(hours) * time.Hour
 }
 
 // sweepBlockedLinks deletes links whose destination or any rotation target is

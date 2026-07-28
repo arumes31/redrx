@@ -22,7 +22,7 @@ import (
 )
 
 // pixelsPerModule matches the previous renderer's box_size of 10.
-const pixelsPerModule = 8
+const pixelsPerModule = 10
 
 // Options controls rendering.
 type Options struct {
