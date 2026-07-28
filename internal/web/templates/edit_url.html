@@ -1,0 +1,74 @@
+{{define "title"}}Edit Link - Redrx{{end}}
+
+{{define "content"}}
+{{$form := .Get "form"}}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card p-4">
+            <h2 class="text-center mb-4">Edit Link <span class="text-info">/{{.Get "short_code"}}</span></h2>
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <div class="mb-3">
+                    <label class="form-label" for="long_url">Destination URL</label>
+                    <input class="form-control" id="long_url" name="long_url" type="text" value="{{$form.LongURL}}" required>
+                    {{with $form.Errors.Get "long_url"}}<div class="text-danger small">{{.}}</div>{{end}}
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label" for="ios_target_url">iOS Target URL</label> <i class="fab fa-apple text-muted"></i>
+                        <input class="form-control" id="ios_target_url" name="ios_target_url" type="text" placeholder="Optional iOS redirect" value="{{$form.IOSTargetURL}}">
+                        {{with $form.Errors.Get "ios_target_url"}}<div class="text-danger small">{{.}}</div>{{end}}
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="android_target_url">Android Target URL</label> <i class="fab fa-android text-muted"></i>
+                        <input class="form-control" id="android_target_url" name="android_target_url" type="text" placeholder="Optional Android redirect" value="{{$form.AndroidTargetURL}}">
+                        {{with $form.Errors.Get "android_target_url"}}<div class="text-danger small">{{.}}</div>{{end}}
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="expiry_input">Expiry (Hours) from now</label>
+                    <div class="input-group">
+                        <input class="form-control" id="expiry_input" name="expiry_hours" type="number" min="0" placeholder="Leave blank to keep current" value="{{$form.ExpiryHours}}">
+                        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="document.getElementById('expiry_input').value=0">Never</button>
+                    </div>
+                    {{with $form.Errors.Get "expiry_hours"}}<div class="text-danger small">{{.}}</div>{{end}}
+                    <div class="form-text text-light opacity-50 small">
+                        {{with .Get "expires_at"}}Currently expires {{.}}. {{end}}Leave blank to keep it, enter hours from now to change it, or 0 to make it permanent.
+                    </div>
+                </div>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" id="preview_mode" name="preview_mode" type="checkbox" value="y"{{if $form.PreviewMode}} checked{{end}}>
+                    <label class="form-check-label" for="preview_mode">Preview Mode</label>
+                    <button type="button" class="fas fa-info-circle text-muted small ms-1"
+                            style="background:none;border:0;padding:0;cursor:help;vertical-align:baseline;"
+                            data-bs-toggle="tooltip"
+                            aria-label="About Preview Mode"
+                            title="When enabled, users will see a preview page showing the destination URL and a security check before being redirected. This helps prevent accidental clicks and increases transparency."></button>
+                </div>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" id="stats_enabled" name="stats_enabled" type="checkbox" value="y"{{if $form.StatsEnabled}} checked{{end}}>
+                    <label class="form-check-label" for="stats_enabled">Enable Statistics</label>
+                    <button type="button" class="fas fa-info-circle text-muted small ms-1"
+                            style="background:none;border:0;padding:0;cursor:help;vertical-align:baseline;"
+                            data-bs-toggle="tooltip"
+                            aria-label="About Enable Statistics"
+                            title="Enable this to collect anonymized data on link performance. Since this link is associated with your account, these statistics are PRIVATE and accessible only to you. We track clicks, countries, browsers, and platforms."></button>
+                </div>
+                <div class="d-flex justify-content-between mt-4">
+                    <a href="/dashboard" class="btn btn-outline-light">Cancel</a>
+                    <button type="submit" class="btn btn-shorten">Update Link</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        tooltipTriggerList.map(function (el) { return new bootstrap.Tooltip(el) })
+    });
+</script>
+{{end}}

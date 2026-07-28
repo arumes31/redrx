@@ -1,0 +1,15 @@
+title = "redrx gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+Documentation placeholders. The API docs page shows a curl example carrying an
+X-API-KEY header, which the default curl-auth-header rule cannot tell apart from
+a real credential. The allowlist matches the placeholder text itself rather than
+the file, so an actual key pasted into the same page would still be reported.
+"""
+regexes = [
+  '''your_api_key_here''',
+]

@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="app/static/img/logo.png" alt="Redrx Logo" width="120" />
+  <img src="internal/web/static/img/logo.png" alt="Redrx Logo" width="120" />
 </p>
 
 <h1 align="center">Redrx</h1>
 
 <p align="center">
-  A modern, high-performance, and feature-rich self-hosted URL shortener built with Python (Flask), PostgreSQL/SQLite, Redis, and SQLAlchemy. It features a stunning dark UI with interactive animations, robust security protocols, and real-time geographical analytics.
+  A modern, high-performance, and feature-rich self-hosted URL shortener written in Go, backed by PostgreSQL or SQLite with optional Redis. It features a stunning dark UI with interactive animations, robust security protocols, and real-time geographical analytics — shipped as a single static binary.
 </p>
 
 <p align="center">
@@ -14,8 +14,8 @@
 
 <p align="center">
   <img src="https://img.shields.io/github/actions/workflow/status/arumes31/redirx/docker-build.yml?branch=main&style=for-the-badge&logo=github&color=vibrant" alt="Build Status" />
-  <img src="https://img.shields.io/badge/python-3.14-blue?style=for-the-badge&logo=python" alt="Python Version" />
-  <img src="https://img.shields.io/badge/security-bandit-yellow?style=for-the-badge&logo=securityscorecard" alt="Security Bandit" />
+  <img src="https://img.shields.io/badge/go-1.26-00ADD8?style=for-the-badge&logo=go" alt="Go Version" />
+  <img src="https://img.shields.io/badge/security-gosec%20%7C%20govulncheck-yellow?style=for-the-badge&logo=securityscorecard" alt="Security Scanning" />
   <img src="https://img.shields.io/badge/dependencies-up%20to%20date-brightgreen?style=for-the-badge&logo=dependabot" alt="Dependabot" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License MIT" />
 </p>
@@ -45,7 +45,7 @@
 *   📊 **Analytics Dashboard:** Deep visualization on click counters, browser types, platforms, and real-time country detection (powered by local MaxMind GeoIP).
 *   🚨 **Phishing Deterrent:** Dual-stage safety verification: cross-checks domain creation against real-time phishing databases with automated malicious link removal.
 *   ⚙️ **Access Controls:** Toggle configurations to allow/restrict public registrations or anonymous short link creation.
-*   📦 **Strict Hash Verification:** Production locks are secured with strict SHA-256 integrity verification (`--require-hashes`) for container builds.
+*   📦 **Single Binary:** Templates and static assets are embedded, so deployment is one ~25 MB static binary with no runtime, interpreter, or asset directory to ship alongside it.
 
 ---
 
@@ -55,31 +55,70 @@ Every link request undergoes security screening and database optimization before
 
 ```mermaid
 graph TD
-    A[User requests short code /ABC123] --> B{Phishing Check}
-    B -- Is Domain Blocked? --> C[Return 403 Forbidden]
-    B -- Safe --> D{Expired / Inactive?}
-    D -- Expired/Future Window --> E[Return 404 Not Found]
-    D -- Active --> F{Password Protected?}
-    F -- Yes --> G[Prompt User for Password]
+    A[User requests short code /ABC123] --> B{Code exists?}
+    B -- No --> C[404 Not Found]
+    B -- Yes --> D{Enabled and within its schedule?}
+    D -- Disabled / expired / outside window --> E[410 Gone]
+    D -- Active --> F{Password protected?}
+    F -- Yes, not yet unlocked --> G[Prompt for the link password]
     G -- Invalid --> G
-    G -- Valid --> H{Rotational Redirect?}
+    G -- Valid --> H{Device-specific target?}
     F -- No --> H
-    H -- Yes --> I[Resolve Rotated Target]
-    H -- No --> J[Resolve Main URL]
-    I --> K[Update Analytics: GeoIP / User Agent]
-    J --> K
-    K --> L[302 Redirect to Target]
+    H -- iOS / Android --> I[Use the matching device URL]
+    H -- Neither --> J{Rotation targets set?}
+    J -- Yes --> K[Pick a rotation target at random]
+    J -- No --> L[Use the main URL]
+    I --> M{Destination on the blocklist?}
+    K --> M
+    L --> M
+    M -- Blocked --> N[403 Forbidden]
+    M -- Safe --> O[Record click: country, browser, platform, referrer]
+    O --> P{Preview mode?}
+    P -- Yes --> Q[Preview page: confirm before leaving]
+    P -- No --> R[Interstitial with a 5s countdown, then navigate]
 ```
+
+The destination is re-checked against the blocklist on every request, not only at creation time, so a link whose target is added to a phishing feed later stops resolving immediately.
 
 ---
 
 ## 🛠️ Tech Stack
 
-*   **Core Backend:** Python 3.14, Flask, SQLAlchemy, Gunicorn (WSGI HTTP server)
-*   **Data Processing:** PostgreSQL (robust relational store), Redis (fast rate limiting & session cache), SQLite (resilient local fallback)
-*   **Geo-Location Engine:** MaxMind GeoLite2 country mapping with automatic local file update background task
+*   **Core Backend:** Go 1.26, standard-library `net/http` routing and `html/template` rendering — no web framework
+*   **Data Processing:** PostgreSQL via `pgx` (robust relational store), Redis (shared rate limiting & geo cache), SQLite via the pure-Go `modernc.org/sqlite` driver (resilient local fallback, no cgo)
+*   **Geo-Location Engine:** MaxMind GeoLite2 country mapping with a Redis-backed lookup cache
 *   **Real-time Metrics:** Integrated Prometheus endpoint handler on `/metrics`
-*   **Modern Frontend:** HTML5, CSS3 (Bootstrap 5 Dark Mode theme), custom Canvas API backdrop animations
+*   **Modern Frontend:** HTML5, CSS3 (Bootstrap 5 Dark Mode theme), custom Canvas API backdrop animations, all embedded into the binary
+
+### Project Layout
+
+```
+cmd/redrx/            Entrypoint, logging, background blocklist refresh
+internal/config/      Environment configuration
+internal/store/       Database access; schema matches the previous SQLAlchemy models
+internal/security/    Werkzeug-compatible password hashing
+internal/session/     Signed cookie sessions and CSRF tokens
+internal/ratelimit/   Flask-Limiter-compatible limit parsing, memory and Redis backends
+internal/safety/      Blocked-domain and phishing-feed enforcement
+internal/geo/         MaxMind lookups and IP anonymisation
+internal/qr/          QR rendering with colours and logo overlay
+internal/shortcode/   Short code generation and validation
+internal/web/         HTTP handlers, middleware, templates and static assets
+```
+
+---
+
+## 🔄 Upgrading from the Python release
+
+This version is a drop-in replacement. **Existing databases are used in place — no migration, export or import step.**
+
+*   **Schema:** identical table, column and index names. Missing columns are added automatically on boot; nothing is dropped or renamed.
+*   **Accounts:** existing passwords keep working. Werkzeug `scrypt` and `pbkdf2` hashes are verified natively, and are transparently upgraded to the current default on the next successful login.
+*   **Links:** short codes, rotation targets, per-link passwords, schedules and click counters are all read from the existing rows.
+*   **Configuration:** every `SECRET_KEY`, `DATABASE_URL`, `RATELIMIT_*`, `PHISHING_*` and GeoIP variable keeps its previous name, meaning and default, so existing `.env` files and compose stacks work unchanged.
+*   **URLs:** all public routes are unchanged, so existing short links, QR codes and shared statistics pages keep resolving.
+
+The one visible change is that **users are logged out once**, because session cookies are signed differently. Logging back in restores everything.
 
 ---
 
@@ -116,35 +155,43 @@ The application will boot and expose itself at `http://localhost:5000`.
 
 ## 💻 Local Development Setup
 
-To secure development packages from production builds, dependencies are segregated into human-editable templates and strict hash-verified lock files.
+Requires Go 1.26.5 or newer, the minimum declared by the `go` directive in `go.mod`. Dependencies are pinned in `go.mod` and checksum-verified through `go.sum`.
 
-### 1. Structure
-*   `requirements.txt`: Master direct runtime dependency source.
-*   `requirements.lock.txt`: production locked pins, generated with SHA-256 package signatures (`--require-hashes`).
-*   `requirements-dev.txt`: Dev dependencies including pytest.
-*   `requirements-dev.lock.txt`: dev-specific lock with full package tree and hashes.
+### 1. Build
 
-### 2. Environment Installation
-Ensure virtual environment activation and run strict hash-verified installation:
-```powershell
+```bash
+go mod download
+go build ./cmd/redrx
+```
+
+### 2. Run
+
+The server defaults to SQLite at `db/shortener.db`, so no external services are needed for development:
+
+```bash
 # Windows PowerShell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-
-# Install package set with secure hashes
-pip install --require-hashes -r requirements-dev.lock.txt
+$env:SECRET_KEY = "dev-secret"
+$env:REDRX_DEBUG = "true"
+$env:BASE_DOMAIN = "localhost:5000"
+go run ./cmd/redrx
 ```
 
-### 3. Execution & Tests
-Set your local env to debug/development and launch:
-```powershell
-# Run the local server
-$env:FLASK_DEBUG="true"
-python run.py
-
-# Execute full automated test suite (all checks pass)
-pytest
+```bash
+# Linux / macOS
+SECRET_KEY=dev-secret REDRX_DEBUG=true BASE_DOMAIN=localhost:5000 go run ./cmd/redrx
 ```
+
+The application boots at `http://localhost:5000`. Setting `REDRX_DEBUG` (or the legacy `FLASK_DEBUG`) relaxes the canonical-domain redirect, allows a fallback `SECRET_KEY`, and drops the `Secure` flag from session cookies so plain HTTP works locally.
+
+### 3. Tests
+
+```bash
+go test ./...              # full suite
+go test -race ./...        # with the race detector
+go vet ./...               # static analysis
+```
+
+The suite includes a committed SQLite fixture written by the previous Python application (`internal/store/testdata/legacy_python.db`). Tests read and write it to prove that existing databases, password hashes and timestamp formats remain compatible.
 
 ---
 
@@ -161,6 +208,36 @@ pytest
 | **Limits** | `RATELIMIT_STORAGE_URL` | `redis://redis:6379` | Rate limiting backend. Can fall back to local storage `memory://` in dev. |
 | **Access** | `DISABLE_ANONYMOUS_CREATE` | `false` | When true, only authenticated users can shorten links. |
 | **Access** | `DISABLE_REGISTRATION` | `false` | When true, public registration routes are disabled. |
+| **Proxy** | `TRUSTED_PROXIES` | - | Peers whose `X-Forwarded-*` / `CF-*` headers are believed (IPs or CIDRs, comma separated; `*` for any). Empty means the headers are ignored. |
+| **Proxy** | `USE_CLOUDFLARE` | `false` | Trust `CF-Connecting-IP` from a trusted proxy. Required for correct client IPs behind Cloudflare. |
+| **Server** | `LISTEN_ADDR` | `:5000` | Address the HTTP server binds to. |
+| **Server** | `REDRX_DEBUG` | `false` | Development mode. Relaxes the canonical-domain redirect and allows a fallback `SECRET_KEY`. |
+
+### Running behind a reverse proxy
+
+Rate limiting, analytics and the abuse controls all key off the client IP, so
+redrx has to be told who is allowed to tell it what that IP is. **By default it
+trusts nobody and uses the peer address**, which is correct for a directly
+exposed service: a client that can set its own `X-Forwarded-For` can otherwise
+pick its own rate-limit bucket and bypass every limit, including the one in
+front of login.
+
+For the common **Cloudflare → nginx → redrx** chain:
+
+```env
+TRUSTED_PROXIES=172.18.0.0/16   # nginx, as redrx sees it
+USE_CLOUDFLARE=true
+```
+
+`USE_CLOUDFLARE` matters more than it looks. nginx appends the address it
+received from to `X-Forwarded-For`, so the header arrives as
+`<visitor>, <cloudflare-edge>` — the *last* entry is a Cloudflare server, not
+your user. `CF-Connecting-IP` names the real visitor, so redrx prefers it. The
+alternative is to add Cloudflare's published ranges to `TRUSTED_PROXIES`, which
+lets redrx walk back past them; without one of the two, every visitor on the
+internet shares the handful of buckets belonging to the edge servers.
+
+Rate limits use the same syntax as before (`"200 per day;50 per hour"`, `"10 per minute"`, `"5/hour"`). `RATELIMIT_STORAGE_URL` accepts `memory://` or a `redis://` URL; when Redis is configured it also backs the GeoIP lookup cache. If Redis is unreachable at boot the service logs a warning and falls back to in-memory limiting rather than refusing to start.
 
 ---
 
@@ -241,10 +318,13 @@ X-API-KEY: your_api_key_here
 
 ## 🛡️ Security and Hardening
 
-- **Bandit SAST Engine:** Automated static security scans executed continuously.
-- **Dependency Isolation:** Separate locks isolate development-only code from the production Gunicorn engine.
-- **Lock Verification:** Lock files are cryptographically validated to defend against supply chain attacks.
-- **Dependabot Enforced:** Automatic dependency tracking to patches and security updates.
+- **SAST and Vulnerability Scanning:** `gosec`, `govulncheck` and CodeQL run on every push and nightly.
+- **Supply Chain:** `go.sum` pins a checksum for every dependency; CI runs `go mod verify`, and Trivy and Gitleaks scan the tree.
+- **Fail-Closed Blocklist:** If phishing checking is enabled but the blocklist cannot be read and nothing is cached, every destination is rejected rather than silently allowing traffic past an unenforced filter.
+- **Session Integrity:** Cookies are HMAC-SHA256 signed, `HttpOnly`, `SameSite=Lax`, and `Secure` outside debug. CSRF tokens are per-session, constant-time compared, and rotated on login.
+- **Privacy:** Client IPs are truncated to two octets (IPv4) or two groups (IPv6) before being stored, and `ANONYMIZE_LOGS` masks them in log output.
+- **Container:** Runs as a non-root user from a minimal Alpine base. The Go toolchain stays in the build stage, so the runtime image carries only the static binary and its CA certificates — no compiler and no language runtime.
+- **Dependabot Enforced:** Automatic dependency tracking for patches and security updates.
 
 ---
 

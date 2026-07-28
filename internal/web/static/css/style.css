@@ -1,0 +1,151 @@
+body { 
+    background: #000;
+    min-height: 100vh; 
+    color: #fff;
+    position: relative;
+    overflow-x: hidden;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+#canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    background: radial-gradient(circle at center, #1b2735 0%, #090a0f 100%);
+}
+
+.card { 
+    background: rgba(20, 20, 20, 0.6); 
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 15px 40px rgba(0,0,0,0.5); 
+    border-radius: 12px;
+}
+
+.btn-shorten { 
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+    border: none;
+    /* Bootstrap derives its focus ring from --bs-btn-focus-shadow-rgb, which only
+       the .btn-* variant classes set. Without this the rgba() is invalid, the
+       ring collapses to none, and Bootstrap's outline:0 leaves no focus
+       indicator at all on the primary call to action of every form. */
+    --bs-btn-focus-shadow-rgb: 102, 126, 234; 
+    color: white;
+    font-weight: 600;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-shorten:hover { 
+    background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%); 
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(118, 75, 162, 0.4);
+}
+
+.short-url { 
+    background: rgba(255,255,255,0.05); 
+    padding: 12px; 
+    border-radius: 8px; 
+    word-break: break-all; 
+    color: #667eea;
+    border: 1px solid rgba(102, 126, 234, 0.3);
+    font-family: monospace;
+    font-size: 1.1em;
+}
+
+.qr-container { text-align: center; margin-top: 20px; }
+.qr-img { 
+    max-width: 200px; 
+    border: 1px solid rgba(255, 255, 255, 0.2); 
+    border-radius: 8px; 
+    padding: 5px;
+    background: rgba(255,255,255,0.1);
+}
+
+.form-section { margin-bottom: 20px; }
+
+.form-control, .form-control-color, .form-select { 
+    background: rgba(255,255,255,0.05); 
+    border: 1px solid rgba(255,255,255,0.1); 
+    color: #fff; 
+}
+
+.form-control:focus, .form-select:focus {
+    background: rgba(255,255,255,0.1);
+    border-color: #667eea;
+    color: #fff;
+    box-shadow: 0 0 0 0.25rem rgba(102, 126, 234, 0.25);
+}
+
+/* Placeholders default to a low-contrast grey on these dark controls; set an
+   explicit, legible colour (and reset Firefox's reduced placeholder opacity). */
+.form-control::placeholder,
+.form-control-color::placeholder,
+.form-select::placeholder {
+    color: rgba(255, 255, 255, 0.7);
+    opacity: 1;
+}
+
+/* Bootstrap dims disabled controls; keep their text and placeholder readable on
+   the dark background. -webkit-text-fill-color is needed for Safari/iOS. */
+.form-control:disabled, .form-control-color:disabled, .form-select:disabled,
+.form-control[readonly] {
+    color: #fff;
+    -webkit-text-fill-color: #fff;
+    opacity: 1;
+}
+.form-control:disabled::placeholder, .form-select:disabled::placeholder {
+    color: rgba(255, 255, 255, 0.7);
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.7);
+}
+
+
+.nav-tabs .nav-link { color: rgba(255,255,255,0.6); border: none; }
+.nav-tabs .nav-link.active { 
+    color: #fff; 
+    background: rgba(255,255,255,0.1); 
+    border-radius: 5px 5px 0 0;
+}
+
+.alert-info { background: rgba(13, 202, 240, 0.15); border-left: 4px solid #0dc5e8; color: #fff; }
+.alert-danger { background: rgba(220, 53, 69, 0.15); border-left: 4px solid #dc3545; color: #fff; }
+.alert-success { background: rgba(25, 135, 84, 0.15); border-left: 4px solid #198754; color: #fff; }
+
+/* --------------------------------------------------------------------------
+   Touch and motion
+   -------------------------------------------------------------------------- */
+
+/* The fixed canvas repaints every frame underneath each blurred card, and a
+   backdrop-filter must re-sample its backdrop whenever that backdrop changes.
+   On the dashboard that is seven full-viewport blurs at 60fps for a page the
+   user is only reading, which is the most expensive thing here on a phone. */
+@media (max-width: 767.98px) {
+    .card {
+        backdrop-filter: none;
+        background: rgba(20, 20, 20, 0.9);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #canvas { display: none; }
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Bootstrap sizes checkboxes at 1em and switches at 2em x 1em, which lands
+   around 16px — well under the 24px WCAG 2.5.8 target size, and these
+   particular controls disable live links or select rows for deletion. */
+@media (pointer: coarse) {
+    .table .form-check-input { width: 1.5em; height: 1.5em; }
+    .table .form-switch .form-check-input { width: 3em; height: 1.5em; }
+    .btn-group .btn { padding: 0.5rem 0.75rem; font-size: 0.875rem; }
+    /* Negative margin grows the hit area without moving anything around it. */
+    .btn-link.p-0 { padding: 0.5rem !important; margin: -0.5rem; }
+}

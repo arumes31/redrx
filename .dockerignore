@@ -1,0 +1,21 @@
+# Keep the build context small and free of anything local. COPY . . otherwise
+# pulls the git history and any local .env into a build layer, and busts the
+# layer cache on every commit.
+.git
+.github
+.gitignore
+.dockerignore
+*.md
+.env
+.env.*
+db/
+temp/
+graphify-out/
+venv/
+__pycache__/
+*.db
+*.db-wal
+*.db-shm
+blocked_domains.txt
+GeoLite2-*.mmdb
+coverage.out

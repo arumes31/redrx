@@ -3,28 +3,58 @@ name: Build and Publish Image
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch:
+
+# Actions are pinned to full commit SHAs; see security-analysis.yml for why.
 
 env:
   REGISTRY: ghcr.io
   # Use a lowercase version of the repository name
   IMAGE_NAME: ${{ github.repository }}
+  GO_VERSION: '1.26'
+
+permissions:
+  contents: read
 
 jobs:
+  # Gate the publish on the Go suite, so a red build never reaches :latest.
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+
   build-and-push:
+    name: Build and Push
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      id-token: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -36,17 +66,47 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.lowercase_image_name }}
           tags: |
             type=raw,value=latest
             type=sha,format=long
 
+      # Build the image into the local daemon first, so it can be scanned before
+      # anything is published. The layers are cached, so the push build below
+      # reuses them and costs almost nothing.
+      - name: Build image for scanning
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.lowercase_image_name }}:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Fail the publish on a CRITICAL or HIGH vulnerability, so :latest is never
+      # pushed with a known one. ignore-unfixed keeps an un-patchable base-image
+      # CVE from blocking every release until upstream ships a fix.
+      - name: Scan image with Trivy (gate the publish)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: 'image'
+          image-ref: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.lowercase_image_name }}:scan
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
       - name: Build and push Docker image
-        uses: docker/build-push-action@v7
+        id: push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

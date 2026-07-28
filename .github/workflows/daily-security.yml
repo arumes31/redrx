@@ -5,53 +5,102 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+# Actions are pinned to full commit SHAs; see security-analysis.yml for why.
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.26'
+
+# CodeQL is not defined here. The repository uses CodeQL *default setup*
+# (Settings > Code security), configured for go and actions, and GitHub refuses
+# to process an advanced configuration while the default one is active — an
+# advanced job in this file would only ever be skipped.
+
 jobs:
-  analyze:
-    name: Analyze
+  security-scan:
+    name: Vulnerability and SAST
     runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
       security-events: write
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [ 'python' ]
-
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          languages: ${{ matrix.language }}
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+      # Installed rather than run through securego/gosec; see security-analysis.yml.
+      - name: Run gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
+          gosec -severity medium -fmt sarif -out gosec.sarif -stdout -verbose=text ./...
 
-  security-scan:
+      - name: Upload gosec SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+      - name: Verify module checksums
+        run: go mod verify
+
+  licenses:
+    name: License Drift
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          python-version: '3.12'
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
-      - name: Install dependencies
+      # Catches a transitive dependency that changes licence between releases,
+      # which the pull-request check would only see if that PR touched go.mod.
+      - name: Check dependency licences
         run: |
-          python -m pip install --upgrade pip
-          pip install bandit safety
+          go install github.com/google/go-licenses@latest
+          go-licenses check ./... --disallowed_types=forbidden,restricted
 
-      - name: Run Bandit Scan
-        run: bandit -r app/ config.py run.py -ll
+  image-scan:
+    name: Published Image Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Run Safety Check
-        run: safety check -r requirements.txt
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: redrx:nightly
+
+      # Nightly rather than only on change: a base-image CVE published after the
+      # last merge would otherwise go unnoticed until someone opened a PR.
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: 'image'
+          image-ref: 'redrx:nightly'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
