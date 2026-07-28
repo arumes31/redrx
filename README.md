@@ -108,20 +108,6 @@ internal/web/         HTTP handlers, middleware, templates and static assets
 
 ---
 
-## 🔄 Upgrading from the Python release
-
-This version is a drop-in replacement. **Existing databases are used in place — no migration, export or import step.**
-
-*   **Schema:** identical table, column and index names. Missing columns are added automatically on boot; nothing is dropped or renamed.
-*   **Accounts:** existing passwords keep working. Werkzeug `scrypt` and `pbkdf2` hashes are verified natively, and are transparently upgraded to the current default on the next successful login.
-*   **Links:** short codes, rotation targets, per-link passwords, schedules and click counters are all read from the existing rows.
-*   **Configuration:** every `SECRET_KEY`, `DATABASE_URL`, `RATELIMIT_*`, `PHISHING_*` and GeoIP variable keeps its previous name, meaning and default, so existing `.env` files and compose stacks work unchanged.
-*   **URLs:** all public routes are unchanged, so existing short links, QR codes and shared statistics pages keep resolving.
-
-The one visible change is that **users are logged out once**, because session cookies are signed differently. Logging back in restores everything.
-
----
-
 ## 🚀 Quick Start (Docker)
 
 Ensure safe execution by loading our production-ready image verified with strict security hashes:
