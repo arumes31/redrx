@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath -ldflags="-s -w" -o /out/redrx ./cmd/redrx
 
 # ---- runtime ----
-FROM alpine:3.22
+FROM alpine:3.24
 
 # ca-certificates is needed to fetch the phishing blocklists over HTTPS;
 # tzdata so timestamps render correctly outside UTC.
