@@ -70,3 +70,19 @@ func TestNaiveUTCRelabelsRatherThanConverts(t *testing.T) {
 		t.Error("a zero-offset value was altered")
 	}
 }
+
+// TestURLByShortCodeRejectsNulByte guards against a NUL in the path segment
+// reaching the query. Postgres rejects NUL in text, turning a plain miss into a
+// query error and a 500; SQLite would match nothing. Both must read as
+// not-found, since a stored code can never contain one.
+func TestURLByShortCodeRejectsNulByte(t *testing.T) {
+	ctx := context.Background()
+	db := openLegacyFixture(t)
+
+	for _, code := range []string{"\x00", "AB\x00CD", "ABC123\x00"} {
+		_, err := db.URLByShortCode(ctx, code)
+		if !errors.Is(err, ErrNotFound) {
+			t.Errorf("URLByShortCode(%q) = %v, want ErrNotFound", code, err)
+		}
+	}
+}

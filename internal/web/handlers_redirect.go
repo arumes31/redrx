@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"io"
 	"math/rand/v2"
@@ -19,13 +20,23 @@ import (
 	"github.com/arumes31/redrx/internal/store"
 )
 
+// lookupTimeout bounds the short-code lookup on the visitor-facing paths. A
+// point lookup on the unique short_code index is sub-millisecond, so this only
+// ever fires when the database is unreachable — where connect_timeout bounds a
+// single connection attempt but database/sql retries it two or three times,
+// stacking into ~8s. The deadline caps the whole thing so a redirect fails fast
+// during a DB outage instead of holding the connection and the visitor.
+const lookupTimeout = 3 * time.Second
+
 func (s *Server) handleRedirect(w http.ResponseWriter, r *http.Request) {
 	// Codes are stored uppercase, so the lookup normalises exactly as the stats
 	// and QR handlers do; without it "/abc123" would 404 while "/abc123/stats"
 	// resolved.
 	code := shortcode.Normalize(r.PathValue("code"))
 
-	link, err := s.db.URLByShortCode(r.Context(), code)
+	ctx, cancel := context.WithTimeout(r.Context(), lookupTimeout)
+	defer cancel()
+	link, err := s.db.URLByShortCode(ctx, code)
 	if errors.Is(err, store.ErrNotFound) {
 		s.renderError(w, r, http.StatusNotFound)
 		return
@@ -118,13 +129,16 @@ func (s *Server) recordClick(r *http.Request, link *store.URL, ua useragent.User
 		referrer = "Direct"
 	}
 
+	// Truncate to the column widths the schema declares. A crafted or unusual
+	// User-Agent can yield a browser/platform string over 50 chars, which
+	// Postgres rejects outright (VARCHAR(50)) and drops the click entirely.
 	click := &store.Click{
 		URLID:     link.ID,
 		Timestamp: time.Now().UTC(),
-		IPAddress: geo.AnonymizeIP(ip),
-		Country:   country,
-		Browser:   browserName(ua),
-		Platform:  firstNonEmpty(ua.OS, "Unknown"),
+		IPAddress: truncate(geo.AnonymizeIP(ip), 45),
+		Country:   truncate(country, 100),
+		Browser:   truncate(browserName(ua), 50),
+		Platform:  truncate(firstNonEmpty(ua.OS, "Unknown"), 50),
 		Referrer:  truncate(referrer, 255),
 	}
 	if err := s.db.RecordClick(r.Context(), click); err != nil {

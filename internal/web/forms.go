@@ -146,7 +146,10 @@ func (f *ShortenForm) Validate(defaultLength int, loggedIn bool) (*shortenInput,
 	if f.CustomCode != "" {
 		code, err := shortcode.ValidateCustom(f.CustomCode)
 		if err != nil {
-			f.Errors.add("custom_code", "Field must be between 3 and 20 characters long.")
+			// Use the validator's own message: it distinguishes a length problem
+			// from an invalid character, where the fixed string claimed "3 and
+			// 20 characters" even for a 5-character code containing a space.
+			f.Errors.add("custom_code", err.Error())
 		} else {
 			in.CustomCode = code
 		}
@@ -188,7 +191,9 @@ func (f *ShortenForm) Validate(defaultLength int, loggedIn bool) (*shortenInput,
 		}
 	}
 
-	in.Password = f.Password
+	// A whitespace-only password would hash to a "protected" link nobody can
+	// unlock; treat it as no password.
+	in.Password = strings.TrimSpace(f.Password)
 
 	start, startOK := parseDateTime(f.StartDate, f.StartTime)
 	if !startOK {
@@ -216,9 +221,20 @@ func (f *ShortenForm) Validate(defaultLength int, loggedIn bool) (*shortenInput,
 		case hours > 8760 && !loggedIn:
 			f.Errors.add("expiry_hours", "Please log in to create links longer than 1 year.")
 		default:
-			t := time.Now().UTC().Add(time.Duration(hours) * time.Hour)
+			// Anchor to a future start, so "expires in N hours" counts from when
+			// the link goes live, not from creation — otherwise a link scheduled
+			// for next week is born already expired.
+			base := time.Now().UTC()
+			if in.StartAt != nil && in.StartAt.After(base) {
+				base = *in.StartAt
+			}
+			t := base.Add(time.Duration(hours) * time.Hour)
 			in.ExpiresAt = &t
 		}
+	}
+
+	if in.ExpiresAt != nil && in.StartAt != nil && !in.ExpiresAt.After(*in.StartAt) {
+		f.Errors.add("expiry_hours", "The link would expire before it starts. Increase the expiry or clear the start time.")
 	}
 
 	return in, !f.Errors.any()
@@ -401,15 +417,29 @@ func parseDateTime(date, clock string) (*time.Time, bool) {
 
 // normalizeHexColor keeps colour inputs to the "#rrggbb" form the colour picker
 // emits, falling back when a value is missing or malformed.
+// namedColors maps the basic CSS colour names to hex, enough to cover any
+// value an operator is likely to set for DEFAULT_QR_COLOR / DEFAULT_QR_BACKGROUND.
+var namedColors = map[string]string{
+	"black": "#000000", "white": "#ffffff", "red": "#ff0000", "green": "#008000",
+	"blue": "#0000ff", "yellow": "#ffff00", "cyan": "#00ffff", "magenta": "#ff00ff",
+	"gray": "#808080", "grey": "#808080", "silver": "#c0c0c0", "maroon": "#800000",
+	"olive": "#808000", "lime": "#00ff00", "teal": "#008080", "navy": "#000080",
+	"purple": "#800080", "orange": "#ffa500",
+}
+
 func normalizeHexColor(v, def string) string {
 	v = strings.TrimSpace(v)
 	if v == "" {
 		return def
 	}
 	if !strings.HasPrefix(v, "#") {
-		// Named colours from configuration are passed through untouched.
-		if isSimpleName(v) {
-			return v
+		// Convert a named colour to hex. Passing the name through breaks the
+		// HTML <input type="color"> that renders this value — it accepts only
+		// #rrggbb and silently coerces anything else to #000000, so the shipped
+		// "white" background became black and every default QR came out solid
+		// black and unscannable.
+		if hex, ok := namedColors[strings.ToLower(v)]; ok {
+			return hex
 		}
 		return def
 	}
@@ -423,17 +453,6 @@ func normalizeHexColor(v, def string) string {
 		}
 	}
 	return strings.ToLower(v)
-}
-
-func isSimpleName(v string) bool {
-	for _, c := range v {
-		lower := c >= 'a' && c <= 'z'
-		upper := c >= 'A' && c <= 'Z'
-		if !lower && !upper {
-			return false
-		}
-	}
-	return v != ""
 }
 
 // sanitizeCSVField neutralises spreadsheet formula injection in exports.

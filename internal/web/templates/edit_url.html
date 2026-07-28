@@ -28,11 +28,13 @@
                 <div class="mb-3">
                     <label class="form-label" for="expiry_input">Expiry (Hours) from now</label>
                     <div class="input-group">
-                        <input class="form-control" id="expiry_input" name="expiry_hours" type="number" placeholder="0 for Never" value="{{$form.ExpiryHours}}">
+                        <input class="form-control" id="expiry_input" name="expiry_hours" type="number" min="0" placeholder="Leave blank to keep current" value="{{$form.ExpiryHours}}">
                         <button class="btn btn-outline-secondary btn-sm" type="button" onclick="document.getElementById('expiry_input').value=0">Never</button>
                     </div>
                     {{with $form.Errors.Get "expiry_hours"}}<div class="text-danger small">{{.}}</div>{{end}}
-                    <div class="form-text text-light opacity-50 small">Enter hours from now, or 0 to clear expiry.</div>
+                    <div class="form-text text-light opacity-50 small">
+                        {{with .Get "expires_at"}}Currently expires {{.}}. {{end}}Leave blank to keep it, enter hours from now to change it, or 0 to make it permanent.
+                    </div>
                 </div>
                 <div class="form-check mb-3">
                     <input class="form-check-input" id="preview_mode" name="preview_mode" type="checkbox" value="y"{{if $form.PreviewMode}} checked{{end}}>

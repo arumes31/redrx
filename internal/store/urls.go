@@ -56,6 +56,14 @@ func scanURL(row interface{ Scan(...any) error }) (*URL, error) {
 }
 
 func (d *DB) URLByShortCode(ctx context.Context, code string) (*URL, error) {
+	// A NUL byte cannot occur in a stored code — short codes are alphanumerics —
+	// and Postgres rejects it in a text parameter outright, turning what should
+	// be a plain miss into a query error and a 500. Every lookup path funnels
+	// through here, so guarding once covers the redirect, stats, QR and API
+	// handlers. Treat it as simply not found.
+	if strings.IndexByte(code, 0) >= 0 {
+		return nil, ErrNotFound
+	}
 	return scanURL(d.QueryRow(ctx, "SELECT "+urlColumns+" FROM urls WHERE short_code = ?", code))
 }
 

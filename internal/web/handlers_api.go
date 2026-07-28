@@ -110,12 +110,6 @@ func (s *Server) handleAPIShorten(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expiresAt, err := s.apiExpiry(req.ExpiryHours)
-	if err != nil {
-		apiError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
 	startAt, err := parseOptionalISO(req.StartAt, "start_at")
 	if err != nil {
 		apiError(w, http.StatusBadRequest, err.Error())
@@ -128,6 +122,19 @@ func (s *Server) handleAPIShorten(w http.ResponseWriter, r *http.Request) {
 	}
 	if startAt != nil && endAt != nil && !endAt.After(*startAt) {
 		apiError(w, http.StatusBadRequest, "Invalid scheduling window: end_at must be after start_at")
+		return
+	}
+
+	// Anchor the expiry to the start, not to now. Otherwise a link scheduled to
+	// begin next week still gets a 24h expiry from creation time and is dead on
+	// arrival — expired before it ever starts.
+	expiresAt, err := s.apiExpiry(req.ExpiryHours, startAt)
+	if err != nil {
+		apiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if expiresAt != nil && startAt != nil && !expiresAt.After(*startAt) {
+		apiError(w, http.StatusBadRequest, "Invalid scheduling window: the link would expire before it starts")
 		return
 	}
 
@@ -163,9 +170,11 @@ func (s *Server) handleAPIShorten(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Trim so a whitespace-only password does not create a "protected" link that
+	// no one — including the creator — can ever unlock with a meaningful value.
 	password := ""
 	if req.Password != nil {
-		password = *req.Password
+		password = strings.TrimSpace(*req.Password)
 	}
 
 	link := &store.URL{
@@ -274,7 +283,7 @@ func (s *Server) handleAPIGetURL(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) apiExpiry(raw json.RawMessage) (*time.Time, error) {
+func (s *Server) apiExpiry(raw json.RawMessage, startAt *time.Time) (*time.Time, error) {
 	hours := s.cfg.ExpiryHours
 	if len(raw) > 0 {
 		n, err := decodeInt(raw)
@@ -289,7 +298,13 @@ func (s *Server) apiExpiry(raw json.RawMessage) (*time.Time, error) {
 	if hours == 0 {
 		return nil, nil
 	}
-	t := time.Now().UTC().Add(time.Duration(hours) * time.Hour)
+	// "expires N hours after it becomes live": count from a future start rather
+	// than from creation, so a scheduled link is not born already expired.
+	base := time.Now().UTC()
+	if startAt != nil && startAt.After(base) {
+		base = *startAt
+	}
+	t := base.Add(time.Duration(hours) * time.Hour)
 	return &t, nil
 }
 

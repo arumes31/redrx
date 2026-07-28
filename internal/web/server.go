@@ -135,9 +135,9 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("POST /{$}", s.limit("create", s.limits.Create, s.handleCreate))
 
 	// Accounts.
-	mux.Handle("GET /login", s.limit("login", s.limits.Login, s.handleLoginForm))
+	mux.Handle("GET /login", s.limit("page", s.limits.Pages, s.handleLoginForm))
 	mux.Handle("POST /login", s.limit("login", s.limits.Login, s.handleLogin))
-	mux.Handle("GET /register", s.limit("register", s.limits.Register, s.handleRegisterForm))
+	mux.Handle("GET /register", s.limit("page", s.limits.Pages, s.handleRegisterForm))
 	mux.Handle("POST /register", s.limit("register", s.limits.Register, s.handleRegister))
 	// POST only: a GET logout is triggered by any third-party <img> tag, and by
 	// link prefetchers. The nav uses a form.
@@ -253,13 +253,15 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 // handleHealth reports database and rate-limit backend health.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-	defer cancel()
-
 	health := map[string]any{"status": "healthy"}
 	checks := map[string]string{}
 
-	if err := s.db.PingContext(ctx); err != nil {
+	// Each dependency gets its own budget. Sharing one deadline made a slow
+	// database ping exhaust it, so the rate-limit ping then failed against a
+	// perfectly healthy Redis and reported a false error.
+	dbCtx, cancelDB := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancelDB()
+	if err := s.db.PingContext(dbCtx); err != nil {
 		// The message is logged, not returned: driver errors routinely name the
 		// host, port, database and user, and this endpoint is unauthenticated.
 		s.log.Error("health check: database unreachable", "error", err)
@@ -270,7 +272,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if backend := s.limiter.Backend(); backend != nil {
-		if err := backend.Ping(ctx); err != nil {
+		rlCtx, cancelRL := context.WithTimeout(r.Context(), 1*time.Second)
+		defer cancelRL()
+		if err := backend.Ping(rlCtx); err != nil {
 			s.log.Warn("health check: rate limit backend unreachable", "error", err)
 			checks["ratelimit"] = "error"
 			if health["status"] == "healthy" {

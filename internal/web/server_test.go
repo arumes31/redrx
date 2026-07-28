@@ -500,9 +500,16 @@ func TestRateLimitReturns429(t *testing.T) {
 		c.RateLimitLogin = "2 per hour"
 	})
 
+	// POST /login carries the login limit; the GET form is on the shared pages
+	// budget, so viewing the login page cannot lock a shared-IP visitor out.
+	// The limiter runs ahead of CSRF, so a bare POST still consumes the budget.
 	var last int
 	for i := 0; i < 4; i++ {
-		last = get(t, srv, "/login").Code
+		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=x&password=y"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		last = rec.Code
 	}
 	if last != http.StatusTooManyRequests {
 		t.Errorf("after exceeding the limit the response was %d, want 429", last)
@@ -646,5 +653,49 @@ func TestAPIRejectsDuplicateCustomCodeWithConflict(t *testing.T) {
 
 	if rec.Code != http.StatusConflict {
 		t.Errorf("status = %d, want 409; body: %s", rec.Code, truncateBody(rec.Body.String()))
+	}
+}
+
+// TestScheduledLinkNotBornExpired covers a future start_at with the default
+// expiry: the window must count from the start, not from creation, or the link
+// expires before it ever goes live and 410s on the first visit.
+func TestScheduledLinkNotBornExpired(t *testing.T) {
+	srv, db := newTestServer(t)
+	key := "11111111-2222-3333-4444-555555555555" // alice, from the fixture
+
+	start := time.Now().UTC().Add(7 * 24 * time.Hour)
+	body := `{"long_url":"https://example.com/future","custom_code":"FUTURE1","start_at":"` +
+		start.Format(time.RFC3339) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/shorten", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", key)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create scheduled link: %d, body %s", rec.Code, truncateBody(rec.Body.String()))
+	}
+
+	// A not-yet-started link is correctly inactive now; the bug is an expiry
+	// that precedes the start, which is what makes it permanently dead. Read the
+	// row back and compare the two timestamps directly.
+	link, err := db.URLByShortCode(context.Background(), "FUTURE1")
+	if err != nil {
+		t.Fatalf("load created link: %v", err)
+	}
+	if link.ExpiresAt == nil {
+		return // permanent is fine; it certainly is not born expired
+	}
+	if link.StartAt == nil {
+		t.Fatal("start_at was not stored")
+	}
+	if !link.ExpiresAt.After(*link.StartAt) {
+		t.Errorf("expires_at %v is not after start_at %v — the link expires before it starts",
+			link.ExpiresAt, link.StartAt)
+	}
+	// And it must become active once its window opens: expiry is well beyond the
+	// 7-day start, so a link whose start had already passed would be active.
+	if link.ExpiresAt.Sub(*link.StartAt) < 12*time.Hour {
+		t.Errorf("expiry window is only %v after start; the default should apply from the start",
+			link.ExpiresAt.Sub(*link.StartAt))
 	}
 }

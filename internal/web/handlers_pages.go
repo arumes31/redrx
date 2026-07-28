@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/csv"
 	"errors"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -85,9 +86,14 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// An empty expiry field means "not specified", not "never". Without this,
 	// clearing the box produced a nil ExpiresAt and so a permanent link — which
 	// is exactly what the "Please log in to create permanent links" check on the
-	// explicit 0 exists to prevent.
+	// explicit 0 exists to prevent. The default window counts from a future
+	// start, so a scheduled link is not born already expired.
 	if in.ExpiresAt == nil && !in.ExpiryNever && s.cfg.ExpiryHours > 0 {
-		expires := nowUTC().Add(time.Duration(s.cfg.ExpiryHours) * time.Hour)
+		base := nowUTC()
+		if in.StartAt != nil && in.StartAt.After(base) {
+			base = *in.StartAt
+		}
+		expires := base.Add(time.Duration(s.cfg.ExpiryHours) * time.Hour)
 		in.ExpiresAt = &expires
 	}
 
@@ -597,8 +603,21 @@ func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request) {
 		Errors:           errorMap{},
 	}
 	if link.ExpiresAt != nil {
-		hours := int(link.ExpiresAt.Sub(nowUTC()).Hours())
-		form.ExpiryHours = strconv.Itoa(max(0, hours))
+		// Round up, and leave the field blank once under an hour remains. int()
+		// floors, so a link with 45 minutes left pre-filled "0" — and 0 means
+		// "never" — so saving an edit to any other field silently made the link
+		// permanent. Blank means "not given", which preserves the stored expiry.
+		hours := int(math.Ceil(time.Until(*link.ExpiresAt).Hours()))
+		if hours >= 1 {
+			form.ExpiryHours = strconv.Itoa(hours)
+		}
+		// Show the absolute time too, so "leave blank to keep it" is legible.
+		data := s.newPageData(r)
+		data.Data["form"] = form
+		data.Data["short_code"] = link.ShortCode
+		data.Data["expires_at"] = link.ExpiresAt.Format("2006-01-02 15:04 UTC")
+		s.render(w, r, http.StatusOK, "edit_url.html", data)
+		return
 	}
 
 	data := s.newPageData(r)

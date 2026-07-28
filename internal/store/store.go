@@ -97,12 +97,29 @@ func parseURL(raw string) (driver, dsn string, d Dialect, err error) {
 	case strings.HasPrefix(raw, "sqlite://"):
 		return "sqlite", strings.TrimPrefix(raw, "sqlite://"), SQLite, nil
 	case strings.HasPrefix(raw, "postgresql+psycopg2://"):
-		return "pgx", "postgresql://" + strings.TrimPrefix(raw, "postgresql+psycopg2://"), Postgres, nil
+		return "pgx", withConnectTimeout("postgresql://" + strings.TrimPrefix(raw, "postgresql+psycopg2://")), Postgres, nil
 	case strings.HasPrefix(raw, "postgresql://"), strings.HasPrefix(raw, "postgres://"):
-		return "pgx", raw, Postgres, nil
+		return "pgx", withConnectTimeout(raw), Postgres, nil
 	default:
 		return "", "", 0, fmt.Errorf("store: unsupported DATABASE_URL scheme in %q", raw)
 	}
+}
+
+// withConnectTimeout ensures the Postgres DSN caps how long establishing a
+// connection may take. Without it, a database that is down (or whose host stops
+// resolving) makes the first query on a fresh pool connection hang for the
+// libpq default — measured at ~8s on a redirect during a DB outage — because
+// the request context has no deadline. An operator's own connect_timeout is
+// left untouched.
+func withConnectTimeout(dsn string) string {
+	if strings.Contains(dsn, "connect_timeout=") {
+		return dsn
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	return dsn + sep + "connect_timeout=3"
 }
 
 // rebind converts the `?` placeholders used throughout this package into the
