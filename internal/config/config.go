@@ -55,8 +55,6 @@ type Config struct {
 	RateLimitAPI        string
 	RateLimitCreate     string
 	RateLimitRedirect   string
-	RateLimitHealth     string
-	RateLimitMetrics    string
 
 	Listen string
 }
@@ -171,8 +169,6 @@ func Load() (*Config, error) {
 		RateLimitAPI:        env("RATELIMIT_API", "60 per minute"),
 		RateLimitCreate:     env("RATELIMIT_CREATE", "10 per minute"),
 		RateLimitRedirect:   env("RATELIMIT_REDIRECT", "100 per minute"),
-		RateLimitHealth:     env("RATELIMIT_HEALTH", "10 per minute"),
-		RateLimitMetrics:    env("RATELIMIT_METRICS", "10 per minute"),
 
 		Listen: env("LISTEN_ADDR", ":5000"),
 	}
