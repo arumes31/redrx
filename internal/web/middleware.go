@@ -79,7 +79,7 @@ func (s *Server) limit(scope string, rules ratelimit.Rules, h handlerFunc) http.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := s.geo.ClientIP(r)
 		if res := s.limiter.Allow(r.Context(), scope, ip, rules); !res.Allowed {
-			s.metrics.rateLimited.Inc()
+			s.metrics.rateLimited.WithLabelValues(scope).Inc()
 			s.renderRateLimited(w, r, res.RetryAfter)
 			return
 		}

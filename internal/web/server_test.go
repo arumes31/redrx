@@ -699,3 +699,33 @@ func TestScheduledLinkNotBornExpired(t *testing.T) {
 			link.ExpiresAt.Sub(*link.StartAt))
 	}
 }
+
+// TestRateLimitScopesAreIndependent guards the separation: exhausting one
+// route's limit must not spend another route's budget. Before the split, the
+// content pages shared a single "page" counter.
+func TestRateLimitScopesAreIndependent(t *testing.T) {
+	srv, _ := newTestServer(t, func(c *config.Config) {
+		c.RateLimitDefault = "1000 per hour" // keep the home page out of the way
+	})
+
+	// Hammer /terms until it 429s.
+	var termsCode int
+	for i := 0; i < 40; i++ {
+		termsCode = get(t, srv, "/terms").Code
+		if termsCode == http.StatusTooManyRequests {
+			break
+		}
+	}
+	if termsCode != http.StatusTooManyRequests {
+		t.Fatalf("/terms never hit its own limit (last %d)", termsCode)
+	}
+
+	// A different content page must still be served — it has its own counter.
+	if code := get(t, srv, "/api-docs").Code; code != http.StatusOK {
+		t.Errorf("/api-docs returned %d after /terms was throttled; scopes are shared", code)
+	}
+	// And the login form, also formerly on the shared "page" scope.
+	if code := get(t, srv, "/login").Code; code != http.StatusOK {
+		t.Errorf("/login returned %d after /terms was throttled; scopes are shared", code)
+	}
+}

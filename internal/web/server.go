@@ -130,14 +130,19 @@ func (s *Server) routes() (http.Handler, error) {
 	fileServer := http.FileServer(http.FS(staticSub))
 	mux.Handle("GET /static/", cacheStatic(http.StripPrefix("/static/", fileServer)))
 
-	// Home and link creation.
-	mux.Handle("GET /{$}", s.limit("page", s.limits.Default, s.handleIndex))
+	// Home and link creation. Each route carries a distinct scope, since the
+	// rate-limit key is namespaced by it: routes that shared a scope shared one
+	// counter, so viewing the login page could spend the budget meant for the
+	// terms page. Scopes are grouped only where routes are genuinely the same
+	// activity — the two halves of one form, the dashboard actions, the API.
+	mux.Handle("GET /{$}", s.limit("home", s.limits.Default, s.handleIndex))
 	mux.Handle("POST /{$}", s.limit("create", s.limits.Create, s.handleCreate))
 
-	// Accounts.
-	mux.Handle("GET /login", s.limit("page", s.limits.Pages, s.handleLoginForm))
+	// Accounts. The GET form views are separate scopes from the POST actions, so
+	// loading the login page never consumes the anti-brute-force login budget.
+	mux.Handle("GET /login", s.limit("login_page", s.limits.Pages, s.handleLoginForm))
 	mux.Handle("POST /login", s.limit("login", s.limits.Login, s.handleLogin))
-	mux.Handle("GET /register", s.limit("page", s.limits.Pages, s.handleRegisterForm))
+	mux.Handle("GET /register", s.limit("register_page", s.limits.Pages, s.handleRegisterForm))
 	mux.Handle("POST /register", s.limit("register", s.limits.Register, s.handleRegister))
 	// POST only: a GET logout is triggered by any third-party <img> tag, and by
 	// link prefetchers. The nav uses a form.
@@ -145,7 +150,9 @@ func (s *Server) routes() (http.Handler, error) {
 
 	// Dashboard and link management.
 	mux.Handle("GET /dashboard", s.limit("dashboard", s.limits.Dashboar, s.requireLogin(s.handleDashboard)))
-	mux.Handle("POST /regenerate-api-key", s.limit("auth", s.limits.Auth, s.requireLogin(s.handleRegenerateAPIKey)))
+	// Its own scope: regenerating a key is unrelated to unlocking a link, and
+	// the two shared the "auth" counter before.
+	mux.Handle("POST /regenerate-api-key", s.limit("regen_key", s.limits.Auth, s.requireLogin(s.handleRegenerateAPIKey)))
 	mux.Handle("POST /toggle-status/{code}", s.limit("dashboard", s.limits.Dashboar, s.requireLogin(s.handleToggleStatus)))
 	mux.Handle("GET /export-links", s.limit("export", s.limits.Export, s.requireLogin(s.handleExportLinks)))
 	mux.Handle("POST /bulk-delete", s.limit("bulk", s.limits.Bulk, s.requireLogin(s.handleBulkDelete)))
@@ -153,10 +160,10 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("POST /edit/{code}", s.limit("dashboard", s.limits.Dashboar, s.requireLogin(s.handleEdit)))
 	mux.Handle("POST /delete/{code}", s.limit("dashboard", s.limits.Dashboar, s.requireLogin(s.handleDelete)))
 
-	// Static content pages.
-	mux.Handle("GET /api-docs", s.limit("page", s.limits.Pages, s.handleAPIDocs))
-	mux.Handle("GET /data-usage", s.limit("page", s.limits.Pages, s.handleDataUsage))
-	mux.Handle("GET /terms", s.limit("page", s.limits.Pages, s.handleTerms))
+	// Static content pages, each on its own counter.
+	mux.Handle("GET /api-docs", s.limit("apidocs", s.limits.Pages, s.handleAPIDocs))
+	mux.Handle("GET /data-usage", s.limit("datausage", s.limits.Pages, s.handleDataUsage))
+	mux.Handle("GET /terms", s.limit("terms", s.limits.Pages, s.handleTerms))
 	mux.Handle("GET /robots.txt", s.wrap(s.handleRobots))
 	mux.Handle("GET /sitemap.xml", s.wrap(s.handleSitemap))
 
@@ -168,13 +175,17 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("GET /health", s.wrap(s.handleHealth))
 	mux.Handle("GET /metrics", s.wrap(s.handleMetrics))
 
-	// JSON API.
-	mux.Handle("POST /api/v1/shorten", s.limit("api", s.limits.API, s.handleAPIShorten))
-	mux.Handle("GET /api/v1/{code}", s.limit("api", s.limits.API, s.handleAPIGetURL))
+	// JSON API. Read and write each get the configured RATELIMIT_API budget on
+	// their own counter, so a client polling link details cannot exhaust the
+	// budget for creating links (and vice versa). Both still honour the same
+	// operator-configured rate; they simply no longer share one bucket.
+	mux.Handle("POST /api/v1/shorten", s.limit("api_write", s.limits.API, s.handleAPIShorten))
+	mux.Handle("GET /api/v1/{code}", s.limit("api_read", s.limits.API, s.handleAPIGetURL))
 
-	// Link password gate.
-	mux.Handle("GET /link-auth/{code}", s.limit("auth", s.limits.Auth, s.handleLinkAuthForm))
-	mux.Handle("POST /link-auth/{code}", s.limit("auth", s.limits.Auth, s.handleLinkAuth))
+	// Link password gate. GET and POST share one scope — they are the two halves
+	// of unlocking a link — but no longer share with regenerate-api-key.
+	mux.Handle("GET /link-auth/{code}", s.limit("link_auth", s.limits.Auth, s.handleLinkAuthForm))
+	mux.Handle("POST /link-auth/{code}", s.limit("link_auth", s.limits.Auth, s.handleLinkAuth))
 
 	// Short codes cannot be registered as `/{code}` patterns: they would overlap
 	// the literal routes above (`/edit/{code}` and `/{code}/stats` both match
@@ -214,7 +225,7 @@ func cacheStatic(next http.Handler) http.Handler {
 type metrics struct {
 	shortened   prometheus.Counter
 	redirects   prometheus.Counter
-	rateLimited prometheus.Counter
+	rateLimited *prometheus.CounterVec
 	requests    *prometheus.CounterVec
 	duration    *prometheus.HistogramVec
 }
@@ -229,10 +240,10 @@ func newMetrics(reg *prometheus.Registry) *metrics {
 			Name: "redrx_redirections_total",
 			Help: "Total number of link redirections",
 		}),
-		rateLimited: prometheus.NewCounter(prometheus.CounterOpts{
+		rateLimited: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "redrx_ratelimit_hits_total",
-			Help: "Total number of requests hitting the rate limit",
-		}),
+			Help: "Requests rejected by the rate limiter, labelled by scope",
+		}, []string{"scope"}),
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "redrx_http_requests_total",
 			Help: "HTTP requests by method, route and status",
