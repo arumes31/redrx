@@ -2,6 +2,7 @@ package pow
 
 import (
 	"crypto/sha256"
+	"errors"
 	"strconv"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func TestIssueAndVerify(t *testing.T) {
 	if err := Verify(secret, challenge, solution, difficulty); err != nil {
 		t.Fatalf("Verify valid solution: %v", err)
 	}
-	if err := Verify([]byte("other-key"), challenge, solution, difficulty); !errorsIsInvalid(err) {
+	if err := Verify([]byte("other-key"), challenge, solution, difficulty); !errors.Is(err, ErrInvalid) {
 		t.Errorf("Verify with wrong key = %v, want ErrInvalid", err)
 	}
 }
@@ -45,10 +46,8 @@ func TestVerifyRejectsExpiredAndMalformedChallenges(t *testing.T) {
 		{"not-a-challenge", "0"},
 		{challenge, "not-a-number"},
 	} {
-		if err := Verify(secret, tc.challenge, tc.solution, 8); !errorsIsInvalid(err) {
+		if err := Verify(secret, tc.challenge, tc.solution, 8); !errors.Is(err, ErrInvalid) {
 			t.Errorf("Verify(%q, %q) = %v, want ErrInvalid", tc.challenge, tc.solution, err)
 		}
 	}
 }
-
-func errorsIsInvalid(err error) bool { return err == ErrInvalid }
