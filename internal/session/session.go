@@ -2,8 +2,9 @@
 //
 // The payload is JSON, base64url-encoded and authenticated with HMAC-SHA256
 // keyed on SECRET_KEY. Nothing secret is stored in it — only a user id, flash
-// messages, a CSRF token and the set of password-protected links this visitor
-// has unlocked — so signing without encryption is sufficient.
+// messages, a CSRF token, a short-lived pending login, an anonymous-work
+// challenge and the set of password-protected links this visitor has unlocked
+// — so signing without encryption is sufficient.
 package session
 
 import (
@@ -35,11 +36,15 @@ type Flash struct {
 
 // Data is the serialised session payload.
 type Data struct {
-	UserID   int64           `json:"uid,omitempty"`
-	CSRF     string          `json:"csrf,omitempty"`
-	Flashes  []Flash         `json:"fl,omitempty"`
-	LinkAuth map[string]bool `json:"la,omitempty"`
-	Issued   int64           `json:"iat,omitempty"`
+	UserID        int64           `json:"uid,omitempty"`
+	PendingUserID int64           `json:"puid,omitempty"`
+	PendingNext   string          `json:"pn,omitempty"`
+	PendingSince  int64           `json:"ps,omitempty"`
+	PoWChallenge  string          `json:"pow,omitempty"`
+	CSRF          string          `json:"csrf,omitempty"`
+	Flashes       []Flash         `json:"fl,omitempty"`
+	LinkAuth      map[string]bool `json:"la,omitempty"`
+	Issued        int64           `json:"iat,omitempty"`
 }
 
 // Session is the per-request view of the cookie, plus a dirty flag so unchanged
@@ -206,15 +211,61 @@ func (m *Manager) verify(value string) ([]byte, bool) {
 }
 
 func (s *Session) isEmpty() bool {
-	return s.UserID == 0 && s.CSRF == "" && len(s.Flashes) == 0 && len(s.LinkAuth) == 0
+	return s.UserID == 0 && s.PendingUserID == 0 && s.PoWChallenge == "" &&
+		s.CSRF == "" && len(s.Flashes) == 0 && len(s.LinkAuth) == 0
 }
 
 // Login records the authenticated user and rotates the CSRF token, so a token
 // captured before login cannot be replayed afterwards.
 func (s *Session) Login(userID int64) {
 	s.UserID = userID
+	s.clearPendingLogin()
 	s.CSRF = ""
 	s.dirty = true
+}
+
+// BeginTwoFactor records a short-lived, pre-authentication login step.
+func (s *Session) BeginTwoFactor(userID int64, next string) {
+	s.PendingUserID = userID
+	s.PendingNext = next
+	s.PendingSince = time.Now().Unix()
+	s.dirty = true
+}
+
+// PendingTwoFactor returns the pending user and redirect target. Pending
+// challenges expire after ten minutes.
+func (s *Session) PendingTwoFactor() (int64, string, bool) {
+	if s.PendingUserID == 0 || s.PendingSince == 0 ||
+		time.Since(time.Unix(s.PendingSince, 0)) > 10*time.Minute {
+		if s.PendingUserID != 0 {
+			s.clearPendingLogin()
+			s.dirty = true
+		}
+		return 0, "", false
+	}
+	return s.PendingUserID, s.PendingNext, true
+}
+
+func (s *Session) clearPendingLogin() {
+	s.PendingUserID = 0
+	s.PendingNext = ""
+	s.PendingSince = 0
+}
+
+// SetPoWChallenge replaces the anonymous creation challenge in this session.
+func (s *Session) SetPoWChallenge(challenge string) {
+	s.PoWChallenge = challenge
+	s.dirty = true
+}
+
+// ConsumePoWChallenge accepts the current challenge exactly once.
+func (s *Session) ConsumePoWChallenge(challenge string) bool {
+	if challenge == "" || subtle.ConstantTimeCompare([]byte(challenge), []byte(s.PoWChallenge)) != 1 {
+		return false
+	}
+	s.PoWChallenge = ""
+	s.dirty = true
+	return true
 }
 
 // Logout clears all session state.

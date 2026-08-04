@@ -45,6 +45,9 @@ type Config struct {
 	UseCloudflare          bool
 	AnonymizeLogs          bool
 	EnableSEO              bool
+	EnableConsentBanner    bool
+	HonorDoNotTrack        bool
+	AnonymousPoWDifficulty int
 	SEODomain              string
 
 	RateLimitDefault    string
@@ -159,6 +162,9 @@ func Load() (*Config, error) {
 		UseCloudflare:          envBool("USE_CLOUDFLARE", false),
 		AnonymizeLogs:          envBool("ANONYMIZE_LOGS", false),
 		EnableSEO:              envBool("ENABLE_SEO", false),
+		EnableConsentBanner:    envBool("ENABLE_CONSENT_BANNER", false),
+		HonorDoNotTrack:        envBool("HONOR_DO_NOT_TRACK", true),
+		AnonymousPoWDifficulty: envInt("ANONYMOUS_POW_DIFFICULTY", 16),
 		SEODomain:              env("SEO_DOMAIN", "redrx.eu"),
 
 		RateLimitDefault:    env("RATELIMIT_DEFAULT", "200 per day;50 per hour"),
@@ -203,6 +209,10 @@ func Load() (*Config, error) {
 		secret = "dev-secret-key-do-not-use-in-production" // #nosec G101 -- documented insecure dev default
 	}
 	c.SecretKey = []byte(secret)
+
+	if c.AnonymousPoWDifficulty < 0 || c.AnonymousPoWDifficulty > 28 {
+		return nil, errors.New("ANONYMOUS_POW_DIFFICULTY must be between 0 and 28")
+	}
 
 	// The Dockerfile bakes in the placeholder and the ghcr compose file passes
 	// ${BASE_DOMAIN}, which interpolates to empty when unset. Left unnoticed,

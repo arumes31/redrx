@@ -194,6 +194,9 @@ The suite includes a committed SQLite fixture written by the previous Python app
 | **Limits** | `RATELIMIT_STORAGE_URL` | `redis://redis:6379` | Rate limiting backend. Can fall back to local storage `memory://` in dev. |
 | **Access** | `DISABLE_ANONYMOUS_CREATE` | `false` | When true, only authenticated users can shorten links. |
 | **Access** | `DISABLE_REGISTRATION` | `false` | When true, public registration routes are disabled. |
+| **Abuse prevention** | `ANONYMOUS_POW_DIFFICULTY` | `16` | Proof-of-work difficulty for anonymous link creation; `0` disables it, maximum `28`. |
+| **Privacy** | `ENABLE_CONSENT_BANNER` | `false` | Ask visitors for consent before recording anonymous click analytics. |
+| **Privacy** | `HONOR_DO_NOT_TRACK` | `true` | Skip click analytics whenever the browser sends `DNT: 1`. |
 | **Proxy** | `TRUSTED_PROXIES` | - | Peers whose `X-Forwarded-*` / `CF-*` headers are believed (IPs or CIDRs, comma separated; `*` for any). Empty means the headers are ignored. |
 | **Proxy** | `USE_CLOUDFLARE` | `false` | Trust `CF-Connecting-IP` from a trusted proxy. Required for correct client IPs behind Cloudflare. |
 | **Server** | `LISTEN_ADDR` | `:5000` | Address the HTTP server binds to. |

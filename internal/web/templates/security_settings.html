@@ -1,0 +1,69 @@
+{{define "title"}}Security settings - Redrx{{end}}
+{{define "content"}}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="d-flex align-items-center justify-content-between mb-4">
+            <div><h2 class="mb-1">Security settings</h2><p class="text-muted mb-0">Protect your account with a second sign-in step.</p></div>
+            <a class="btn btn-outline-light" href="/dashboard">Back</a>
+        </div>
+
+        {{with .Get "recovery_codes"}}
+        <div class="card border-warning mb-4 p-4">
+            <h3 class="h5 text-warning"><i class="fas fa-key me-2"></i>Save your recovery codes now</h3>
+            <p>Each code works once. This is the only time the plain codes are shown, so store them somewhere safe.</p>
+            <div class="row g-2 font-monospace" id="recoveryCodes">
+                {{range .}}<div class="col-sm-6"><div class="bg-dark border border-secondary rounded p-2 text-center">{{.}}</div></div>{{end}}
+            </div>
+            <button class="btn btn-outline-warning mt-3" type="button" data-copy-target="recoveryCodes">Copy all codes</button>
+        </div>
+        {{end}}
+
+        <div class="card p-4">
+            <div class="d-flex align-items-start justify-content-between gap-3">
+                <div><h3 class="h5 mb-1">Authenticator app (TOTP)</h3><p class="text-muted mb-0">Use any standards-compatible authenticator app.</p></div>
+                {{if .User.TOTPEnabled}}<span class="badge bg-success">Enabled</span>{{else}}<span class="badge bg-secondary">Disabled</span>{{end}}
+            </div>
+
+            {{if .User.TOTPEnabled}}
+            <hr class="border-secondary my-4">
+            <p class="text-muted">Disabling 2FA requires your password and a current authenticator or recovery code.</p>
+            <form action="/settings/totp/disable" method="POST">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <div class="mb-3"><label class="form-label" for="password">Password</label><input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required></div>
+                <div class="mb-3"><label class="form-label" for="code">Authentication code</label><input class="form-control" id="code" name="code" type="text" autocomplete="one-time-code" required></div>
+                <button class="btn btn-outline-danger" type="submit">Disable two-factor authentication</button>
+            </form>
+            {{else if .Get "totp_secret"}}
+            <hr class="border-secondary my-4">
+            <ol class="text-muted ps-3">
+                <li class="mb-2">Scan this QR code in your authenticator app.</li>
+                <li>Enter the generated six-digit code to finish setup.</li>
+            </ol>
+            <div class="row align-items-center g-4 mb-4">
+                <div class="col-sm-auto"><img class="rounded bg-white p-2" width="220" height="220" src="data:image/png;base64,{{.Get "totp_qr"}}" alt="Authenticator setup QR code"></div>
+                <div class="col"><div class="text-muted small mb-1">Manual setup code</div><code class="d-block text-break fs-5 user-select-all">{{.Get "totp_secret"}}</code></div>
+            </div>
+            <form action="/settings/totp/confirm" method="POST">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <label class="form-label" for="confirm_code">Six-digit code</label>
+                <div class="input-group"><input class="form-control" id="confirm_code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required><button class="btn btn-shorten" type="submit">Confirm and enable</button></div>
+            </form>
+            {{else}}
+            <form action="/settings/totp/start" method="POST" class="mt-4">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <button class="btn btn-shorten" type="submit">Set up authenticator</button>
+            </form>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}
+{{define "scripts"}}
+<script>
+document.querySelector('[data-copy-target]')?.addEventListener('click', async (event) => {
+    const codes = Array.from(document.querySelectorAll('#recoveryCodes .bg-dark')).map(el => el.textContent.trim()).join('\n');
+    try { await navigator.clipboard.writeText(codes); event.currentTarget.textContent = 'Copied'; }
+    catch { event.currentTarget.textContent = 'Copy failed'; }
+});
+</script>
+{{end}}

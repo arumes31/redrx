@@ -143,7 +143,61 @@ const announceFlashes = () => {
     }
 };
 
+const initAnonymousProof = () => {
+    const form = document.getElementById('shortenForm');
+    if (!form?.dataset.pow) return;
+
+    const challenge = document.getElementById('powChallenge');
+    const difficulty = document.getElementById('powDifficulty');
+    const solution = document.getElementById('powSolution');
+    const progress = document.getElementById('powProgress');
+    const progressBar = document.getElementById('powProgressBar');
+    const progressText = document.getElementById('powProgressText');
+    const submit = document.getElementById('shortenSubmit');
+    let running = false;
+
+    form.addEventListener('submit', (event) => {
+        if (solution.value || running) return;
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+
+        running = true;
+        submit.disabled = true;
+        progress.classList.remove('d-none');
+        const worker = new Worker('/static/js/pow-worker.js');
+        worker.addEventListener('message', ({ data }) => {
+            if (data.type === 'progress') {
+                const expected = 2 ** Number(difficulty.value);
+                const percent = Math.min(99, Math.round(100 * (1 - Math.exp(-data.attempts / expected))));
+                progressBar.style.width = `${percent}%`;
+                progressText.textContent = `${percent}% · ${data.attempts.toLocaleString()} attempts`;
+                return;
+            }
+            if (data.type === 'done') {
+                progressBar.style.width = '100%';
+                progressText.textContent = `Complete · ${data.attempts.toLocaleString()} attempts`;
+                solution.value = data.solution;
+                worker.terminate();
+                form.submit();
+                return;
+            }
+            worker.terminate();
+            running = false;
+            submit.disabled = false;
+            progressText.textContent = 'Could not verify. Try again.';
+        });
+        worker.addEventListener('error', () => {
+            worker.terminate();
+            running = false;
+            submit.disabled = false;
+            progressText.textContent = 'Could not verify. Try again.';
+        });
+        worker.postMessage({ challenge: challenge.value, difficulty: Number(difficulty.value) });
+    });
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     initCanvas();
     announceFlashes();
+    initAnonymousProof();
 });

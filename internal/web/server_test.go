@@ -19,6 +19,7 @@ import (
 	"github.com/arumes31/redrx/internal/geo"
 	"github.com/arumes31/redrx/internal/ratelimit"
 	"github.com/arumes31/redrx/internal/safety"
+	"github.com/arumes31/redrx/internal/security"
 	"github.com/arumes31/redrx/internal/store"
 )
 
@@ -195,6 +196,143 @@ func TestQRCodeIsAPNG(t *testing.T) {
 	}
 	if body := rec.Body.Bytes(); len(body) < 8 || string(body[1:4]) != "PNG" {
 		t.Error("response body is not a PNG image")
+	}
+}
+
+func TestDraftCreatedByAPINeverResolvesUntilPublished(t *testing.T) {
+	srv, db := newTestServer(t)
+	user, err := db.UserByLogin(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("load fixture user: %v", err)
+	}
+	body := `{"long_url":"https://draft.example.com/","custom_code":"DRAFT1","draft":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/shorten", strings.NewReader(body))
+	req.Host = "short.example.com"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", user.APIKey)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create draft = %d, want 201: %s", rec.Code, rec.Body.String())
+	}
+	link, err := db.URLByShortCode(context.Background(), "DRAFT1")
+	if err != nil {
+		t.Fatalf("load draft: %v", err)
+	}
+	if !link.IsDraft || link.IsActive() {
+		t.Fatalf("draft state = draft:%v active:%v", link.IsDraft, link.IsActive())
+	}
+	if rec := get(t, srv, "/DRAFT1"); rec.Code != http.StatusGone {
+		t.Errorf("draft redirect = %d, want 410", rec.Code)
+	}
+}
+
+func TestPrivacySignalsSuppressClickAnalytics(t *testing.T) {
+	srv, db := newTestServer(t, func(c *config.Config) {
+		c.HonorDoNotTrack = true
+		c.EnableConsentBanner = true
+	})
+	link := &store.URL{
+		ShortCode: "TRACK1", LongURL: "https://tracking.example.com/",
+		PreviewMode: true, StatsEnabled: true, IsEnabled: true,
+	}
+	if err := db.CreateURL(context.Background(), link); err != nil {
+		t.Fatalf("CreateURL: %v", err)
+	}
+
+	request := func(dnt string, consent bool) {
+		req := httptest.NewRequest(http.MethodGet, "/TRACK1", nil)
+		req.Host = "short.example.com"
+		if dnt != "" {
+			req.Header.Set("DNT", dnt)
+		}
+		if consent {
+			req.AddCookie(&http.Cookie{Name: consentCookieName, Value: "accepted"})
+		}
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("redirect page = %d, want 200", rec.Code)
+		}
+	}
+
+	request("", false)
+	request("1", true)
+	stored, err := db.URLByShortCode(context.Background(), "TRACK1")
+	if err != nil {
+		t.Fatalf("load tracking link: %v", err)
+	}
+	if stored.ClicksCount != 0 {
+		t.Errorf("privacy-suppressed requests recorded %d clicks, want 0", stored.ClicksCount)
+	}
+	request("", true)
+	stored, err = db.URLByShortCode(context.Background(), "TRACK1")
+	if err != nil {
+		t.Fatalf("reload tracking link: %v", err)
+	}
+	if stored.ClicksCount != 1 {
+		t.Errorf("consented request recorded %d clicks, want 1", stored.ClicksCount)
+	}
+}
+
+func TestRecoveryCodeCompletesTwoFactorLoginOnce(t *testing.T) {
+	srv, db := newTestServer(t)
+	ctx := context.Background()
+	user, err := db.UserByLogin(ctx, "alice")
+	if err != nil {
+		t.Fatalf("load fixture user: %v", err)
+	}
+	secret, err := security.SealAccountSecret(srv.cfg.SecretKey, "JBSWY3DPEHPK3PXP")
+	if err != nil {
+		t.Fatalf("encrypt TOTP secret: %v", err)
+	}
+	if err := db.SetTOTPPending(ctx, user.ID, secret); err != nil {
+		t.Fatalf("SetTOTPPending: %v", err)
+	}
+	const recovery = "ABCD-EFGH-JKLM"
+	hash := security.RecoveryCodeHash(srv.cfg.SecretKey, recovery)
+	if err := db.EnableTOTP(ctx, user.ID, []string{hash}); err != nil {
+		t.Fatalf("EnableTOTP: %v", err)
+	}
+
+	loginPage := get(t, srv, "/login")
+	cookie := sessionCookie(t, loginPage.Result())
+	token := extractCSRF(t, loginPage.Body.String())
+	form := url.Values{"username": {"alice"}, "password": {"alice-password"}, "csrf_token": {token}}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	req.Host = "short.example.com"
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || loc != "/login/totp" {
+		t.Fatalf("password step = %d Location %q, want 303 /login/totp", rec.Code, loc)
+	}
+	pendingCookie := sessionCookie(t, rec.Result())
+
+	req = httptest.NewRequest(http.MethodGet, "/login/totp", nil)
+	req.Host = "short.example.com"
+	req.AddCookie(pendingCookie)
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	token = extractCSRF(t, rec.Body.String())
+
+	form = url.Values{"code": {recovery}, "csrf_token": {token}}
+	req = httptest.NewRequest(http.MethodPost, "/login/totp", strings.NewReader(form.Encode()))
+	req.Host = "short.example.com"
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(pendingCookie)
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/" {
+		t.Fatalf("2FA step = %d Location %q, want 303 /", rec.Code, rec.Header().Get("Location"))
+	}
+	used, err := db.ConsumeRecoveryCode(ctx, user.ID, hash)
+	if err != nil {
+		t.Fatalf("check consumed recovery code: %v", err)
+	}
+	if used {
+		t.Error("recovery code could be consumed a second time")
 	}
 }
 

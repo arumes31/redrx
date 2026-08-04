@@ -1,0 +1,24 @@
+{{define "title"}}Two-factor authentication - Redrx{{end}}
+{{define "content"}}
+{{$errors := .Get "errors"}}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card p-4">
+            <div class="text-center mb-4">
+                <i class="fas fa-shield-alt text-info fa-2x mb-3"></i>
+                <h2>Verify your login</h2>
+                <p class="text-muted mb-0">Enter the six-digit code from your authenticator app, or one unused recovery code.</p>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <label class="form-label" for="code">Authentication code</label>
+                <input class="form-control font-monospace text-center" id="code" name="code" type="text"
+                       inputmode="text" autocomplete="one-time-code" required autofocus>
+                {{with $errors.Get "code"}}<div class="text-danger small mt-1">{{.}}</div>{{end}}
+                <button class="btn btn-shorten btn-lg w-100 mt-4" type="submit">Verify</button>
+            </form>
+            <a class="text-center text-muted small mt-3" href="/login">Start over</a>
+        </div>
+    </div>
+</div>
+{{end}}

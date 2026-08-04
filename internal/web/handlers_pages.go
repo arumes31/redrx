@@ -29,6 +29,7 @@ const dummyPasswordHash = "scrypt:32768:8:1$XmQ2yTnBd7pKwLr4$" +
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	data := s.newPageData(r)
 	data.Data["form"] = newShortenForm(s.cfg.ShortCodeLength, s.cfg.ExpiryHours, s.cfg.DefaultQRColor, s.cfg.DefaultQRBG)
+	s.addAnonymousProof(r, data)
 	s.render(w, r, http.StatusOK, "index.html", data)
 }
 
@@ -53,33 +54,47 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	data := s.newPageData(r)
 	data.Data["form"] = form
+	renderIndex := func() {
+		s.addAnonymousProof(r, data)
+		s.render(w, r, http.StatusOK, "index.html", data)
+	}
 
 	if !ok {
-		s.render(w, r, http.StatusOK, "index.html", data)
+		renderIndex()
+		return
+	}
+	if form.Draft && user == nil {
+		form.Errors.add("draft", "Please log in to save draft links.")
+		renderIndex()
+		return
+	}
+	if !s.verifyAnonymousProof(r) {
+		form.Errors.add("proof_of_work", "Browser verification expired or failed. Please try again.")
+		renderIndex()
 		return
 	}
 
 	if !s.safety.IsSafeURL(in.LongURL) {
 		sess.AddFlash("danger", "That destination URL is blocked for safety reasons.")
 		data.Flashes = sess.TakeFlashes()
-		s.render(w, r, http.StatusOK, "index.html", data)
+		renderIndex()
 		return
 	}
 	for _, t := range in.RotateTargets {
 		if !s.safety.IsSafeURL(t) {
 			form.Errors.add("rotate_targets", "One or more rotate target URLs are blocked or invalid.")
-			s.render(w, r, http.StatusOK, "index.html", data)
+			renderIndex()
 			return
 		}
 	}
 	if in.IOSTargetURL != "" && !s.safety.IsSafeURL(in.IOSTargetURL) {
 		form.Errors.add("ios_target_url", "iOS target URL is blocked or invalid.")
-		s.render(w, r, http.StatusOK, "index.html", data)
+		renderIndex()
 		return
 	}
 	if in.AndroidTargetURL != "" && !s.safety.IsSafeURL(in.AndroidTargetURL) {
 		form.Errors.add("android_target_url", "Android target URL is blocked or invalid.")
-		s.render(w, r, http.StatusOK, "index.html", data)
+		renderIndex()
 		return
 	}
 
@@ -101,7 +116,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, errCodeTaken) {
 			form.Errors.add("custom_code", "Code '"+in.CustomCode+"' is already taken.")
-			s.render(w, r, http.StatusOK, "index.html", data)
+			renderIndex()
 			return
 		}
 		s.log.Error("allocate short code", "error", err)
@@ -117,7 +132,8 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		AndroidTargetURL: in.AndroidTargetURL,
 		PreviewMode:      in.PreviewMode,
 		StatsEnabled:     in.StatsEnabled,
-		IsEnabled:        true,
+		IsEnabled:        !in.Draft,
+		IsDraft:          in.Draft,
 		// Remember the chosen colours so /{code}/qr serves the same QR the
 		// creator previewed, rather than one in the instance defaults.
 		QRColor:      form.QRColor,
@@ -145,7 +161,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		// field error rather than a 500.
 		if store.IsUniqueViolation(err) {
 			form.Errors.add("custom_code", "Code '"+code+"' is already taken.")
-			s.render(w, r, http.StatusOK, "index.html", data)
+			renderIndex()
 			return
 		}
 		s.log.Error("create link", "error", err)
@@ -153,6 +169,11 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.metrics.shortened.Inc()
+	if link.IsDraft {
+		sess.AddFlash("success", "Draft link saved. Publish it from your dashboard when it is ready.")
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		return
+	}
 
 	shortURL := s.cfg.ShortURL(code)
 	qrPayload, err := s.renderQRForForm(r, shortURL, form)
@@ -168,6 +189,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	data.Data["short_code"] = code
 	data.Data["qr_data"] = qrPayload
 	data.Data["stats_url"] = shortURL + "/stats"
+	s.addAnonymousProof(r, data)
 	s.render(w, r, http.StatusOK, "index.html", data)
 }
 
@@ -269,11 +291,20 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sess.Login(user.ID)
-
 	// isSafeRedirect admits only same-site relative paths, which gosec's taint
 	// analysis cannot follow through the helper.
-	if next := r.URL.Query().Get("next"); next != "" && isSafeRedirect(next) {
+	next := r.URL.Query().Get("next")
+	if !isSafeRedirect(next) {
+		next = "/"
+	}
+	if user.TOTPEnabled {
+		sess.BeginTwoFactor(user.ID, next)
+		http.Redirect(w, r, "/login/totp", http.StatusSeeOther)
+		return
+	}
+
+	sess.Login(user.ID)
+	if next != "/" {
 		http.Redirect(w, r, next, http.StatusSeeOther) // #nosec G710 -- validated by isSafeRedirect
 		return
 	}
@@ -507,6 +538,10 @@ func (s *Server) handleToggleStatus(w http.ResponseWriter, r *http.Request) {
 	if link == nil {
 		return
 	}
+	if link.IsDraft {
+		apiError(w, http.StatusConflict, "Publish the draft before changing its status.")
+		return
+	}
 	enabled, err := s.db.SetURLEnabledToggle(r.Context(), link.ID)
 	if err != nil {
 		s.log.Error("toggle link status", "error", err)
@@ -518,10 +553,32 @@ func (s *Server) handleToggleStatus(w http.ResponseWriter, r *http.Request) {
 	// link — showing "Active" on one produces a link that 410s when clicked.
 	link.IsEnabled = enabled
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":     "success",
+		"status":     link.Status(),
 		"is_enabled": enabled,
 		"is_active":  link.IsActive(),
 	})
+}
+
+func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
+	link := s.ownedLink(w, r)
+	if link == nil {
+		return
+	}
+	if err := s.db.PublishURL(r.Context(), link.ID); err != nil {
+		s.log.Error("publish draft", "error", err)
+		if wantsJSON(r) {
+			apiError(w, http.StatusInternalServerError, "Could not publish the draft.")
+			return
+		}
+		sessionFrom(r).AddFlash("danger", "Could not publish the draft.")
+	} else {
+		if wantsJSON(r) {
+			writeJSON(w, http.StatusOK, map[string]any{"status": "published"})
+			return
+		}
+		sessionFrom(r).AddFlash("success", "Draft published successfully.")
+	}
+	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 
 func (s *Server) handleExportLinks(w http.ResponseWriter, r *http.Request) {
@@ -600,7 +657,16 @@ func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request) {
 		AndroidTargetURL: link.AndroidTargetURL,
 		PreviewMode:      link.PreviewMode,
 		StatsEnabled:     link.StatsEnabled,
+		IsDraft:          link.IsDraft,
 		Errors:           errorMap{},
+	}
+	if link.StartAt != nil {
+		form.StartDate = link.StartAt.UTC().Format("2006-01-02")
+		form.StartTime = link.StartAt.UTC().Format("15:04")
+	}
+	if link.EndAt != nil {
+		form.EndDate = link.EndAt.UTC().Format("2006-01-02")
+		form.EndTime = link.EndAt.UTC().Format("15:04")
 	}
 	if link.ExpiresAt != nil {
 		// Round up, and leave the field blank once under an hour remains. int()
@@ -631,6 +697,7 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 	if link == nil {
 		return
 	}
+	wasDraft := link.IsDraft
 	sess := sessionFrom(r)
 
 	form := bindEditForm(r)
@@ -669,6 +736,9 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 	link.AndroidTargetURL = in.AndroidTargetURL
 	link.PreviewMode = in.PreviewMode
 	link.StatsEnabled = in.StatsEnabled
+	link.StartAt = in.StartAt
+	link.EndAt = in.EndAt
+	link.IsDraft = in.IsDraft
 	if in.ExpiryGiven {
 		if in.ExpiryNever {
 			link.ExpiresAt = nil
@@ -681,6 +751,13 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("update link", "error", err)
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
+	}
+	if wasDraft && !link.IsDraft {
+		if err := s.db.PublishURL(r.Context(), link.ID); err != nil {
+			s.log.Error("publish edited draft", "error", err)
+			s.renderError(w, r, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	sess.AddFlash("success", "Link updated successfully.")
