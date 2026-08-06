@@ -139,6 +139,16 @@ body {
     }
 }
 
+.consent-banner {
+    position: sticky;
+    bottom: 0;
+    z-index: 1050;
+    padding: 1rem 0;
+    background: rgba(12, 16, 28, 0.97);
+    border-top: 1px solid rgba(13, 202, 240, 0.45);
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.35);
+}
+
 /* Bootstrap sizes checkboxes at 1em and switches at 2em x 1em, which lands
    around 16px — well under the 24px WCAG 2.5.8 target size, and these
    particular controls disable live links or select rows for deletion. */

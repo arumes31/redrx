@@ -70,6 +70,7 @@ type ShortenForm struct {
 	EndTime          string
 	QRColor          string
 	QRBg             string
+	Draft            bool
 	Errors           errorMap
 }
 
@@ -104,6 +105,7 @@ func bindShortenForm(r *http.Request) *ShortenForm {
 		EndTime:          strings.TrimSpace(r.FormValue("end_time")),
 		QRColor:          normalizeHexColor(r.FormValue("qr_color"), "#000000"),
 		QRBg:             normalizeHexColor(r.FormValue("qr_bg"), "#ffffff"),
+		Draft:            checkboxChecked(r, "draft"),
 		Errors:           errorMap{},
 	}
 }
@@ -124,6 +126,7 @@ type shortenInput struct {
 	EndAt            *time.Time
 	// ExpirySetByUser distinguishes "0 hours, meaning never" from "not given".
 	ExpiryNever bool
+	Draft       bool
 }
 
 // Validate checks the form. loggedIn relaxes the expiry ceiling, matching the
@@ -135,6 +138,7 @@ func (f *ShortenForm) Validate(defaultLength int, loggedIn bool) (*shortenInput,
 		LongURL:      f.LongURL,
 		PreviewMode:  f.PreviewMode,
 		StatsEnabled: f.StatsEnabled,
+		Draft:        f.Draft,
 	}
 
 	if f.LongURL == "" {
@@ -248,6 +252,11 @@ type EditForm struct {
 	ExpiryHours      string
 	PreviewMode      bool
 	StatsEnabled     bool
+	StartDate        string
+	StartTime        string
+	EndDate          string
+	EndTime          string
+	IsDraft          bool
 	Errors           errorMap
 }
 
@@ -259,6 +268,11 @@ func bindEditForm(r *http.Request) *EditForm {
 		ExpiryHours:      strings.TrimSpace(r.FormValue("expiry_hours")),
 		PreviewMode:      checkboxChecked(r, "preview_mode"),
 		StatsEnabled:     checkboxChecked(r, "stats_enabled"),
+		StartDate:        strings.TrimSpace(r.FormValue("start_date")),
+		StartTime:        strings.TrimSpace(r.FormValue("start_time")),
+		EndDate:          strings.TrimSpace(r.FormValue("end_date")),
+		EndTime:          strings.TrimSpace(r.FormValue("end_time")),
+		IsDraft:          checkboxChecked(r, "draft"),
 		Errors:           errorMap{},
 	}
 }
@@ -273,6 +287,9 @@ type editInput struct {
 	ExpiresAt        *time.Time
 	ExpiryGiven      bool
 	ExpiryNever      bool
+	StartAt          *time.Time
+	EndAt            *time.Time
+	IsDraft          bool
 }
 
 func (f *EditForm) Validate() (*editInput, bool) {
@@ -281,6 +298,7 @@ func (f *EditForm) Validate() (*editInput, bool) {
 		LongURL:      f.LongURL,
 		PreviewMode:  f.PreviewMode,
 		StatsEnabled: f.StatsEnabled,
+		IsDraft:      f.IsDraft,
 	}
 
 	if f.LongURL == "" {
@@ -303,6 +321,19 @@ func (f *EditForm) Validate() (*editInput, bool) {
 		}
 	}
 
+	start, startOK := parseDateTime(f.StartDate, f.StartTime)
+	if !startOK {
+		f.Errors.add("start_date", "Invalid start date or time.")
+	}
+	end, endOK := parseDateTime(f.EndDate, f.EndTime)
+	if !endOK {
+		f.Errors.add("end_date", "Invalid end date or time.")
+	}
+	if start != nil && end != nil && !end.After(*start) {
+		f.Errors.add("end_date", "End time must be after start time")
+	}
+	in.StartAt, in.EndAt = start, end
+
 	if f.ExpiryHours != "" {
 		hours, err := strconv.Atoi(f.ExpiryHours)
 		switch {
@@ -311,9 +342,17 @@ func (f *EditForm) Validate() (*editInput, bool) {
 		case hours == 0:
 			in.ExpiryGiven, in.ExpiryNever = true, true
 		default:
-			t := time.Now().UTC().Add(time.Duration(hours) * time.Hour)
+			base := time.Now().UTC()
+			if in.StartAt != nil && in.StartAt.After(base) {
+				base = *in.StartAt
+			}
+			t := base.Add(time.Duration(hours) * time.Hour)
 			in.ExpiresAt, in.ExpiryGiven = &t, true
 		}
+	}
+
+	if in.ExpiresAt != nil && start != nil && !in.ExpiresAt.After(*start) {
+		f.Errors.add("expiry_hours", "The link would expire before it starts.")
 	}
 
 	return in, !f.Errors.any()

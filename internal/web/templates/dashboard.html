@@ -83,7 +83,10 @@
                         <select id="statusFilter" class="form-select bg-dark border-secondary text-light" aria-label="Filter by status">
                             <option value="all">All Statuses</option>
                             <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
+                            <option value="draft">Draft</option>
+                            <option value="scheduled">Scheduled</option>
+                            <option value="expired">Expired</option>
+                            <option value="paused">Paused</option>
                         </select>
                     </div>
                     <div class="col-md-3">
@@ -132,7 +135,7 @@
                                 <tr class="link-row"
                                     data-code="{{lower .ShortCode}}"
                                     data-url="{{lower .LongURL}}"
-                                    data-status="{{if .IsActive}}active{{else}}inactive{{end}}"
+                                    data-status="{{.Status}}"
                                     data-clicks="{{.ClicksCount}}"
                                     data-created="{{unixSeconds .CreatedAt}}">
                                     <td>
@@ -168,18 +171,23 @@
                                     </td>
                                     <td class="small text-muted d-none d-lg-table-cell">{{timeAgo .LastAccessedAt}}</td>
                                     <td>
+                                        {{if .IsDraft}}
+                                        <span class="badge bg-secondary status-badge">Draft</span>
+                                        {{else}}
                                         <div class="form-check form-switch">
                                             <input class="form-check-input status-toggle" type="checkbox"
                                                    role="switch" {{if .IsEnabled}}checked{{end}}
                                                    aria-label="Enable or disable link {{.ShortCode}}"
                                                    onchange="toggleStatus('{{.ShortCode}}', this)">
-                                            <span class="badge {{if .IsActive}}bg-success{{else}}bg-danger{{end}} status-badge">
-                                                {{if .IsActive}}Active{{else}}Inactive{{end}}
+                                            <span class="badge {{if eq .Status "active"}}bg-success{{else if eq .Status "scheduled"}}bg-info text-dark{{else if eq .Status "expired"}}bg-danger{{else}}bg-warning text-dark{{end}} status-badge">
+                                                {{if eq .Status "active"}}Active{{else if eq .Status "scheduled"}}Scheduled{{else if eq .Status "expired"}}Expired{{else}}Paused{{end}}
                                             </span>
                                         </div>
+                                        {{end}}
                                     </td>
                                     <td>
                                         <div class="btn-group">
+                                            {{if .IsDraft}}<button type="button" class="btn btn-sm btn-outline-success" onclick="publishDraft('{{.ShortCode}}', this)">Publish</button>{{end}}
                                             <a href="/edit/{{.ShortCode}}" class="btn btn-sm btn-outline-warning">Edit</a>
                                             <a href="/{{.ShortCode}}/stats" class="btn btn-sm btn-outline-info">Stats</a>
                                             <button type="button" class="btn btn-sm btn-outline-light"
@@ -337,16 +345,19 @@ function copyLink(code, btn) {
         });
 }
 
-function setStatusBadge(checkbox, enabled) {
+function setStatusBadge(checkbox, status) {
     const badge = checkbox.nextElementSibling;
-    badge.innerText = enabled ? 'Active' : 'Inactive';
-    badge.className = `badge ${enabled ? 'bg-success' : 'bg-danger'} status-badge`;
+    const labels = {active: 'Active', scheduled: 'Scheduled', expired: 'Expired', paused: 'Paused'};
+    const classes = {active: 'bg-success', scheduled: 'bg-info text-dark', expired: 'bg-danger', paused: 'bg-warning text-dark'};
+    badge.innerText = labels[status] || 'Inactive';
+    badge.className = `badge ${classes[status] || 'bg-danger'} status-badge`;
 }
 
 function toggleStatus(code, checkbox) {
     // The checkbox has already flipped optimistically; a failure has to put it
     // back, or the row keeps claiming a state the server never accepted.
     const intended = checkbox.checked;
+    const oldStatus = checkbox.closest('tr')?.dataset.status || 'paused';
     fetch(`/toggle-status/${code}`, {
         method: 'POST',
         headers: { 'X-CSRFToken': csrfToken }
@@ -360,16 +371,23 @@ function toggleStatus(code, checkbox) {
         // is_enabled: an expired or not-yet-started link stays inactive however
         // the switch is set, and labelling it "Active" promises a redirect that
         // would return 410.
-        setStatusBadge(checkbox, data.is_active);
+        setStatusBadge(checkbox, data.status);
         const row = checkbox.closest('tr');
-        if (row) row.dataset.status = data.is_active ? 'active' : 'inactive';
+        if (row) row.dataset.status = data.status;
     })
     .catch(() => {
         // Snapping the switch back is the signal that the change did not take.
         checkbox.checked = !intended;
-        setStatusBadge(checkbox, !intended);
+        setStatusBadge(checkbox, oldStatus);
         checkbox.title = 'Could not change the link status. Please try again.';
     });
+}
+
+function publishDraft(code, button) {
+    button.disabled = true;
+    fetch(`/publish/${code}`, { method: 'POST', headers: { 'X-CSRFToken': csrfToken, 'Accept': 'application/json' } })
+        .then(r => { if (!r.ok) throw new Error(`request failed with ${r.status}`); window.location.reload(); })
+        .catch(() => { button.disabled = false; button.textContent = 'Try again'; });
 }
 
 const qrModal = new bootstrap.Modal(document.getElementById('qrModal'));

@@ -29,6 +29,7 @@ type shortenRequest struct {
 	Password         *string         `json:"password"`
 	PreviewMode      json.RawMessage `json:"preview_mode"`
 	StatsEnabled     json.RawMessage `json:"stats_enabled"`
+	Draft            json.RawMessage `json:"draft"`
 }
 
 // authenticateAPI resolves the X-API-KEY header to a user.
@@ -174,6 +175,11 @@ func (s *Server) handleAPIShorten(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "stats_enabled must be a boolean")
 		return
 	}
+	draft, err := decodeBoolDefault(req.Draft, false)
+	if err != nil {
+		apiError(w, http.StatusBadRequest, "draft must be a boolean")
+		return
+	}
 
 	// Trim so a whitespace-only password does not create a "protected" link that
 	// no one — including the creator — can ever unlock with a meaningful value.
@@ -191,7 +197,8 @@ func (s *Server) handleAPIShorten(w http.ResponseWriter, r *http.Request) {
 		AndroidTargetURL: androidURL,
 		PreviewMode:      previewMode,
 		StatsEnabled:     statsEnabled,
-		IsEnabled:        true,
+		IsEnabled:        !draft,
+		IsDraft:          draft,
 		ExpiresAt:        expiresAt,
 		StartAt:          startAt,
 		EndAt:            endAt,
@@ -234,6 +241,7 @@ func (s *Server) handleAPIShorten(w http.ResponseWriter, r *http.Request) {
 		"password_protected": password != "",
 		"preview_mode":       previewMode,
 		"stats_enabled":      statsEnabled,
+		"draft":              draft,
 	})
 }
 
@@ -285,6 +293,7 @@ func (s *Server) handleAPIGetURL(w http.ResponseWriter, r *http.Request) {
 		"start_at":           isoNaive(link.StartAt),
 		"end_at":             isoNaive(link.EndAt),
 		"active":             link.IsActive(),
+		"draft":              link.IsDraft,
 	})
 }
 

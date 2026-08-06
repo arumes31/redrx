@@ -138,18 +138,26 @@ func (s *Server) routes() (http.Handler, error) {
 	// loading the login page never consumes the anti-brute-force login budget.
 	mux.Handle("GET /login", s.limit("login_page", s.limits.Pages, s.handleLoginForm))
 	mux.Handle("POST /login", s.limit("login", s.limits.Login, s.handleLogin))
+	mux.Handle("GET /login/totp", s.limit("totp_page", s.limits.Pages, s.handleTOTPLoginForm))
+	mux.Handle("POST /login/totp", s.limit("totp_login", s.limits.Auth, s.handleTOTPLogin))
 	mux.Handle("GET /register", s.limit("register_page", s.limits.Pages, s.handleRegisterForm))
 	mux.Handle("POST /register", s.limit("register", s.limits.Register, s.handleRegister))
 	// POST only: a GET logout is triggered by any third-party <img> tag, and by
 	// link prefetchers. The nav uses a form.
 	mux.Handle("POST /logout", s.wrap(s.handleLogout))
+	mux.Handle("POST /privacy/consent", s.limit("consent", s.limits.Pages, s.handleConsent))
 
 	// Dashboard and link management.
 	mux.Handle("GET /dashboard", s.limit("dashboard", s.limits.Dashboard, s.requireLogin(s.handleDashboard)))
+	mux.Handle("GET /settings/security", s.limit("settings", s.limits.Dashboard, s.requireLogin(s.handleSecuritySettings)))
+	mux.Handle("POST /settings/totp/start", s.limit("totp_setup", s.limits.Auth, s.requireLogin(s.handleTOTPStart)))
+	mux.Handle("POST /settings/totp/confirm", s.limit("totp_setup", s.limits.Auth, s.requireLogin(s.handleTOTPConfirm)))
+	mux.Handle("POST /settings/totp/disable", s.limit("totp_disable", s.limits.Auth, s.requireLogin(s.handleTOTPDisable)))
 	// Its own scope: regenerating a key is unrelated to unlocking a link, and
 	// the two shared the "auth" counter before.
 	mux.Handle("POST /regenerate-api-key", s.limit("regen_key", s.limits.Auth, s.requireLogin(s.handleRegenerateAPIKey)))
 	mux.Handle("POST /toggle-status/{code}", s.limit("dashboard", s.limits.Dashboard, s.requireLogin(s.handleToggleStatus)))
+	mux.Handle("POST /publish/{code}", s.limit("dashboard", s.limits.Dashboard, s.requireLogin(s.handlePublish)))
 	mux.Handle("GET /export-links", s.limit("export", s.limits.Export, s.requireLogin(s.handleExportLinks)))
 	mux.Handle("POST /bulk-delete", s.limit("bulk", s.limits.Bulk, s.requireLogin(s.handleBulkDelete)))
 	mux.Handle("GET /edit/{code}", s.limit("dashboard", s.limits.Dashboard, s.requireLogin(s.handleEditForm)))

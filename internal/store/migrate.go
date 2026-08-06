@@ -33,6 +33,8 @@ var schema = []table{
 			{"email", "VARCHAR(120) NOT NULL", "VARCHAR(120) NOT NULL"},
 			{"password_hash", "VARCHAR(255) NOT NULL", "VARCHAR(255) NOT NULL"},
 			{"api_key", "VARCHAR(36)", "VARCHAR(36)"},
+			{"totp_secret", "TEXT", "TEXT"},
+			{"totp_enabled", "BOOLEAN", "BOOLEAN"},
 			{"created_at", "DATETIME", "TIMESTAMP"},
 		},
 	},
@@ -52,12 +54,23 @@ var schema = []table{
 			{"preview_mode", "BOOLEAN", "BOOLEAN"},
 			{"stats_enabled", "BOOLEAN", "BOOLEAN"},
 			{"is_enabled", "BOOLEAN", "BOOLEAN"},
+			{"is_draft", "BOOLEAN", "BOOLEAN"},
 			{"clicks", "INTEGER", "INTEGER"},
 			{"created_at", "DATETIME", "TIMESTAMP"},
 			{"expires_at", "DATETIME", "TIMESTAMP"},
 			{"start_at", "DATETIME", "TIMESTAMP"},
 			{"end_at", "DATETIME", "TIMESTAMP"},
 			{"last_accessed_at", "DATETIME", "TIMESTAMP"},
+		},
+		extra: []string{"FOREIGN KEY(user_id) REFERENCES users (id)"},
+	},
+	{
+		name: "recovery_codes",
+		columns: []column{
+			{"id", "INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY"},
+			{"user_id", "INTEGER NOT NULL", "INTEGER NOT NULL"},
+			{"code_hash", "VARCHAR(64) NOT NULL", "VARCHAR(64) NOT NULL"},
+			{"created_at", "DATETIME", "TIMESTAMP"},
 		},
 		extra: []string{"FOREIGN KEY(user_id) REFERENCES users (id)"},
 	},
@@ -87,6 +100,7 @@ var indexes = []struct{ name, ddl string }{
 	{"idx_url_user_created", "CREATE INDEX IF NOT EXISTS idx_url_user_created ON urls (user_id, created_at)"},
 	{"idx_url_code_enabled", "CREATE INDEX IF NOT EXISTS idx_url_code_enabled ON urls (short_code, is_enabled)"},
 	{"idx_click_url_timestamp", "CREATE INDEX IF NOT EXISTS idx_click_url_timestamp ON clicks (url_id, timestamp)"},
+	{"idx_recovery_user_hash", "CREATE UNIQUE INDEX IF NOT EXISTS idx_recovery_user_hash ON recovery_codes (user_id, code_hash)"},
 }
 
 // Migrate creates any missing tables, columns and indexes. It is additive only:

@@ -2,9 +2,9 @@ name: Security Analysis
 
 on:
   push:
-    branches: [ "main", "v2_test", "v2.0.0" ]
+    branches: [ "main", "v2_test", "v2.0.0", "v2.2" ]
   pull_request:
-    branches: [ "main", "v2_test", "v2.0.0" ]
+    branches: [ "main", "v2_test", "v2.0.0", "v2.2" ]
   workflow_dispatch:
 
 # Every action is pinned to a full commit SHA. A tag — even a major one like
@@ -127,7 +127,7 @@ jobs:
 
       - name: Upload gosec SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
         with:
           sarif_file: gosec.sarif
           category: gosec

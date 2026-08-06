@@ -108,20 +108,6 @@ internal/web/         HTTP handlers, middleware, templates and static assets
 
 ---
 
-## 🔄 Upgrading from the Python release
-
-This version is a drop-in replacement. **Existing databases are used in place — no migration, export or import step.**
-
-*   **Schema:** identical table, column and index names. Missing columns are added automatically on boot; nothing is dropped or renamed.
-*   **Accounts:** existing passwords keep working. Werkzeug `scrypt` and `pbkdf2` hashes are verified natively, and are transparently upgraded to the current default on the next successful login.
-*   **Links:** short codes, rotation targets, per-link passwords, schedules and click counters are all read from the existing rows.
-*   **Configuration:** every `SECRET_KEY`, `DATABASE_URL`, `RATELIMIT_*`, `PHISHING_*` and GeoIP variable keeps its previous name, meaning and default, so existing `.env` files and compose stacks work unchanged.
-*   **URLs:** all public routes are unchanged, so existing short links, QR codes and shared statistics pages keep resolving.
-
-The one visible change is that **users are logged out once**, because session cookies are signed differently. Logging back in restores everything.
-
----
-
 ## 🚀 Quick Start (Docker)
 
 Ensure safe execution by loading our production-ready image verified with strict security hashes:
@@ -208,6 +194,9 @@ The suite includes a committed SQLite fixture written by the previous Python app
 | **Limits** | `RATELIMIT_STORAGE_URL` | `redis://redis:6379` | Rate limiting backend. Can fall back to local storage `memory://` in dev. |
 | **Access** | `DISABLE_ANONYMOUS_CREATE` | `false` | When true, only authenticated users can shorten links. |
 | **Access** | `DISABLE_REGISTRATION` | `false` | When true, public registration routes are disabled. |
+| **Abuse prevention** | `ANONYMOUS_POW_DIFFICULTY` | `16` | Proof-of-work difficulty for anonymous link creation; `0` disables it, maximum `28`. |
+| **Privacy** | `ENABLE_CONSENT_BANNER` | `false` | Ask visitors for consent before recording anonymous click analytics. |
+| **Privacy** | `HONOR_DO_NOT_TRACK` | `true` | Skip click analytics whenever the browser sends `DNT: 1`. |
 | **Proxy** | `TRUSTED_PROXIES` | - | Peers whose `X-Forwarded-*` / `CF-*` headers are believed (IPs or CIDRs, comma separated; `*` for any). Empty means the headers are ignored. |
 | **Proxy** | `USE_CLOUDFLARE` | `false` | Trust `CF-Connecting-IP` from a trusted proxy. Required for correct client IPs behind Cloudflare. |
 | **Server** | `LISTEN_ADDR` | `:5000` | Address the HTTP server binds to. |

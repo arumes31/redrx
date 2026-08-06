@@ -14,7 +14,7 @@ func (s *Server) newPageData(r *http.Request) *PageData {
 	if s.cfg.Debug {
 		scheme = "http"
 	}
-	return &PageData{
+	data := &PageData{
 		Config:      s.cfg,
 		User:        userFrom(r),
 		Flashes:     sess.TakeFlashes(),
@@ -23,6 +23,8 @@ func (s *Server) newPageData(r *http.Request) *PageData {
 		RequestURL:  scheme + "://" + r.Host + r.URL.Path,
 		Data:        map[string]any{},
 	}
+	data.Data["show_consent_banner"] = s.cfg.EnableConsentBanner && s.consentChoice(r) == ""
+	return data
 }
 
 // render writes a page, falling back to a plain 500 if the template fails.

@@ -25,6 +25,7 @@ var staticFS embed.FS
 var pages = []string{
 	"index.html", "login.html", "login_user.html", "register.html",
 	"dashboard.html", "edit_url.html", "stats.html", "preview.html",
+	"login_totp.html", "security_settings.html",
 	"api_docs.html", "data_usage.html", "terms.html",
 	"403.html", "404.html", "410.html", "429.html", "500.html",
 }

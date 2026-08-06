@@ -12,6 +12,8 @@ type User struct {
 	Email        string
 	PasswordHash string
 	APIKey       string
+	TOTPSecret   string
+	TOTPEnabled  bool
 	CreatedAt    time.Time
 }
 
@@ -34,6 +36,7 @@ type URL struct {
 	QRColor        string
 	QRBackground   string
 	IsEnabled      bool
+	IsDraft        bool
 	ClicksCount    int64
 	CreatedAt      time.Time
 	ExpiresAt      *time.Time
@@ -45,7 +48,7 @@ type URL struct {
 // IsActive reports whether the link should currently redirect, applying the
 // enable flag, the scheduling window and the expiry.
 func (u *URL) IsActive() bool {
-	if !u.IsEnabled {
+	if u.IsDraft || !u.IsEnabled {
 		return false
 	}
 	now := time.Now().UTC()
@@ -59,6 +62,25 @@ func (u *URL) IsActive() bool {
 		return false
 	}
 	return true
+}
+
+// Status returns the dashboard-facing lifecycle state.
+func (u *URL) Status() string {
+	if u.IsDraft {
+		return "draft"
+	}
+	now := time.Now().UTC()
+	if u.StartAt != nil && now.Before(*u.StartAt) {
+		return "scheduled"
+	}
+	if (u.EndAt != nil && now.After(*u.EndAt)) ||
+		(u.ExpiresAt != nil && now.After(*u.ExpiresAt)) {
+		return "expired"
+	}
+	if !u.IsEnabled {
+		return "paused"
+	}
+	return "active"
 }
 
 // IsPasswordProtected reports whether the link requires a password.

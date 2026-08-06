@@ -25,6 +25,20 @@
                         {{with $form.Errors.Get "android_target_url"}}<div class="text-danger small">{{.}}</div>{{end}}
                     </div>
                 </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <span class="form-label d-block">Activation starts</span>
+                        <input class="form-control mb-1" name="start_date" type="date" value="{{$form.StartDate}}" aria-label="Activation start date">
+                        <input class="form-control" name="start_time" type="time" value="{{$form.StartTime}}" aria-label="Activation start time">
+                        {{with $form.Errors.Get "start_date"}}<div class="text-danger small">{{.}}</div>{{end}}
+                    </div>
+                    <div class="col-md-6">
+                        <span class="form-label d-block">Activation ends</span>
+                        <input class="form-control mb-1" name="end_date" type="date" value="{{$form.EndDate}}" aria-label="Activation end date">
+                        <input class="form-control" name="end_time" type="time" value="{{$form.EndTime}}" aria-label="Activation end time">
+                        {{with $form.Errors.Get "end_date"}}<div class="text-danger small">{{.}}</div>{{end}}
+                    </div>
+                </div>
                 <div class="mb-3">
                     <label class="form-label" for="expiry_input">Expiry (Hours) from now</label>
                     <div class="input-group">
@@ -53,6 +67,10 @@
                             data-bs-toggle="tooltip"
                             aria-label="About Enable Statistics"
                             title="Enable this to collect anonymized data on link performance. Since this link is associated with your account, these statistics are PRIVATE and accessible only to you. We track clicks, countries, browsers, and platforms."></button>
+                </div>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" id="draft" name="draft" type="checkbox" value="y"{{if $form.IsDraft}} checked{{end}}>
+                    <label class="form-check-label" for="draft">Keep as draft (draft links never resolve)</label>
                 </div>
                 <div class="d-flex justify-content-between mt-4">
                     <a href="/dashboard" class="btn btn-outline-light">Cancel</a>

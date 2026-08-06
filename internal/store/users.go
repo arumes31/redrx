@@ -7,14 +7,17 @@ import (
 	"fmt"
 )
 
-const userColumns = "id, username, email, password_hash, COALESCE(api_key, ''), created_at"
+const userColumns = `id, username, email, password_hash, COALESCE(api_key, ''),
+	COALESCE(totp_secret, ''), totp_enabled, created_at`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var (
-		u         User
-		createdAt NullTime
+		u           User
+		createdAt   NullTime
+		totpEnabled nullBool
 	)
-	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.APIKey, &createdAt)
+	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.APIKey,
+		&u.TOTPSecret, &totpEnabled, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -22,6 +25,7 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 		return nil, err
 	}
 	u.CreatedAt = createdAt.Time
+	u.TOTPEnabled = totpEnabled.orDefault(false)
 	return &u, nil
 }
 
@@ -96,6 +100,71 @@ func (d *DB) SetAPIKey(ctx context.Context, userID int64, key string) error {
 func (d *DB) SetUserPasswordHash(ctx context.Context, userID int64, hash string) error {
 	_, err := d.Exec(ctx, "UPDATE users SET password_hash = ? WHERE id = ?", hash, userID)
 	return err
+}
+
+// SetTOTPPending stores an encrypted enrollment secret without enabling 2FA.
+func (d *DB) SetTOTPPending(ctx context.Context, userID int64, encryptedSecret string) error {
+	_, err := d.Exec(ctx,
+		"UPDATE users SET totp_secret = ?, totp_enabled = ? WHERE id = ?",
+		encryptedSecret, false, userID)
+	return err
+}
+
+// EnableTOTP atomically enables TOTP and replaces the one-time recovery codes.
+func (d *DB) EnableTOTP(ctx context.Context, userID int64, codeHashes []string) error {
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, d.rebind(
+		"UPDATE users SET totp_enabled = ? WHERE id = ?"), true, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, d.rebind(
+		"DELETE FROM recovery_codes WHERE user_id = ?"), userID); err != nil {
+		return err
+	}
+	createdAt := NewTime(d.dialect, now())
+	for _, hash := range codeHashes {
+		if _, err := tx.ExecContext(ctx, d.rebind(
+			"INSERT INTO recovery_codes (user_id, code_hash, created_at) VALUES (?, ?, ?)"),
+			userID, hash, createdAt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// DisableTOTP clears the secret and every unused recovery code together.
+func (d *DB) DisableTOTP(ctx context.Context, userID int64) error {
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, d.rebind(
+		"UPDATE users SET totp_secret = NULL, totp_enabled = ? WHERE id = ?"), false, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, d.rebind(
+		"DELETE FROM recovery_codes WHERE user_id = ?"), userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ConsumeRecoveryCode removes a matching code in one statement, so it can
+// never succeed twice even when two login attempts race.
+func (d *DB) ConsumeRecoveryCode(ctx context.Context, userID int64, codeHash string) (bool, error) {
+	res, err := d.Exec(ctx,
+		"DELETE FROM recovery_codes WHERE user_id = ? AND code_hash = ?", userID, codeHash)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 // insertReturningID runs an INSERT and reports the new primary key, using

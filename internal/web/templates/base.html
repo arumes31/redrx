@@ -75,6 +75,9 @@
                             <a class="nav-link" href="/dashboard">Dashboard</a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="/settings/security"><i class="fas fa-shield-alt me-1"></i> Security</a>
+                        </li>
+                        <li class="nav-item">
                             <form action="/logout" method="POST" class="d-inline">
                                 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
                                 <button type="submit" class="nav-link btn btn-link">Logout ({{.User.Username}})</button>
@@ -113,6 +116,20 @@
 
         {{block "content" .}}{{end}}
     </main>
+
+    {{if .Get "show_consent_banner"}}
+    <aside class="consent-banner" aria-label="Analytics consent">
+        <div class="container d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+            <div><strong>Privacy choice</strong><div class="small text-muted">Allow anonymous link-click analytics? Declining does not affect redirects or account features.</div></div>
+            <form action="/privacy/consent" method="POST" class="d-flex gap-2 flex-shrink-0">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <input type="hidden" name="return_to" value="{{.RequestPath}}">
+                <button class="btn btn-sm btn-outline-light" name="choice" value="declined" type="submit">Decline</button>
+                <button class="btn btn-sm btn-info" name="choice" value="accepted" type="submit">Allow analytics</button>
+            </form>
+        </div>
+    </aside>
+    {{end}}
 
     <footer class="footer mt-auto py-3 bg-transparent">
         <div class="container text-center">

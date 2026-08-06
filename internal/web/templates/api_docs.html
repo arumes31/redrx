@@ -51,6 +51,7 @@
     "code_length": 6,
     "preview_mode": true,
     "stats_enabled": true,
+    "draft": false,
     "rotate_targets": ["https://alt1.com", "https://alt2.com"],
     "ios_target_url": "https://apps.apple.com/app/id123",
     "android_target_url": "https://play.google.com/store/apps/details?id=com.example",
@@ -103,6 +104,12 @@
                                     <td><span class="badge bg-secondary">Optional</span> <code class="text-info">boolean</code></td>
                                     <td><code>true</code></td>
                                     <td>Enable stats collection for this link. If <code>true</code>, click analytics are recorded. Accepts boolean value or string representations.</td>
+                                </tr>
+                                <tr>
+                                    <td><code class="text-warning">draft</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span> <code class="text-info">boolean</code></td>
+                                    <td><code>false</code></td>
+                                    <td>Save the link without making it resolve. Drafts can be reviewed and published from the dashboard.</td>
                                 </tr>
                                 <tr>
                                     <td><code class="text-warning">rotate_targets</code></td>
@@ -165,7 +172,8 @@
   "end_at": "2026-06-30T23:59:59+00:00",
   "password_protected": true,
   "preview_mode": true,
-  "stats_enabled": true
+  "stats_enabled": true,
+  "draft": false
 }</code></pre>
                         </div>
                     </div>
@@ -203,7 +211,8 @@
   "expires_at": "2026-06-06T22:00:00+00:00",
   "start_at": "2026-06-05T22:00:00+00:00",
   "end_at": "2026-06-30T23:59:59+00:00",
-  "active": true
+  "active": true,
+  "draft": false
 }</code></pre>
                         </div>
                     </div>

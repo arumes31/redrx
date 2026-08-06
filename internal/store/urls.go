@@ -11,7 +11,7 @@ import (
 
 const urlColumns = `id, user_id, short_code, long_url, COALESCE(rotate_targets, ''),
 	COALESCE(ios_target_url, ''), COALESCE(android_target_url, ''), COALESCE(password_hash, ''),
-	preview_mode, stats_enabled, is_enabled, COALESCE(clicks, 0),
+	preview_mode, stats_enabled, is_enabled, is_draft, COALESCE(clicks, 0),
 	COALESCE(qr_color, ''), COALESCE(qr_background, ''),
 	created_at, expires_at, start_at, end_at, last_accessed_at`
 
@@ -20,14 +20,14 @@ func scanURL(row interface{ Scan(...any) error }) (*URL, error) {
 		u                              URL
 		userID                         sql.NullInt64
 		rotateRaw                      string
-		preview, stats, enabled        nullBool
+		preview, stats, enabled, draft nullBool
 		createdAt, expiresAt           NullTime
 		startAt, endAt, lastAccessedAt NullTime
 	)
 	err := row.Scan(
 		&u.ID, &userID, &u.ShortCode, &u.LongURL, &rotateRaw,
 		&u.IOSTargetURL, &u.AndroidTargetURL, &u.PasswordHash,
-		&preview, &stats, &enabled, &u.ClicksCount,
+		&preview, &stats, &enabled, &draft, &u.ClicksCount,
 		&u.QRColor, &u.QRBackground,
 		&createdAt, &expiresAt, &startAt, &endAt, &lastAccessedAt,
 	)
@@ -47,6 +47,7 @@ func scanURL(row interface{ Scan(...any) error }) (*URL, error) {
 	u.PreviewMode = preview.orDefault(true)
 	u.StatsEnabled = stats.orDefault(true)
 	u.IsEnabled = enabled.orDefault(true)
+	u.IsDraft = draft.orDefault(false)
 	u.CreatedAt = createdAt.Time
 	u.ExpiresAt = expiresAt.Ptr()
 	u.StartAt = startAt.Ptr()
@@ -77,15 +78,15 @@ func (d *DB) CreateURL(ctx context.Context, u *URL) error {
 
 	const q = `INSERT INTO urls (
 		user_id, short_code, long_url, rotate_targets, ios_target_url, android_target_url,
-		password_hash, preview_mode, stats_enabled, is_enabled, clicks,
+		password_hash, preview_mode, stats_enabled, is_enabled, is_draft, clicks,
 		qr_color, qr_background,
 		created_at, expires_at, start_at, end_at, last_accessed_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	id, err := d.insertReturningID(ctx, q, "urls",
 		nullInt64(u.UserID), u.ShortCode, u.LongURL, encodeRotateTargets(u.RotateTargets),
 		nullString(u.IOSTargetURL), nullString(u.AndroidTargetURL), nullString(u.PasswordHash),
-		u.PreviewMode, u.StatsEnabled, u.IsEnabled, u.ClicksCount,
+		u.PreviewMode, u.StatsEnabled, u.IsEnabled, u.IsDraft, u.ClicksCount,
 		nullString(u.QRColor), nullString(u.QRBackground),
 		createdAt, NewNullTime(d.dialect, u.ExpiresAt), NewNullTime(d.dialect, u.StartAt),
 		NewNullTime(d.dialect, u.EndAt), NewNullTime(d.dialect, u.LastAccessedAt),
@@ -105,13 +106,20 @@ func (d *DB) CreateURL(ctx context.Context, u *URL) error {
 func (d *DB) UpdateURL(ctx context.Context, u *URL) error {
 	const q = `UPDATE urls SET
 		long_url = ?, ios_target_url = ?, android_target_url = ?, rotate_targets = ?,
-		preview_mode = ?, stats_enabled = ?, expires_at = ?
+		preview_mode = ?, stats_enabled = ?, expires_at = ?, start_at = ?, end_at = ?, is_draft = ?
 		WHERE id = ?`
 	_, err := d.Exec(ctx, q,
 		u.LongURL, nullString(u.IOSTargetURL), nullString(u.AndroidTargetURL),
 		encodeRotateTargets(u.RotateTargets),
 		u.PreviewMode, u.StatsEnabled,
-		NewNullTime(d.dialect, u.ExpiresAt), u.ID)
+		NewNullTime(d.dialect, u.ExpiresAt), NewNullTime(d.dialect, u.StartAt),
+		NewNullTime(d.dialect, u.EndAt), u.IsDraft, u.ID)
+	return err
+}
+
+// PublishURL makes a saved draft eligible for normal schedule-aware routing.
+func (d *DB) PublishURL(ctx context.Context, id int64) error {
+	_, err := d.Exec(ctx, "UPDATE urls SET is_draft = ?, is_enabled = ? WHERE id = ?", false, true, id)
 	return err
 }
 
@@ -314,10 +322,11 @@ func (d *DB) DashboardStats(ctx context.Context, userID int64) (*DashboardStats,
 		`SELECT COUNT(*) FROM urls
 		 WHERE user_id = ?
 		   AND COALESCE(is_enabled, ?) = ?
+		   AND COALESCE(is_draft, ?) = ?
 		   AND (start_at IS NULL OR start_at <= ?)
 		   AND (end_at IS NULL OR end_at >= ?)
 		   AND (expires_at IS NULL OR expires_at >= ?)`,
-		userID, true, true, nowT, nowT, nowT,
+		userID, true, true, false, false, nowT, nowT, nowT,
 	).Scan(&s.ActiveLinks); err != nil {
 		return nil, err
 	}

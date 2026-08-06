@@ -72,7 +72,7 @@ func (s *Server) handleRedirect(w http.ResponseWriter, r *http.Request) {
 	}
 	s.metrics.redirects.Inc()
 
-	if link.StatsEnabled {
+	if link.StatsEnabled && s.shouldTrack(r) {
 		s.recordClick(r, link, ua)
 	}
 
