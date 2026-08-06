@@ -29,11 +29,20 @@ func (s *Server) verifyAnonymousProof(r *http.Request) bool {
 		return true
 	}
 	challenge := r.PostFormValue("pow_challenge")
-	if err := proof.Verify(s.cfg.SecretKey, challenge,
-		r.PostFormValue("pow_solution"), s.cfg.AnonymousPoWDifficulty); err != nil {
+	expiresAt, err := proof.VerifyWithExpiry(s.cfg.SecretKey, challenge,
+		r.PostFormValue("pow_solution"), s.cfg.AnonymousPoWDifficulty)
+	if err != nil {
 		return false
 	}
-	return sessionFrom(r).ConsumePoWChallenge(challenge)
+	if !sessionFrom(r).ConsumePoWChallenge(challenge) {
+		return false
+	}
+	claimed, err := s.db.ClaimPoWChallenge(r.Context(), challenge, expiresAt)
+	if err != nil {
+		s.log.Error("claim proof-of-work challenge", "error", err)
+		return false
+	}
+	return claimed
 }
 
 func (s *Server) handleConsent(w http.ResponseWriter, r *http.Request) {

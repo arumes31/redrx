@@ -13,7 +13,6 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   GO_VERSION: '1.26'
   NODE_VERSION: '24'
-  TERSER_VERSION: '5.49.0'
 
 permissions:
   contents: read
@@ -46,7 +45,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
 
     steps:
       - name: Checkout repository
@@ -64,12 +62,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          npm ci --ignore-scripts
+
           count=0
           while IFS= read -r -d '' file; do
             output="${file}.minified"
             before="$(wc -c < "$file")"
 
-            npx --yes "terser@${TERSER_VERSION}" "$file" \
+            ./node_modules/.bin/terser "$file" \
               --compress \
               --mangle \
               --output "$output"

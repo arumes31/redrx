@@ -201,6 +201,9 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) validateSecondFactor(r *http.Request, user *store.User, code string) (bool, error) {
+	if user.TOTPSecret == "" {
+		return false, nil
+	}
 	secret, err := security.OpenAccountSecret(s.cfg.SecretKey, user.TOTPSecret)
 	if err != nil {
 		return false, err

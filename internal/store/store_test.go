@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -84,5 +85,54 @@ func TestURLByShortCodeRejectsNulByte(t *testing.T) {
 		if !errors.Is(err, ErrNotFound) {
 			t.Errorf("URLByShortCode(%q) = %v, want ErrNotFound", code, err)
 		}
+	}
+}
+
+func TestUpdateURLAndPublishDraftIsAtomic(t *testing.T) {
+	ctx := context.Background()
+	db := openLegacyFixture(t)
+	link := &URL{
+		ShortCode: "ATOMIC", LongURL: "https://before.example/",
+		IsDraft: true, IsEnabled: false,
+	}
+	if err := db.CreateURL(ctx, link); err != nil {
+		t.Fatalf("CreateURL: %v", err)
+	}
+
+	trigger := fmt.Sprintf(`CREATE TRIGGER reject_draft_publication
+		BEFORE UPDATE OF is_draft ON urls
+		WHEN OLD.id = %d AND OLD.is_draft = 1 AND NEW.is_draft = 0
+		BEGIN SELECT RAISE(ABORT, 'publication rejected'); END`, link.ID)
+	if _, err := db.ExecContext(ctx, trigger); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	link.LongURL = "https://after.example/"
+	link.IsDraft = false
+	if err := db.UpdateURLAndPublishDraft(ctx, link); err == nil {
+		t.Fatal("UpdateURLAndPublishDraft succeeded despite publication failure")
+	}
+	stored, err := db.URLByShortCode(ctx, link.ShortCode)
+	if err != nil {
+		t.Fatalf("reload rolled-back draft: %v", err)
+	}
+	if stored.LongURL != "https://before.example/" || !stored.IsDraft || stored.IsEnabled {
+		t.Errorf("failed publication left partial state: URL=%q draft=%v enabled=%v",
+			stored.LongURL, stored.IsDraft, stored.IsEnabled)
+	}
+
+	if _, err := db.ExecContext(ctx, "DROP TRIGGER reject_draft_publication"); err != nil {
+		t.Fatalf("drop failure trigger: %v", err)
+	}
+	if err := db.UpdateURLAndPublishDraft(ctx, link); err != nil {
+		t.Fatalf("successful UpdateURLAndPublishDraft: %v", err)
+	}
+	stored, err = db.URLByShortCode(ctx, link.ShortCode)
+	if err != nil {
+		t.Fatalf("reload published draft: %v", err)
+	}
+	if stored.LongURL != link.LongURL || stored.IsDraft || !stored.IsEnabled {
+		t.Errorf("successful publication state: URL=%q draft=%v enabled=%v",
+			stored.LongURL, stored.IsDraft, stored.IsEnabled)
 	}
 }

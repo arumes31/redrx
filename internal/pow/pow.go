@@ -30,37 +30,46 @@ func Issue(secret []byte, ttl time.Duration) (string, error) {
 // Verify checks the challenge signature, expiry, numeric solution and required
 // number of leading zero bits in SHA-256(challenge + ":" + solution).
 func Verify(secret []byte, challenge, solution string, difficulty int) error {
+	_, err := VerifyWithExpiry(secret, challenge, solution, difficulty)
+	return err
+}
+
+// VerifyWithExpiry verifies a challenge and returns its authenticated expiry.
+func VerifyWithExpiry(secret []byte, challenge, solution string, difficulty int) (time.Time, error) {
 	if difficulty < 1 || difficulty > 28 || len(challenge) > 256 || len(solution) > 20 {
-		return ErrInvalid
+		return time.Time{}, ErrInvalid
 	}
 	expRaw, rest, ok := strings.Cut(challenge, ".")
 	if !ok {
-		return ErrInvalid
+		return time.Time{}, ErrInvalid
 	}
 	_, sig, ok := strings.Cut(rest, ".")
 	if !ok {
-		return ErrInvalid
+		return time.Time{}, ErrInvalid
 	}
 	payload := expRaw + "." + strings.TrimSuffix(rest, "."+sig)
 	want, err := base64.RawURLEncoding.DecodeString(sig)
 	if err != nil || subtle.ConstantTimeCompare(want, signature(secret, payload)) != 1 {
-		return ErrInvalid
+		return time.Time{}, ErrInvalid
 	}
 	exp, err := strconv.ParseInt(expRaw, 10, 64)
 	if err != nil || time.Now().Unix() > exp {
-		return ErrInvalid
+		return time.Time{}, ErrInvalid
 	}
 	if solution == "" {
-		return ErrInvalid
+		return time.Time{}, ErrInvalid
 	}
 	if _, err := strconv.ParseUint(solution, 10, 64); err != nil {
-		return ErrInvalid
+		return time.Time{}, ErrInvalid
 	}
 	sum := sha256.Sum256([]byte(challenge + ":" + solution))
 	if !hasLeadingZeroBits(sum[:], difficulty) {
-		return ErrInvalid
+		return time.Time{}, ErrInvalid
 	}
-	return nil
+	// Verify treats the whole Unix second named by exp as valid. Keep the replay
+	// claim through that same second so cleanup cannot reopen a tiny replay
+	// window at the boundary.
+	return time.Unix(exp, 0).Add(time.Second), nil
 }
 
 func sign(secret []byte, payload string) string {

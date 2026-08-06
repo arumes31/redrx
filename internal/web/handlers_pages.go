@@ -747,17 +747,16 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := s.db.UpdateURL(r.Context(), link); err != nil {
+	var err error
+	if wasDraft && !link.IsDraft {
+		err = s.db.UpdateURLAndPublishDraft(r.Context(), link)
+	} else {
+		err = s.db.UpdateURL(r.Context(), link)
+	}
+	if err != nil {
 		s.log.Error("update link", "error", err)
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
-	}
-	if wasDraft && !link.IsDraft {
-		if err := s.db.PublishURL(r.Context(), link.ID); err != nil {
-			s.log.Error("publish edited draft", "error", err)
-			s.renderError(w, r, http.StatusInternalServerError)
-			return
-		}
 	}
 
 	sess.AddFlash("success", "Link updated successfully.")

@@ -104,17 +104,48 @@ func (d *DB) CreateURL(ctx context.Context, u *URL) error {
 // back would carry whatever value was read when the form was opened and undo a
 // toggle made from the dashboard in the meantime.
 func (d *DB) UpdateURL(ctx context.Context, u *URL) error {
+	return d.updateURL(ctx, d.DB, u, u.IsDraft)
+}
+
+type contextExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func (d *DB) updateURL(ctx context.Context, execer contextExecer, u *URL, isDraft bool) error {
 	const q = `UPDATE urls SET
 		long_url = ?, ios_target_url = ?, android_target_url = ?, rotate_targets = ?,
 		preview_mode = ?, stats_enabled = ?, expires_at = ?, start_at = ?, end_at = ?, is_draft = ?
 		WHERE id = ?`
-	_, err := d.Exec(ctx, q,
+	_, err := execer.ExecContext(ctx, d.rebind(q),
 		u.LongURL, nullString(u.IOSTargetURL), nullString(u.AndroidTargetURL),
 		encodeRotateTargets(u.RotateTargets),
 		u.PreviewMode, u.StatsEnabled,
 		NewNullTime(d.dialect, u.ExpiresAt), NewNullTime(d.dialect, u.StartAt),
-		NewNullTime(d.dialect, u.EndAt), u.IsDraft, u.ID)
+		NewNullTime(d.dialect, u.EndAt), isDraft, u.ID)
 	return err
+}
+
+// UpdateURLAndPublishDraft applies edits and publishes a draft in one
+// transaction. The edit remains a draft until the publication statement
+// succeeds, so a failure cannot leave partially applied fields behind.
+func (d *DB) UpdateURLAndPublishDraft(ctx context.Context, u *URL) error {
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := d.updateURL(ctx, tx, u, true); err != nil {
+		return fmt.Errorf("update draft url: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, d.rebind(
+		"UPDATE urls SET is_draft = ?, is_enabled = ? WHERE id = ?"), false, true, u.ID); err != nil {
+		return fmt.Errorf("publish draft url: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit draft publication: %w", err)
+	}
+	return nil
 }
 
 // PublishURL makes a saved draft eligible for normal schedule-aware routing.

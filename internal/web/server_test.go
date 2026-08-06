@@ -2,7 +2,9 @@ package web
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -272,6 +275,122 @@ func TestPrivacySignalsSuppressClickAnalytics(t *testing.T) {
 	}
 	if stored.ClicksCount != 1 {
 		t.Errorf("consented request recorded %d clicks, want 1", stored.ClicksCount)
+	}
+}
+
+func TestDataUsageMentionsDoNotTrackOnlyWhenEnabled(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			srv, _ := newTestServer(t, func(c *config.Config) {
+				c.HonorDoNotTrack = enabled
+			})
+			body := get(t, srv, "/data-usage").Body.String()
+			if !strings.Contains(body, "analytics are recorded only after you allow them") {
+				t.Fatal("consent wording is missing")
+			}
+			if got := strings.Contains(body, "Redrx also honors the browser"); got != enabled {
+				t.Errorf("DNT statement present = %v, want %v", got, enabled)
+			}
+		})
+	}
+}
+
+func TestAnonymousPoWChallengeCannotBeReplayed(t *testing.T) {
+	srv, db := newTestServer(t, func(c *config.Config) {
+		c.AnonymousPoWDifficulty = 1
+	})
+
+	page := get(t, srv, "/")
+	originalCookie := sessionCookie(t, page.Result())
+	csrf := extractCSRF(t, page.Body.String())
+	challenge := extractHiddenValue(t, page.Body.String(), "pow_challenge")
+	solution := solveTestPoW(t, challenge)
+
+	create := func(code string) *httptest.ResponseRecorder {
+		form := url.Values{
+			"long_url":      {"https://pow.example/" + strings.ToLower(code)},
+			"custom_code":   {code},
+			"csrf_token":    {csrf},
+			"pow_challenge": {challenge},
+			"pow_solution":  {solution},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(form.Encode()))
+		req.Host = "short.example.com"
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(originalCookie)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		return rec
+	}
+
+	first := create("POWFIRST")
+	if first.Code != http.StatusOK || !strings.Contains(first.Body.String(), "/POWFIRST") {
+		t.Fatalf("first create = %d, want success: %s", first.Code, truncateBody(first.Body.String()))
+	}
+	replayed := create("POWREPLAY")
+	if replayed.Code != http.StatusOK ||
+		!strings.Contains(replayed.Body.String(), "Browser verification expired or failed") {
+		t.Fatalf("replayed create was not rejected: %d %s", replayed.Code, truncateBody(replayed.Body.String()))
+	}
+	if _, err := db.URLByShortCode(context.Background(), "POWFIRST"); err != nil {
+		t.Fatalf("first link was not stored: %v", err)
+	}
+	if _, err := db.URLByShortCode(context.Background(), "POWREPLAY"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("replayed link lookup = %v, want ErrNotFound", err)
+	}
+
+	var storedHash string
+	if err := db.QueryRowContext(context.Background(),
+		"SELECT challenge_hash FROM pow_challenge_claims").Scan(&storedHash); err != nil {
+		t.Fatalf("load proof-of-work claim: %v", err)
+	}
+	if storedHash == challenge || len(storedHash) != sha256.Size*2 {
+		t.Errorf("stored claim is not a SHA-256 digest: %q", storedHash)
+	}
+}
+
+func TestValidateSecondFactorRejectsDisabledAccountWithoutConsumingRecoveryCode(t *testing.T) {
+	srv, db := newTestServer(t)
+	ctx := context.Background()
+	user, err := db.UserByLogin(ctx, "alice")
+	if err != nil {
+		t.Fatalf("load fixture user: %v", err)
+	}
+	user.TOTPSecret = ""
+	user.TOTPEnabled = false
+	const recovery = "DISA-BLED-CODE"
+	hash := security.RecoveryCodeHash(srv.cfg.SecretKey, recovery)
+	if _, err := db.Exec(ctx,
+		"INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)", user.ID, hash); err != nil {
+		t.Fatalf("insert recovery code: %v", err)
+	}
+
+	valid, err := srv.validateSecondFactor(httptest.NewRequest(http.MethodPost, "/login/totp", nil), user, recovery)
+	if err != nil || valid {
+		t.Fatalf("validateSecondFactor = (%v, %v), want (false, nil)", valid, err)
+	}
+	unused, err := db.ConsumeRecoveryCode(ctx, user.ID, hash)
+	if err != nil {
+		t.Fatalf("consume untouched recovery code: %v", err)
+	}
+	if !unused {
+		t.Error("disabled-account validation consumed the recovery code")
+	}
+}
+
+func TestRecoveryCodeCopyCapturesButtonBeforeAwait(t *testing.T) {
+	source, err := templateFS.ReadFile("templates/security_settings.html")
+	if err != nil {
+		t.Fatalf("read security settings template: %v", err)
+	}
+	js := string(source)
+	capture := strings.Index(js, "const button = event.currentTarget;")
+	await := strings.Index(js, "await navigator.clipboard.writeText(codes)")
+	if capture < 0 || await < 0 || capture > await {
+		t.Fatal("copy handler does not capture event.currentTarget before awaiting the clipboard")
+	}
+	if strings.Contains(js[await:], "event.currentTarget.textContent") {
+		t.Error("copy handler reads event.currentTarget after the await")
 	}
 }
 
@@ -684,6 +803,34 @@ func extractCSRF(t *testing.T, body string) string {
 		t.Fatal("malformed csrf_token field")
 	}
 	return rest[:end]
+}
+
+func extractHiddenValue(t *testing.T, body, name string) string {
+	t.Helper()
+	marker := `name="` + name + `" value="`
+	i := strings.Index(body, marker)
+	if i < 0 {
+		t.Fatalf("no %s field in rendered page", name)
+	}
+	rest := body[i+len(marker):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		t.Fatalf("malformed %s field", name)
+	}
+	return rest[:end]
+}
+
+func solveTestPoW(t *testing.T, challenge string) string {
+	t.Helper()
+	for n := uint64(0); n < 1<<20; n++ {
+		solution := strconv.FormatUint(n, 10)
+		sum := sha256.Sum256([]byte(challenge + ":" + solution))
+		if sum[0]&0x80 == 0 {
+			return solution
+		}
+	}
+	t.Fatal("failed to solve low-difficulty proof of work")
+	return ""
 }
 
 func truncateBody(s string) string {

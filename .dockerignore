@@ -19,3 +19,4 @@ __pycache__/
 blocked_domains.txt
 GeoLite2-*.mmdb
 coverage.out
+node_modules/

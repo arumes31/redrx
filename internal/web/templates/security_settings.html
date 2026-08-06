@@ -61,9 +61,10 @@
 {{define "scripts"}}
 <script>
 document.querySelector('[data-copy-target]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
     const codes = Array.from(document.querySelectorAll('#recoveryCodes .bg-dark')).map(el => el.textContent.trim()).join('\n');
-    try { await navigator.clipboard.writeText(codes); event.currentTarget.textContent = 'Copied'; }
-    catch { event.currentTarget.textContent = 'Copy failed'; }
+    try { await navigator.clipboard.writeText(codes); button.textContent = 'Copied'; }
+    catch { button.textContent = 'Copy failed'; }
 });
 </script>
 {{end}}

@@ -13,6 +13,9 @@ graphify-out/
 *.test
 coverage.out
 
+# Local JavaScript build dependencies
+/node_modules/
+
 # Local environment (.env, .env.local, .env.production, ...), as .dockerignore
 .env
 .env.*
