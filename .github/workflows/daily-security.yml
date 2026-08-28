@@ -10,9 +10,6 @@ on:
 permissions:
   contents: read
 
-env:
-  GO_VERSION: '1.26'
-
 # CodeQL is not defined here. The repository uses CodeQL *default setup*
 # (Settings > Code security), configured for go and actions, and GitHub refuses
 # to process an advanced configuration while the default one is active — an
@@ -21,7 +18,8 @@ env:
 jobs:
   security-scan:
     name: Vulnerability and SAST
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: read
       security-events: write
@@ -32,12 +30,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           check-latest: true
 
       - name: Run govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           govulncheck ./...
 
       # Installed rather than run through securego/gosec; see security-analysis.yml.
@@ -58,7 +56,8 @@ jobs:
 
   licenses:
     name: License Drift
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,19 +65,20 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           check-latest: true
 
       # Catches a transitive dependency that changes licence between releases,
       # which the pull-request check would only see if that PR touched go.mod.
       - name: Check dependency licences
         run: |
-          go install github.com/google/go-licenses@latest
+          go install github.com/google/go-licenses/v2@v2.0.1
           go-licenses check ./... --disallowed_types=forbidden,restricted
 
   image-scan:
     name: Published Image Scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

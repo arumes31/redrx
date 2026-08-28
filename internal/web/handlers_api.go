@@ -58,6 +58,11 @@ func (s *Server) handleAPIShorten(w http.ResponseWriter, r *http.Request) {
 	var req shortenRequest
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadSize))
 	if err := dec.Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			apiError(w, http.StatusRequestEntityTooLarge, "Request payload is too large")
+			return
+		}
 		apiError(w, http.StatusBadRequest, "Request payload must be a JSON object")
 		return
 	}

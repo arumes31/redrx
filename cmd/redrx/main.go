@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -107,15 +108,7 @@ func run() error {
 		maintainBlocklist(ctx, cfg, checker, db, log)
 	}()
 
-	httpServer := &http.Server{
-		Addr:              cfg.Listen,
-		Handler:           srv,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
-	}
+	httpServer := newHTTPServer(cfg.Listen, srv, slog.NewLogLogger(log.Handler(), slog.LevelWarn))
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -152,6 +145,18 @@ func run() error {
 	srvCtx, cancelSrv := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelSrv()
 	return srv.Shutdown(srvCtx)
+}
+
+func newHTTPServer(addr string, handler http.Handler, errorLog *log.Logger) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		ErrorLog:          errorLog,
+	}
 }
 
 func newLogger(cfg *config.Config) *slog.Logger {

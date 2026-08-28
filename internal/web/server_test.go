@@ -814,6 +814,21 @@ func TestAPIRejectsDuplicateCustomCodeWithConflict(t *testing.T) {
 	}
 }
 
+func TestAPIRejectsOversizedRequestBody(t *testing.T) {
+	srv, _ := newTestServer(t, func(c *config.Config) { c.MaxUploadSize = 64 })
+
+	body := `{"long_url":"https://example.com/","padding":"` + strings.Repeat("x", 128) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/shorten", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "11111111-2222-3333-4444-555555555555")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want 413; body: %s", rec.Code, truncateBody(rec.Body.String()))
+	}
+}
+
 // TestScheduledLinkNotBornExpired covers a future start_at with the default
 // expiry: the window must count from the start, not from creation, or the link
 // expires before it ever goes live and 410s on the first visit.

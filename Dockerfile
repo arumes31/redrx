@@ -1,7 +1,7 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 
 # ---- build ----
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine3.24@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS build
 
 WORKDIR /src
 
@@ -19,13 +19,15 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath -ldflags="-s -w" -o /out/redrx ./cmd/redrx
 
 # ---- runtime ----
-FROM alpine:3.24
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 # ca-certificates is needed to fetch the phishing blocklists over HTTPS;
 # tzdata so timestamps render correctly outside UTC.
-RUN apk add --no-cache ca-certificates tzdata wget \
-    && addgroup -S redrx && adduser -S -G redrx redrx \
-    && mkdir -p /app/db && chown -R redrx:redrx /app
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates tzdata wget \
+    && addgroup -S -g 10001 redrx \
+    && adduser -S -D -H -u 10001 -G redrx redrx \
+    && install -d -o 10001 -g 10001 -m 0750 /app/db /app/data
 
 WORKDIR /app
 COPY --from=build /out/redrx /usr/local/bin/redrx
@@ -33,7 +35,7 @@ COPY --from=build /out/redrx /usr/local/bin/redrx
 # HTML templates and static assets are compiled into the binary, so nothing
 # else needs to be copied.
 
-USER redrx
+USER 10001:10001
 
 ENV BASE_DOMAIN=short.example.com \
     EXPIRY_HOURS=24 \
