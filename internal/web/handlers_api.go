@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -64,6 +65,15 @@ func (s *Server) handleAPIShorten(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		apiError(w, http.StatusBadRequest, "Request payload must be a JSON object")
+		return
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			apiError(w, http.StatusRequestEntityTooLarge, "Request payload is too large")
+			return
+		}
+		apiError(w, http.StatusBadRequest, "Request payload must contain one JSON object")
 		return
 	}
 

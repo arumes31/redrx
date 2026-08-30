@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/arumes31/redrx:latest
+    image: ghcr.io/arumes31/redrx:latest@sha256:0e2de80198eda6ed1b5b601d4def4dff4ce5e47c6051a81876a4ed7b5addcbc5
     ports:
       - "5000:5000"
     read_only: true

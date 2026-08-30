@@ -23,8 +23,13 @@ FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6ee
 
 # ca-certificates is needed to fetch the phishing blocklists over HTTPS;
 # tzdata so timestamps render correctly outside UTC.
-RUN apk upgrade --no-cache \
-    && apk add --no-cache ca-certificates tzdata wget \
+RUN apk add --no-cache \
+        ca-certificates=20260611-r0 \
+        libidn2=2.3.8-r0 \
+        libunistring=1.4.2-r0 \
+        pcre2=10.47-r1 \
+        tzdata=2026c-r0 \
+        wget=1.25.0-r3 \
     && addgroup -S -g 10001 redrx \
     && adduser -S -D -H -u 10001 -G redrx redrx \
     && install -d -o 10001 -g 10001 -m 0750 /app/db /app/data

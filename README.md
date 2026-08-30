@@ -118,7 +118,7 @@ Ensure safe execution by loading our production-ready image verified with strict
    ```yaml
    services:
      app:
-       image: ghcr.io/arumes31/redrx:latest
+       image: ghcr.io/arumes31/redrx:latest@sha256:0e2de80198eda6ed1b5b601d4def4dff4ce5e47c6051a81876a4ed7b5addcbc5
        ports:
          - "5000:5000"
        environment:
@@ -136,6 +136,32 @@ Ensure safe execution by loading our production-ready image verified with strict
 docker-compose up --build
 ```
 The application will boot and expose itself at `http://localhost:5000`.
+
+### Existing Linux Bind Mounts
+
+The application container runs as UID/GID `10001:10001`; it does not support
+`PUID` or `PGID` overrides. A bind mount hides the ownership prepared in the
+image, so existing host directories mounted at `/app/data` or `/app/db` must be
+writable by that UID before the container starts:
+
+```bash
+sudo chown -R 10001:10001 /srv/redrx/data /srv/redrx/db
+sudo find /srv/redrx/data /srv/redrx/db -type d -exec chmod 0750 {} \;
+sudo find /srv/redrx/data /srv/redrx/db -type f -exec chmod 0640 {} \;
+```
+
+Use only the paths you actually bind mount; `/app/db` is needed for SQLite, not
+the PostgreSQL setup in the supplied Compose files. Create new directories with
+the correct ownership so Docker does not create them as root:
+
+```bash
+sudo install -d -o 10001 -g 10001 -m 0750 /srv/redrx/data /srv/redrx/db
+```
+
+The GeoIP mount is read-only in the application container. If it is also a host
+bind mount, its directories need execute/read permission and its database files
+need read permission for UID `10001`; keep ownership with the GeoIP updater
+instead of changing it to the application user.
 
 ---
 
