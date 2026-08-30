@@ -144,6 +144,15 @@ The application container runs as UID/GID `10001:10001`; it does not support
 image, so existing host directories mounted at `/app/data` or `/app/db` must be
 writable by that UID before the container starts:
 
+Upgrades must also migrate an existing `blocklist_data` named volume once,
+before starting the new container. Refreshes create and rename temporary files
+in `/app/data`, so the mounted directory must be owned by UID/GID `10001:10001`:
+
+```bash
+docker compose run --rm --no-deps --user 0:0 --cap-add CHOWN \
+  --entrypoint sh web -c 'chown -R 10001:10001 /app/data'
+```
+
 ```bash
 sudo chown -R 10001:10001 /srv/redrx/data /srv/redrx/db
 sudo find /srv/redrx/data /srv/redrx/db -type d -exec chmod 0750 {} \;
