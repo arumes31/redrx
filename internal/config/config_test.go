@@ -2,6 +2,8 @@ package config
 
 import (
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -129,6 +131,28 @@ func TestDefaultsMatchPreviousDeployment(t *testing.T) {
 
 	if !strings.HasPrefix(cfg.DatabaseURL, "sqlite:///") {
 		t.Errorf("DatabaseURL = %q, want the SQLite fallback", cfg.DatabaseURL)
+	}
+	baseDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if want := filepath.Join(baseDir, "data", "blocked_domains.txt"); cfg.BlockedDomainsPath != want {
+		t.Errorf("BlockedDomainsPath = %q, want %q", cfg.BlockedDomainsPath, want)
+	}
+}
+
+func TestBlockedDomainsPathOverrideIsPreserved(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("REDRX_DEBUG", "true")
+	t.Setenv("SECRET_KEY", "a-key")
+	t.Setenv("BLOCKED_DOMAINS_PATH", "/srv/redrx/blocklist.txt")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BlockedDomainsPath != "/srv/redrx/blocklist.txt" {
+		t.Errorf("BlockedDomainsPath = %q, want the explicit override", cfg.BlockedDomainsPath)
 	}
 }
 
