@@ -1,8 +1,15 @@
 services:
   app:
-    image: ghcr.io/arumes31/redrx:latest
+    image: ghcr.io/arumes31/redrx:latest@sha256:0e2de80198eda6ed1b5b601d4def4dff4ce5e47c6051a81876a4ed7b5addcbc5
     ports:
       - "5000:5000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
     environment:
       # Required, with no default. A shipped constant would be a publicly known
       # signing key: session cookies are HMACed with it, so anyone could forge
@@ -13,6 +20,7 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-redrx}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-redrx_db}
       - BASE_DOMAIN=${BASE_DOMAIN}
       - GEOIP_DB_PATH=/usr/share/GeoIP/GeoLite2-Country.mmdb
+      - BLOCKED_DOMAINS_PATH=/app/data/blocked_domains.txt
       - ANONYMIZE_LOGS=${ANONYMIZE_LOGS:-false}
       - ANONYMOUS_POW_DIFFICULTY=${ANONYMOUS_POW_DIFFICULTY:-16}
       - ENABLE_CONSENT_BANNER=${ENABLE_CONSENT_BANNER:-false}
@@ -27,17 +35,22 @@ services:
       redis:
         condition: service_started
     volumes:
-      - geoip_data:/usr/share/GeoIP
+      - geoip_data:/usr/share/GeoIP:ro
+      - blocklist_data:/app/data
     # The shutdown path budgets 20s to drain plus 20s to release resources.
     stop_grace_period: 45s
     restart: always
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    security_opt:
+      - no-new-privileges:true
     restart: always
 
   db:
-    image: postgres:15-alpine
+    image: postgres:15-alpine@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+    security_opt:
+      - no-new-privileges:true
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-redrx}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -52,7 +65,9 @@ services:
     restart: always
 
   geoip-updater:
-    image: maxmindinc/geoipupdate
+    image: maxmindinc/geoipupdate:v7.1.1@sha256:faecdca22579730ab0b7dea5aa9af350bb3c93cb9d39845c173639ead30346d2
+    security_opt:
+      - no-new-privileges:true
     environment:
       - GEOIPUPDATE_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
       - GEOIPUPDATE_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
@@ -65,3 +80,4 @@ services:
 volumes:
   postgres_data:
   geoip_data:
+  blocklist_data:
