@@ -25,7 +25,9 @@ FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6ee
 # tzdata so timestamps render correctly outside UTC.
 RUN apk add --no-cache \
         ca-certificates=20260611-r0 \
+        libcrypto3=3.5.8-r0 \
         libidn2=2.3.8-r0 \
+        libssl3=3.5.8-r0 \
         libunistring=1.4.2-r0 \
         pcre2=10.47-r1 \
         tzdata=2026c-r0 \
