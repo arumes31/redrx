@@ -166,7 +166,7 @@ func TestBlockedDomainsPathMigratesLegacyDefault(t *testing.T) {
 	t.Setenv("SECRET_KEY", "a-key")
 	t.Chdir(t.TempDir())
 
-	legacyPath := filepath.Join("blocked_domains.txt")
+	legacyPath := "blocked_domains.txt"
 	const contents = "legacy.example\n"
 	if err := os.WriteFile(legacyPath, []byte(contents), 0o600); err != nil {
 		t.Fatalf("write legacy blocklist: %v", err)
