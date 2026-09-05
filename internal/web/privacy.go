@@ -10,11 +10,14 @@ import (
 
 const consentCookieName = "redrx_consent"
 
+const anonymousProofTTL = 10 * time.Minute
+
+// addAnonymousProof issues a short-lived challenge for anonymous link creation.
 func (s *Server) addAnonymousProof(r *http.Request, data *PageData) {
 	if userFrom(r) != nil || s.cfg.AnonymousPoWDifficulty == 0 {
 		return
 	}
-	challenge, err := proof.Issue(s.cfg.SecretKey, 10*time.Minute)
+	challenge, err := proof.Issue(s.cfg.SecretKey, anonymousProofTTL)
 	if err != nil {
 		s.log.Error("create proof-of-work challenge", "error", err)
 		return
@@ -24,6 +27,7 @@ func (s *Server) addAnonymousProof(r *http.Request, data *PageData) {
 	data.Data["pow_difficulty"] = s.cfg.AnonymousPoWDifficulty
 }
 
+// verifyAnonymousProof validates and atomically consumes an anonymous challenge.
 func (s *Server) verifyAnonymousProof(r *http.Request) bool {
 	if userFrom(r) != nil || s.cfg.AnonymousPoWDifficulty == 0 {
 		return true
@@ -33,7 +37,15 @@ func (s *Server) verifyAnonymousProof(r *http.Request) bool {
 		r.PostFormValue("pow_solution"), s.cfg.AnonymousPoWDifficulty); err != nil {
 		return false
 	}
-	return sessionFrom(r).ConsumePoWChallenge(challenge)
+	if !sessionFrom(r).ConsumePoWChallenge(challenge) {
+		return false
+	}
+	consumed, err := s.db.ConsumePoWChallenge(r.Context(), challenge, time.Now().Add(anonymousProofTTL))
+	if err != nil {
+		s.log.Error("consume proof-of-work challenge", "error", err)
+		return false
+	}
+	return consumed
 }
 
 func (s *Server) handleConsent(w http.ResponseWriter, r *http.Request) {

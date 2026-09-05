@@ -123,6 +123,35 @@ func envList(key, def string) []string {
 	return out
 }
 
+// blockedDomainsPath preserves an existing legacy blocklist while moving the
+// default to the writable data directory. Explicit configuration is untouched.
+func blockedDomainsPath(baseDir string) string {
+	if configured := strings.TrimSpace(os.Getenv("BLOCKED_DOMAINS_PATH")); configured != "" {
+		return configured
+	}
+
+	currentPath := filepath.Join(baseDir, "data", "blocked_domains.txt")
+	if _, err := os.Stat(currentPath); err == nil {
+		return currentPath
+	}
+
+	legacyPath := filepath.Join(baseDir, "blocked_domains.txt")
+	if _, err := os.Stat(legacyPath); err != nil {
+		return currentPath
+	}
+	if err := os.MkdirAll(filepath.Dir(currentPath), 0o750); err != nil {
+		return legacyPath
+	}
+	if err := os.Rename(legacyPath, currentPath); err == nil {
+		return currentPath
+	}
+	// Another process may have completed the same migration concurrently.
+	if _, err := os.Stat(currentPath); err == nil {
+		return currentPath
+	}
+	return legacyPath
+}
+
 // placeholderBaseDomain is the example value shipped in the Dockerfile; it is
 // never a host anyone actually serves from.
 const placeholderBaseDomain = "short.example.com"
@@ -151,7 +180,7 @@ func Load() (*Config, error) {
 
 		PhishingListURLs: envList("PHISHING_LIST_URLS",
 			"https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-domains-ACTIVE.txt"),
-		BlockedDomainsPath:     env("BLOCKED_DOMAINS_PATH", filepath.Join(baseDir, "blocked_domains.txt")),
+		BlockedDomainsPath:     blockedDomainsPath(baseDir),
 		PhishingCheckInterval:  envInt("PHISHING_CHECK_INTERVAL", 24),
 		EnablePhishingCheck:    envBool("ENABLE_PHISHING_CHECK", true),
 		EnableAutoRemovePhish:  envBool("ENABLE_AUTO_REMOVE_PHISHING", false),

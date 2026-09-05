@@ -58,6 +58,7 @@ type Options struct {
 	Logger          *slog.Logger
 }
 
+// New builds a checker and canonicalizes manually configured blocklist entries.
 func New(opts Options) *Checker {
 	log := opts.Logger
 	if log == nil {
@@ -65,7 +66,7 @@ func New(opts Options) *Checker {
 	}
 	manual := make([]string, 0, len(opts.ManualDomains))
 	for _, d := range opts.ManualDomains {
-		if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
+		if d = normalizeDomain(d); d != "" {
 			manual = append(manual, d)
 		}
 	}
@@ -77,6 +78,12 @@ func New(opts Options) *Checker {
 		manual:      manual,
 		log:         log,
 	}
+}
+
+// normalizeDomain canonicalizes blocklist entries to the same representation
+// parseHost returns for URL hostnames.
+func normalizeDomain(domain string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
 }
 
 // IsSafeURL reports whether target may be used as a redirect destination.
@@ -136,7 +143,10 @@ func parseHost(target string) (string, bool) {
 	default:
 		return "", false
 	}
-	host := strings.ToLower(u.Hostname())
+	// A trailing dot is the DNS absolute-root marker: "evil.com." is the same
+	// host as "evil.com" for resolution, but is a different string from the
+	// blocklist entry, so it must be normalised before matching.
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
 	if host == "" {
 		return "", false
 	}
@@ -254,6 +264,7 @@ func (c *Checker) reload() (map[string]struct{}, error) {
 	return domains, nil
 }
 
+// parseDomainList reads plain-domain and hosts-file feeds into canonical names.
 func parseDomainList(r io.Reader) (map[string]struct{}, error) {
 	domains := map[string]struct{}{}
 	sc := bufio.NewScanner(r)
@@ -276,6 +287,7 @@ func parseDomainList(r io.Reader) (map[string]struct{}, error) {
 		if fields := strings.Fields(line); len(fields) > 1 {
 			line = fields[len(fields)-1]
 		}
+		line = normalizeDomain(line)
 		if line == "" || line == "localhost" {
 			continue
 		}
