@@ -467,6 +467,8 @@ func TestCreateLinkThroughTheForm(t *testing.T) {
 	}
 }
 
+// TestAnonymousProofCannotBeReplayedConcurrently verifies that shared storage,
+// rather than a response-time cookie update, enforces one-time use.
 func TestAnonymousProofCannotBeReplayedConcurrently(t *testing.T) {
 	const difficulty = 8
 	srv, db := newTestServer(t, func(c *config.Config) {
@@ -731,6 +733,7 @@ func extractCSRF(t *testing.T, body string) string {
 	return extractHiddenValue(t, body, "csrf_token")
 }
 
+// extractHiddenValue returns a named hidden input from a rendered test page.
 func extractHiddenValue(t *testing.T, body, name string) string {
 	t.Helper()
 	marker := `name="` + name + `" value="`
@@ -746,6 +749,7 @@ func extractHiddenValue(t *testing.T, body, name string) string {
 	return rest[:end]
 }
 
+// solveProof performs the low-difficulty proof used by handler tests.
 func solveProof(t *testing.T, challenge string, difficulty int) string {
 	t.Helper()
 	for n := uint64(0); n < 1<<24; n++ {
@@ -759,6 +763,7 @@ func solveProof(t *testing.T, challenge string, difficulty int) string {
 	return ""
 }
 
+// leadingZeroBits checks proof difficulty independently from the production package.
 func leadingZeroBits(hash []byte, bits int) bool {
 	for bits >= 8 {
 		if hash[0] != 0 {

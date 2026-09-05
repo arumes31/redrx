@@ -12,6 +12,7 @@ const consentCookieName = "redrx_consent"
 
 const anonymousProofTTL = 10 * time.Minute
 
+// addAnonymousProof issues a short-lived challenge for anonymous link creation.
 func (s *Server) addAnonymousProof(r *http.Request, data *PageData) {
 	if userFrom(r) != nil || s.cfg.AnonymousPoWDifficulty == 0 {
 		return
@@ -26,6 +27,7 @@ func (s *Server) addAnonymousProof(r *http.Request, data *PageData) {
 	data.Data["pow_difficulty"] = s.cfg.AnonymousPoWDifficulty
 }
 
+// verifyAnonymousProof validates and atomically consumes an anonymous challenge.
 func (s *Server) verifyAnonymousProof(r *http.Request) bool {
 	if userFrom(r) != nil || s.cfg.AnonymousPoWDifficulty == 0 {
 		return true

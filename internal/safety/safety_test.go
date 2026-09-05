@@ -14,7 +14,7 @@ import (
 func TestParseDomainListStripsInlineComments(t *testing.T) {
 	const list = `
 # a full-line comment
-0.0.0.0 evil.com # inline note
+0.0.0.0 evil.com. # inline note
 bad.example
 127.0.0.1 phish.test#tight-comment
    spaced.example   # trailing
@@ -83,8 +83,10 @@ func TestAllowsOrdinaryURLsWhenCheckDisabled(t *testing.T) {
 	}
 }
 
+// TestManualBlocklistMatchesSubdomains covers canonical and absolute DNS names
+// supplied through configuration.
 func TestManualBlocklistMatchesSubdomains(t *testing.T) {
-	c := New(Options{Enabled: false, ManualDomains: []string{"evil.com", "Bad.Example"}})
+	c := New(Options{Enabled: false, ManualDomains: []string{"evil.com.", "Bad.Example."}})
 
 	blocked := []string{
 		"https://evil.com/",
@@ -111,8 +113,10 @@ func TestManualBlocklistMatchesSubdomains(t *testing.T) {
 	}
 }
 
+// TestPhishingListBlocksDomainAndSubdomains covers canonical and absolute DNS
+// names loaded from a phishing feed.
 func TestPhishingListBlocksDomainAndSubdomains(t *testing.T) {
-	path := writeList(t, "phish.example\n# a comment\n\nOTHER-PHISH.example\n")
+	path := writeList(t, "phish.example.\n# a comment\n\nOTHER-PHISH.example.\n")
 	c := New(Options{Enabled: true, BlockedListPath: path})
 
 	for _, target := range []string{

@@ -141,6 +141,8 @@ func TestDefaultsMatchPreviousDeployment(t *testing.T) {
 	}
 }
 
+// TestBlockedDomainsPathOverrideIsPreserved ensures migration never changes an
+// operator-selected blocklist location.
 func TestBlockedDomainsPathOverrideIsPreserved(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("REDRX_DEBUG", "true")
@@ -153,6 +155,74 @@ func TestBlockedDomainsPathOverrideIsPreserved(t *testing.T) {
 	}
 	if cfg.BlockedDomainsPath != "/srv/redrx/blocklist.txt" {
 		t.Errorf("BlockedDomainsPath = %q, want the explicit override", cfg.BlockedDomainsPath)
+	}
+}
+
+// TestBlockedDomainsPathMigratesLegacyDefault protects blocklist data created
+// before the writable data-directory default was introduced.
+func TestBlockedDomainsPathMigratesLegacyDefault(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("REDRX_DEBUG", "true")
+	t.Setenv("SECRET_KEY", "a-key")
+	t.Chdir(t.TempDir())
+
+	legacyPath := filepath.Join("blocked_domains.txt")
+	const contents = "legacy.example\n"
+	if err := os.WriteFile(legacyPath, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write legacy blocklist: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	wantPath, err := filepath.Abs(filepath.Join("data", "blocked_domains.txt"))
+	if err != nil {
+		t.Fatalf("resolve expected blocklist path: %v", err)
+	}
+	if cfg.BlockedDomainsPath != wantPath {
+		t.Errorf("BlockedDomainsPath = %q, want migrated path %q", cfg.BlockedDomainsPath, wantPath)
+	}
+	got, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("read migrated blocklist: %v", err)
+	}
+	if string(got) != contents {
+		t.Errorf("migrated blocklist = %q, want %q", got, contents)
+	}
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Errorf("legacy blocklist still exists after migration: %v", err)
+	}
+}
+
+// TestBlockedDomainsPathFallsBackToLegacy keeps the configured checker usable
+// when the writable data location cannot be created during an upgrade.
+func TestBlockedDomainsPathFallsBackToLegacy(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("REDRX_DEBUG", "true")
+	t.Setenv("SECRET_KEY", "a-key")
+	t.Chdir(t.TempDir())
+
+	legacyPath, err := filepath.Abs("blocked_domains.txt")
+	if err != nil {
+		t.Fatalf("resolve legacy blocklist path: %v", err)
+	}
+	if err := os.WriteFile(legacyPath, []byte("legacy.example\n"), 0o600); err != nil {
+		t.Fatalf("write legacy blocklist: %v", err)
+	}
+	if err := os.WriteFile("data", []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("block data directory creation: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BlockedDomainsPath != legacyPath {
+		t.Errorf("BlockedDomainsPath = %q, want legacy fallback %q", cfg.BlockedDomainsPath, legacyPath)
+	}
+	if _, err := os.Stat(legacyPath); err != nil {
+		t.Errorf("legacy blocklist was not preserved: %v", err)
 	}
 }
 
