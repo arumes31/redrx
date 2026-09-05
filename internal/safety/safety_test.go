@@ -93,6 +93,8 @@ func TestManualBlocklistMatchesSubdomains(t *testing.T) {
 		"https://bad.example/",
 		"https://x.bad.example/",
 		"https://EVIL.COM/upper",
+		"https://evil.com./root-dot",
+		"https://LOGIN.EVIL.COM./mixed-case-root-dot",
 		"https://evil.com:8443/with-port",
 	}
 	for _, target := range blocked {
@@ -117,6 +119,8 @@ func TestPhishingListBlocksDomainAndSubdomains(t *testing.T) {
 		"https://phish.example/",
 		"https://www.phish.example/login",
 		"https://other-phish.example/",
+		"https://PHISH.EXAMPLE./root-dot",
+		"https://www.phish.example./subdomain-root-dot",
 	} {
 		if c.IsSafeURL(target) {
 			t.Errorf("IsSafeURL(%q) = true, want false", target)

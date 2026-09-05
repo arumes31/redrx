@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -10,7 +11,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -464,6 +467,58 @@ func TestCreateLinkThroughTheForm(t *testing.T) {
 	}
 }
 
+func TestAnonymousProofCannotBeReplayedConcurrently(t *testing.T) {
+	const difficulty = 8
+	srv, db := newTestServer(t, func(c *config.Config) {
+		c.AnonymousPoWDifficulty = difficulty
+		c.RateLimitCreate = "100 per minute"
+	})
+
+	page := get(t, srv, "/")
+	cookie := sessionCookie(t, page.Result())
+	csrf := extractCSRF(t, page.Body.String())
+	challenge := extractHiddenValue(t, page.Body.String(), "pow_challenge")
+	solution := solveProof(t, challenge, difficulty)
+
+	var before int
+	if err := db.QueryRow(t.Context(), "SELECT COUNT(*) FROM urls").Scan(&before); err != nil {
+		t.Fatalf("count URLs before replay: %v", err)
+	}
+
+	const requests = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			form := url.Values{
+				"long_url":      {"https://replay.example/"},
+				"expiry_hours":  {"24"},
+				"csrf_token":    {csrf},
+				"pow_challenge": {challenge},
+				"pow_solution":  {solution},
+			}
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Host = "short.example.com"
+			req.AddCookie(cookie)
+			srv.ServeHTTP(httptest.NewRecorder(), req)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	var after int
+	if err := db.QueryRow(t.Context(), "SELECT COUNT(*) FROM urls").Scan(&after); err != nil {
+		t.Fatalf("count URLs after replay: %v", err)
+	}
+	if created := after - before; created != 1 {
+		t.Errorf("one solved proof created %d URLs, want exactly 1", created)
+	}
+}
+
 func TestAPIShortenAndFetch(t *testing.T) {
 	srv, _ := newTestServer(t)
 	const key = "11111111-2222-3333-4444-555555555555"
@@ -673,17 +728,46 @@ func sessionCookie(t *testing.T, resp *http.Response) *http.Cookie {
 // extractCSRF pulls the hidden token out of a rendered form.
 func extractCSRF(t *testing.T, body string) string {
 	t.Helper()
-	const marker = `name="csrf_token" value="`
+	return extractHiddenValue(t, body, "csrf_token")
+}
+
+func extractHiddenValue(t *testing.T, body, name string) string {
+	t.Helper()
+	marker := `name="` + name + `" value="`
 	i := strings.Index(body, marker)
 	if i < 0 {
-		t.Fatal("no csrf_token field in the rendered page")
+		t.Fatalf("no %s field in the rendered page", name)
 	}
 	rest := body[i+len(marker):]
 	end := strings.Index(rest, `"`)
 	if end < 0 {
-		t.Fatal("malformed csrf_token field")
+		t.Fatalf("malformed %s field", name)
 	}
 	return rest[:end]
+}
+
+func solveProof(t *testing.T, challenge string, difficulty int) string {
+	t.Helper()
+	for n := uint64(0); n < 1<<24; n++ {
+		solution := strconv.FormatUint(n, 10)
+		sum := sha256.Sum256([]byte(challenge + ":" + solution))
+		if leadingZeroBits(sum[:], difficulty) {
+			return solution
+		}
+	}
+	t.Fatal("failed to solve proof-of-work challenge")
+	return ""
+}
+
+func leadingZeroBits(hash []byte, bits int) bool {
+	for bits >= 8 {
+		if hash[0] != 0 {
+			return false
+		}
+		hash = hash[1:]
+		bits -= 8
+	}
+	return bits == 0 || hash[0]>>(8-bits) == 0
 }
 
 func truncateBody(s string) string {

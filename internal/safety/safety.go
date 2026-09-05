@@ -136,7 +136,10 @@ func parseHost(target string) (string, bool) {
 	default:
 		return "", false
 	}
-	host := strings.ToLower(u.Hostname())
+	// A trailing dot is the DNS absolute-root marker: "evil.com." is the same
+	// host as "evil.com" for resolution, but is a different string from the
+	// blocklist entry, so it must be normalised before matching.
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
 	if host == "" {
 		return "", false
 	}
