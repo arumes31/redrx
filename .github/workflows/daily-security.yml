@@ -41,7 +41,7 @@ jobs:
       # Installed rather than run through securego/gosec; see security-analysis.yml.
       - name: Run gosec
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+          go install github.com/securego/gosec/v2/cmd/gosec@7b1b5cebe007d62fb58eacb90fc571112939ec30
           gosec -severity medium -fmt sarif -out gosec.sarif -stdout -verbose=text ./...
 
       - name: Upload gosec SARIF
