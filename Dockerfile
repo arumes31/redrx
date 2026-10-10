@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 
 # ---- build ----
-FROM golang:1.27.1-alpine3.24@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS build
+FROM golang:1.27.2-alpine3.24@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
 
 WORKDIR /src
 
@@ -23,15 +23,10 @@ FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6ee
 
 # ca-certificates is needed to fetch the phishing blocklists over HTTPS;
 # tzdata so timestamps render correctly outside UTC.
-RUN apk add --no-cache \
-        ca-certificates=20260611-r0 \
-        libcrypto3=3.5.8-r0 \
-        libidn2=2.3.8-r0 \
-        libssl3=3.5.8-r0 \
-        libunistring=1.4.2-r0 \
-        pcre2=10.47-r1 \
-        tzdata=2026c-r0 \
-        wget=1.25.0-r3 \
+# Alpine mirrors replace superseded package revisions. Resolve security updates
+# from the pinned release's repositories; the image scan verifies the result.
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates tzdata wget \
     && addgroup -S -g 10001 redrx \
     && adduser -S -D -H -u 10001 -G redrx redrx \
     && install -d -o 10001 -g 10001 -m 0750 /app/db /app/data
