@@ -35,6 +35,10 @@ func (s *Server) wrap(h handlerFunc) http.Handler {
 		if sess.UserID != 0 {
 			u, err := s.db.UserByID(r.Context(), sess.UserID)
 			switch {
+			case err == nil && u.SessionEpoch != sess.Epoch:
+				// The user revoked their sessions (log out everywhere, or a
+				// 2FA change) after this cookie was issued.
+				sess.Logout()
 			case err == nil:
 				user = u
 			case errors.Is(err, store.ErrNotFound):

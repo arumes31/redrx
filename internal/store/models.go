@@ -11,10 +11,14 @@ type User struct {
 	Username     string
 	Email        string
 	PasswordHash string
-	APIKey       string
-	TOTPSecret   string
-	TOTPEnabled  bool
-	CreatedAt    time.Time
+	// APIKey is the SHA-256 of the key as stored, not the key itself. The
+	// plaintext is shown to the user once, when it is generated.
+	APIKey      string
+	TOTPSecret  string
+	TOTPEnabled bool
+	CreatedAt   time.Time
+	// SessionEpoch must match the epoch in a session cookie for it to be valid.
+	SessionEpoch int64
 }
 
 // URL mirrors the `urls` table. RotateTargets is stored as a JSON array in the

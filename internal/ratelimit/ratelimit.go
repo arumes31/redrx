@@ -132,9 +132,27 @@ type Backend interface {
 // Limiter applies rule sets against a backend.
 type Limiter struct {
 	backend Backend
+	// fallback counts in process memory whenever a shared backend errors, so
+	// a Redis outage degrades limits to per-replica instead of removing them.
+	fallback *MemoryBackend
 }
 
-func New(backend Backend) *Limiter { return &Limiter{backend: backend} }
+func New(backend Backend) *Limiter {
+	l := &Limiter{backend: backend}
+	if _, inMemory := backend.(*MemoryBackend); backend != nil && !inMemory {
+		l.fallback = NewMemoryBackend()
+	}
+	return l
+}
+
+// Close stops the fallback counter. The primary backend is owned, and closed,
+// by the caller.
+func (l *Limiter) Close() error {
+	if l != nil && l.fallback != nil {
+		return l.fallback.Close()
+	}
+	return nil
+}
 
 func (l *Limiter) Backend() Backend { return l.backend }
 
@@ -146,8 +164,10 @@ type Result struct {
 }
 
 // Allow records a hit for scope+identity and reports whether it is within every
-// rule. A backend error fails open: availability matters more than a perfectly
-// enforced limit, and the previous deployment behaved the same way.
+// rule. A backend error does not fail open: the hit is counted in the
+// in-process fallback instead, which keeps the brute-force limits on login,
+// TOTP and link passwords in force (per replica) while the backend is down,
+// without turning an outage into rejected requests.
 func (l *Limiter) Allow(ctx context.Context, scope, identity string, rules Rules) Result {
 	if l == nil || l.backend == nil || len(rules) == 0 {
 		return Result{Allowed: true}
@@ -160,7 +180,12 @@ func (l *Limiter) Allow(ctx context.Context, scope, identity string, rules Rules
 
 		count, err := l.backend.Incr(ctx, key, r.Window)
 		if err != nil {
-			continue
+			if l.fallback == nil {
+				continue
+			}
+			if count, err = l.fallback.Incr(ctx, key, r.Window); err != nil {
+				continue
+			}
 		}
 		if count > int64(r.Limit) {
 			reset := now.Truncate(r.Window).Add(r.Window)

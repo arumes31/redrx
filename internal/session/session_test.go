@@ -27,7 +27,7 @@ func TestSessionRoundTrip(t *testing.T) {
 	m := NewManager([]byte("secret"), true)
 
 	got := roundTrip(t, m, func(s *Session) {
-		s.Login(42)
+		s.Login(42, 0)
 		s.AddFlash("success", "hello there")
 		s.AuthorizeLink("ABC123")
 		s.CSRFToken()
@@ -57,7 +57,7 @@ func TestTamperedCookieIsRejected(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	s := m.Load(httptest.NewRequest(http.MethodGet, "/", nil))
-	s.Login(7)
+	s.Login(7, 0)
 	m.Save(rec, s)
 
 	cookie := rec.Result().Cookies()[0]
@@ -80,7 +80,7 @@ func TestCookieFromAnotherKeyIsRejected(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	s := signer.Load(httptest.NewRequest(http.MethodGet, "/", nil))
-	s.Login(9)
+	s.Login(9, 0)
 	signer.Save(rec, s)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -119,7 +119,7 @@ func TestLoginRotatesCSRFToken(t *testing.T) {
 	s := m.Load(httptest.NewRequest(http.MethodGet, "/", nil))
 
 	before := s.CSRFToken()
-	s.Login(3)
+	s.Login(3, 0)
 	after := s.CSRFToken()
 
 	if before == after {
@@ -132,7 +132,7 @@ func TestLogoutClearsTheCookie(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	s := m.Load(httptest.NewRequest(http.MethodGet, "/", nil))
-	s.Login(11)
+	s.Login(11, 0)
 	s.Logout()
 	m.Save(rec, s)
 
@@ -150,7 +150,7 @@ func TestCookieSecurityAttributes(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	s := m.Load(httptest.NewRequest(http.MethodGet, "/", nil))
-	s.Login(1)
+	s.Login(1, 0)
 	m.Save(rec, s)
 
 	c := rec.Result().Cookies()[0]
@@ -186,7 +186,7 @@ func TestOversizedSessionIsShrunkNotDropped(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	s := m.Load(httptest.NewRequest(http.MethodGet, "/", nil))
-	s.Login(42)
+	s.Login(42, 0)
 	s.CSRFToken()
 	for i := 0; i < 400; i++ {
 		s.AuthorizeLink(fmt.Sprintf("CODE%06d", i))
@@ -224,7 +224,7 @@ func TestOversizedFlashesAreDroppedFirst(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	s := m.Load(httptest.NewRequest(http.MethodGet, "/", nil))
-	s.Login(7)
+	s.Login(7, 0)
 	s.AuthorizeLink("KEEPME")
 	for i := 0; i < 200; i++ {
 		s.AddFlash("info", strings.Repeat("x", 100))

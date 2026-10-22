@@ -3,9 +3,11 @@ package web
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -38,19 +40,22 @@ type Server struct {
 
 // limits holds the parsed rate-limit rules, resolved once at boot.
 type limits struct {
-	Default   ratelimit.Rules
-	Login     ratelimit.Rules
-	Register  ratelimit.Rules
-	Auth      ratelimit.Rules
-	API       ratelimit.Rules
-	Create    ratelimit.Rules
-	Redirect  ratelimit.Rules
-	Stats     ratelimit.Rules
-	QR        ratelimit.Rules
-	Pages     ratelimit.Rules
-	Dashboard ratelimit.Rules
-	Export    ratelimit.Rules
-	Bulk      ratelimit.Rules
+	Default ratelimit.Rules
+	Login   ratelimit.Rules
+	// LoginAccount is applied per target account on the password and TOTP
+	// login steps, on top of the per-IP Login and Auth limits.
+	LoginAccount ratelimit.Rules
+	Register     ratelimit.Rules
+	Auth         ratelimit.Rules
+	API          ratelimit.Rules
+	Create       ratelimit.Rules
+	Redirect     ratelimit.Rules
+	Stats        ratelimit.Rules
+	QR           ratelimit.Rules
+	Pages        ratelimit.Rules
+	Dashboard    ratelimit.Rules
+	Export       ratelimit.Rules
+	Bulk         ratelimit.Rules
 }
 
 type Options struct {
@@ -90,19 +95,20 @@ func NewServer(opts Options) (*Server, error) {
 	}
 
 	s.limits = limits{
-		Default:   ratelimit.MustParse(s.cfg.RateLimitDefault),
-		Login:     ratelimit.MustParse(s.cfg.RateLimitLogin),
-		Register:  ratelimit.MustParse(s.cfg.RateLimitRegister),
-		Auth:      ratelimit.MustParse(s.cfg.RateLimitAuth),
-		API:       ratelimit.MustParse(s.cfg.RateLimitAPI),
-		Create:    ratelimit.MustParse(s.cfg.RateLimitCreate),
-		Redirect:  ratelimit.MustParse(s.cfg.RateLimitRedirect),
-		Stats:     ratelimit.MustParse("20 per minute"),
-		QR:        ratelimit.MustParse("30 per minute"),
-		Pages:     ratelimit.MustParse("30 per minute"),
-		Dashboard: ratelimit.MustParse("60 per minute"),
-		Export:    ratelimit.MustParse("5 per minute"),
-		Bulk:      ratelimit.MustParse("10 per minute"),
+		Default:      ratelimit.MustParse(s.cfg.RateLimitDefault),
+		Login:        ratelimit.MustParse(s.cfg.RateLimitLogin),
+		LoginAccount: ratelimit.MustParse(s.cfg.RateLimitLoginAccount),
+		Register:     ratelimit.MustParse(s.cfg.RateLimitRegister),
+		Auth:         ratelimit.MustParse(s.cfg.RateLimitAuth),
+		API:          ratelimit.MustParse(s.cfg.RateLimitAPI),
+		Create:       ratelimit.MustParse(s.cfg.RateLimitCreate),
+		Redirect:     ratelimit.MustParse(s.cfg.RateLimitRedirect),
+		Stats:        ratelimit.MustParse("20 per minute"),
+		QR:           ratelimit.MustParse("30 per minute"),
+		Pages:        ratelimit.MustParse("30 per minute"),
+		Dashboard:    ratelimit.MustParse("60 per minute"),
+		Export:       ratelimit.MustParse("5 per minute"),
+		Bulk:         ratelimit.MustParse("10 per minute"),
 	}
 
 	s.handler, err = s.routes()
@@ -145,6 +151,7 @@ func (s *Server) routes() (http.Handler, error) {
 	// POST only: a GET logout is triggered by any third-party <img> tag, and by
 	// link prefetchers. The nav uses a form.
 	mux.Handle("POST /logout", s.wrap(s.handleLogout))
+	mux.Handle("POST /settings/logout-all", s.limit("logout_all", s.limits.Auth, s.requireLogin(s.handleLogoutAll)))
 	mux.Handle("POST /privacy/consent", s.limit("consent", s.limits.Pages, s.handleConsent))
 
 	// Dashboard and link management.
@@ -264,6 +271,16 @@ func newMetrics(reg *prometheus.Registry) *metrics {
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	// With METRICS_TOKEN set, scrapes must present it as a bearer token. It is
+	// optional so existing unauthenticated scrape configs keep working.
+	if token := s.cfg.MetricsToken; token != "" {
+		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(got)), []byte(token)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
 	promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{}).ServeHTTP(w, r)
 }
 
@@ -304,7 +321,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	health["checks"] = checks
 
 	// Only a hard failure (the database) is Unavailable. A "degraded" status —
-	// the rate-limit backend being down, which the limiter fails open on — must
+	// the rate-limit backend being down, which the limiter covers with its
+	// per-process fallback — must
 	// still return 200, or a Redis blip would pull every replica out of the load
 	// balancer over a dependency the request path tolerates.
 	status := http.StatusOK

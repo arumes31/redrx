@@ -55,6 +55,15 @@
             </form>
             {{end}}
         </div>
+
+        <div class="card p-4 mt-4">
+            <h3 class="h5 mb-1">Sessions</h3>
+            <p class="text-muted">Sign out of Redrx on every device and browser, including this one. Use this if you think someone else has access to your account. Enabling or disabling two-factor authentication also signs out your other sessions.</p>
+            <form action="/settings/logout-all" method="POST">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <button class="btn btn-outline-danger" type="submit">Log out everywhere</button>
+            </form>
+        </div>
     </div>
 </div>
 {{end}}

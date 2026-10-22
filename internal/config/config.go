@@ -53,13 +53,23 @@ type Config struct {
 	RateLimitDefault    string
 	RateLimitStorageURI string
 	RateLimitLogin      string
-	RateLimitRegister   string
-	RateLimitAuth       string
-	RateLimitAPI        string
-	RateLimitCreate     string
-	RateLimitRedirect   string
+	// RateLimitLoginAccount is the per-account login budget, applied in
+	// addition to the per-IP RateLimitLogin.
+	RateLimitLoginAccount string
+	RateLimitRegister     string
+	RateLimitAuth         string
+	RateLimitAPI          string
+	RateLimitCreate       string
+	RateLimitRedirect     string
+
+	// MetricsToken, when set, is the bearer token /metrics requires.
+	MetricsToken string
 
 	Listen string
+
+	// Warnings are non-fatal configuration problems for the caller to log once
+	// a logger exists.
+	Warnings []string
 }
 
 // env reads a variable, treating an empty value as absent. Compose files
@@ -156,6 +166,32 @@ func blockedDomainsPath(baseDir string) string {
 // never a host anyone actually serves from.
 const placeholderBaseDomain = "short.example.com"
 
+// minSecretKeyLen is the shortest SECRET_KEY accepted without a warning: 32
+// characters, what `openssl rand -hex 16` produces.
+const minSecretKeyLen = 32
+
+// placeholderSecrets are example values from this project's documentation and
+// common copy-paste defaults. Anyone can sign cookies with them.
+var placeholderSecrets = []string{
+	"dev-secret-key-do-not-use-in-production",
+	"your-production-cryptographic-secret",
+	"dev-secret",
+	"secret",
+	"changeme",
+	"change-me",
+	"your-secret-key",
+	"secret-key",
+}
+
+func isPlaceholderSecret(secret string) bool {
+	for _, p := range placeholderSecrets {
+		if strings.EqualFold(secret, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // maxForwardedHops caps how many entries of X-Forwarded-For are parsed, so a
 // client cannot pad the header without bound.
 const maxForwardedHops = 20
@@ -196,14 +232,17 @@ func Load() (*Config, error) {
 		AnonymousPoWDifficulty: envInt("ANONYMOUS_POW_DIFFICULTY", 16),
 		SEODomain:              env("SEO_DOMAIN", "redrx.eu"),
 
-		RateLimitDefault:    env("RATELIMIT_DEFAULT", "200 per day;50 per hour"),
-		RateLimitStorageURI: env("RATELIMIT_STORAGE_URL", "memory://"),
-		RateLimitLogin:      env("RATELIMIT_LOGIN", "10 per minute"),
-		RateLimitRegister:   env("RATELIMIT_REGISTER", "5 per hour"),
-		RateLimitAuth:       env("RATELIMIT_AUTH", "10 per minute"),
-		RateLimitAPI:        env("RATELIMIT_API", "60 per minute"),
-		RateLimitCreate:     env("RATELIMIT_CREATE", "10 per minute"),
-		RateLimitRedirect:   env("RATELIMIT_REDIRECT", "100 per minute"),
+		RateLimitDefault:      env("RATELIMIT_DEFAULT", "200 per day;50 per hour"),
+		RateLimitStorageURI:   env("RATELIMIT_STORAGE_URL", "memory://"),
+		RateLimitLogin:        env("RATELIMIT_LOGIN", "10 per minute"),
+		RateLimitLoginAccount: env("RATELIMIT_LOGIN_ACCOUNT", "20 per hour"),
+		RateLimitRegister:     env("RATELIMIT_REGISTER", "5 per hour"),
+		RateLimitAuth:         env("RATELIMIT_AUTH", "10 per minute"),
+		RateLimitAPI:          env("RATELIMIT_API", "60 per minute"),
+		RateLimitCreate:       env("RATELIMIT_CREATE", "10 per minute"),
+		RateLimitRedirect:     env("RATELIMIT_REDIRECT", "100 per minute"),
+
+		MetricsToken: env("METRICS_TOKEN", ""),
 
 		Listen: env("LISTEN_ADDR", ":5000"),
 	}
@@ -238,6 +277,24 @@ func Load() (*Config, error) {
 		secret = "dev-secret-key-do-not-use-in-production" // #nosec G101 -- documented insecure dev default
 	}
 	c.SecretKey = []byte(secret)
+
+	// The key signs session cookies and derives the keys protecting TOTP
+	// secrets and recovery codes, so a guessable one hands out every account.
+	// A published placeholder is refused outright. A merely short key only
+	// warns: rotating SECRET_KEY invalidates every stored TOTP secret, so
+	// forcing it on upgrade would lock 2FA users out.
+	if !c.Debug {
+		if isPlaceholderSecret(secret) && !envBool("ALLOW_WEAK_SECRET_KEY", false) {
+			return nil, errors.New("SECRET_KEY is a published placeholder value; generate a real one, " +
+				"e.g. openssl rand -hex 32 (set ALLOW_WEAK_SECRET_KEY=true to override)")
+		}
+		if len(secret) < minSecretKeyLen {
+			c.Warnings = append(c.Warnings, fmt.Sprintf(
+				"SECRET_KEY is shorter than %d characters; generate a stronger one, e.g. openssl rand -hex 32. "+
+					"Note that rotating it invalidates sessions, stored TOTP secrets and recovery codes",
+				minSecretKeyLen))
+		}
+	}
 
 	if c.AnonymousPoWDifficulty < 0 || c.AnonymousPoWDifficulty > 28 {
 		return nil, errors.New("ANONYMOUS_POW_DIFFICULTY must be between 0 and 28")

@@ -87,7 +87,7 @@ The destination is re-checked against the blocklist on every request, not only a
 *   **Core Backend:** Go 1.26, standard-library `net/http` routing and `html/template` rendering — no web framework
 *   **Data Processing:** PostgreSQL via `pgx` (robust relational store), Redis (shared rate limiting & geo cache), SQLite via the pure-Go `modernc.org/sqlite` driver (resilient local fallback, no cgo)
 *   **Geo-Location Engine:** MaxMind GeoLite2 country mapping with a Redis-backed lookup cache
-*   **Real-time Metrics:** Integrated Prometheus endpoint handler on `/metrics`
+*   **Real-time Metrics:** Integrated Prometheus endpoint handler on `/metrics` (protect it with `METRICS_TOKEN` or a firewall if the app port is reachable)
 *   **Modern Frontend:** HTML5, CSS3 (Bootstrap 5 Dark Mode theme), custom Canvas API backdrop animations, all embedded into the binary
 
 ### Project Layout
@@ -122,8 +122,8 @@ Ensure safe execution by loading our production-ready image verified with strict
        ports:
          - "5000:5000"
        environment:
-         - SECRET_KEY=your-production-cryptographic-secret
-         - DATABASE_URL=postgresql://redrx:securepassword@db:5432/redrx_db
+         - SECRET_KEY=${SECRET_KEY:?generate with openssl rand -hex 32}
+         - DATABASE_URL=postgresql://redrx:${POSTGRES_PASSWORD:?}@db:5432/redrx_db
          - BASE_DOMAIN=short.yourdomain.com
    ```
 2. Start the stack:
@@ -220,13 +220,16 @@ The suite includes a committed SQLite fixture written by the previous Python app
 
 | Category | Variable | Default | Description |
 |----------|----------|---------|-------------|
-| **Core** | `SECRET_KEY` | - | Strong cryptographic key for session signing and hashing. Enforced in production. |
+| **Core** | `SECRET_KEY` | - | Strong cryptographic key for session signing and hashing. Enforced in production; documented placeholder values are refused, and keys under 32 characters log a warning. Rotating it logs everyone out and invalidates stored TOTP secrets and recovery codes. |
+| **Core** | `ALLOW_WEAK_SECRET_KEY` | `false` | Escape hatch that lets an existing deployment boot with a placeholder `SECRET_KEY` while it plans a rotation. |
 | **Domain** | `BASE_DOMAIN` | `short.example.com` | Base host string used when formatting shortened URLs. |
 | **GeoIP** | `MAXMIND_LICENSE_KEY` | - | Required to download the GeoIP dataset and update in background. |
 | **Phishing** | `ENABLE_PHISHING_CHECK` | `true` | Enables domain protection against real-time blacklists. |
 | **Phishing** | `ENABLE_AUTO_REMOVE_PHISHING` | `false` | Automatically removes links that redirect to verified phishing domains. |
 | **Database** | `DATABASE_URL` | - | PostgreSQL URI (e.g. `postgresql://user:pass@host:5432/db`). Defaults to SQLite local file fallback. |
-| **Limits** | `RATELIMIT_STORAGE_URL` | `redis://redis:6379` | Rate limiting backend. Can fall back to local storage `memory://` in dev. |
+| **Limits** | `RATELIMIT_STORAGE_URL` | `redis://redis:6379` | Rate limiting backend. Can fall back to local storage `memory://` in dev. The compose files build it from `REDIS_PASSWORD`. |
+| **Limits** | `REDIS_PASSWORD` | - | Compose only, required: the password the bundled Redis is started with (`--requirepass`). Keep it URL-safe. |
+| **Limits** | `RATELIMIT_LOGIN_ACCOUNT` | `20 per hour` | Per-account budget for the password and TOTP login steps, in addition to the per-IP `RATELIMIT_LOGIN`. |
 | **Access** | `DISABLE_ANONYMOUS_CREATE` | `false` | When true, only authenticated users can shorten links. |
 | **Access** | `DISABLE_REGISTRATION` | `false` | When true, public registration routes are disabled. |
 | **Abuse prevention** | `ANONYMOUS_POW_DIFFICULTY` | `16` | Proof-of-work difficulty for anonymous link creation; `0` disables it, maximum `28`. |
@@ -235,6 +238,7 @@ The suite includes a committed SQLite fixture written by the previous Python app
 | **Proxy** | `TRUSTED_PROXIES` | - | Peers whose `X-Forwarded-*` / `CF-*` headers are believed (IPs or CIDRs, comma separated; `*` for any). Empty means the headers are ignored. |
 | **Proxy** | `USE_CLOUDFLARE` | `false` | Trust `CF-Connecting-IP` from a trusted proxy. Required for correct client IPs behind Cloudflare. |
 | **Server** | `LISTEN_ADDR` | `:5000` | Address the HTTP server binds to. |
+| **Server** | `METRICS_TOKEN` | - | When set, `/metrics` requires `Authorization: Bearer <token>`. Unset leaves it public. |
 | **Server** | `REDRX_DEBUG` | `false` | Development mode. Relaxes the canonical-domain redirect and allows a fallback `SECRET_KEY`. |
 
 ### Running behind a reverse proxy
@@ -261,7 +265,7 @@ alternative is to add Cloudflare's published ranges to `TRUSTED_PROXIES`, which
 lets redrx walk back past them; without one of the two, every visitor on the
 internet shares the handful of buckets belonging to the edge servers.
 
-Rate limits use the same syntax as before (`"200 per day;50 per hour"`, `"10 per minute"`, `"5/hour"`). `RATELIMIT_STORAGE_URL` accepts `memory://` or a `redis://` URL; when Redis is configured it also backs the GeoIP lookup cache. If Redis is unreachable at boot the service logs a warning and falls back to in-memory limiting rather than refusing to start.
+Rate limits use the same syntax as before (`"200 per day;50 per hour"`, `"10 per minute"`, `"5/hour"`). `RATELIMIT_STORAGE_URL` accepts `memory://` or a `redis://` URL; when Redis is configured it also backs the GeoIP lookup cache. If Redis is unreachable at boot the service logs a warning and falls back to in-memory limiting rather than refusing to start, and if it becomes unreachable later each request is counted in memory on that replica, so the limits stay in force (per replica) instead of switching off.
 
 ---
 
@@ -270,7 +274,7 @@ Rate limits use the same syntax as before (`"200 per day;50 per hour"`, `"10 per
 For the full detailed documentation including parameter tables and system metrics, visit the `/api-docs` page on your running Redrx instance.
 
 ### Authentication
-Include your personal API key (available inside your user Profile menu) in request headers:
+Include your personal API key in request headers. Generate it from the dashboard: only a hash is stored, so the key is shown once, when it is generated. Keys created before this change keep working.
 ```http
 X-API-KEY: your_api_key_here
 ```

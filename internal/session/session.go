@@ -36,7 +36,11 @@ type Flash struct {
 
 // Data is the serialised session payload.
 type Data struct {
-	UserID        int64           `json:"uid,omitempty"`
+	UserID int64 `json:"uid,omitempty"`
+	// Epoch is the user's session epoch at login. Cookies are stateless, so
+	// revocation works by bumping the stored epoch, which orphans every cookie
+	// carrying an older one.
+	Epoch         int64           `json:"ep,omitempty"`
 	PendingUserID int64           `json:"puid,omitempty"`
 	PendingNext   string          `json:"pn,omitempty"`
 	PendingSince  int64           `json:"ps,omitempty"`
@@ -215,10 +219,12 @@ func (s *Session) isEmpty() bool {
 		s.CSRF == "" && len(s.Flashes) == 0 && len(s.LinkAuth) == 0
 }
 
-// Login records the authenticated user and rotates the CSRF token, so a token
-// captured before login cannot be replayed afterwards.
-func (s *Session) Login(userID int64) {
+// Login records the authenticated user and their current session epoch, and
+// rotates the CSRF token, so a token captured before login cannot be replayed
+// afterwards.
+func (s *Session) Login(userID, epoch int64) {
 	s.UserID = userID
+	s.Epoch = epoch
 	s.clearPendingLogin()
 	s.CSRF = ""
 	s.dirty = true
