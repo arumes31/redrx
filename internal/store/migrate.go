@@ -32,10 +32,17 @@ var schema = []table{
 			{"username", "VARCHAR(80) NOT NULL", "VARCHAR(80) NOT NULL"},
 			{"email", "VARCHAR(120) NOT NULL", "VARCHAR(120) NOT NULL"},
 			{"password_hash", "VARCHAR(255) NOT NULL", "VARCHAR(255) NOT NULL"},
-			{"api_key", "VARCHAR(36)", "VARCHAR(36)"},
+			// api_key holds the hex SHA-256 of the key, never the key itself.
+			{"api_key", "VARCHAR(64)", "VARCHAR(64)"},
 			{"totp_secret", "TEXT", "TEXT"},
 			{"totp_enabled", "BOOLEAN", "BOOLEAN"},
 			{"created_at", "DATETIME", "TIMESTAMP"},
+			// session_epoch is embedded in every session cookie; bumping it
+			// revokes all of the user's existing sessions at once.
+			{"session_epoch", "INTEGER", "INTEGER"},
+			// totp_last_step is the last accepted TOTP time-step, so a code
+			// cannot be replayed inside its validity window.
+			{"totp_last_step", "BIGINT", "BIGINT"},
 		},
 	},
 	{
@@ -163,9 +170,73 @@ func (d *DB) Migrate(ctx context.Context) error {
 		}
 	}
 
+	if err := d.hashLegacyAPIKeys(ctx); err != nil {
+		return err
+	}
+
 	for _, idx := range indexes {
 		if _, err := d.ExecContext(ctx, idx.ddl); err != nil {
 			return fmt.Errorf("create index %s: %w", idx.name, err)
+		}
+	}
+	return nil
+}
+
+// legacyAPIKeys maps user id to each key not yet in hashed form. They are
+// collected before any are updated, since SQLite allows only one connection
+// and the open result set would hold it.
+func (d *DB) legacyAPIKeys(ctx context.Context) (map[int64]string, error) {
+	rows, err := d.Query(ctx,
+		"SELECT id, api_key FROM users WHERE api_key IS NOT NULL AND LENGTH(api_key) <> ?", apiKeyHashLen)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]string{}
+	for rows.Next() {
+		var (
+			id    int64
+			plain string
+		)
+		if err := rows.Scan(&id, &plain); err != nil {
+			return nil, err
+		}
+		out[id] = plain
+	}
+	return out, rows.Err()
+}
+
+// hashLegacyAPIKeys replaces API keys stored in clear by earlier versions with
+// their SHA-256, so existing keys keep working while a database leak no longer
+// exposes usable ones. A stored hash is always 64 hex characters and a legacy
+// key (a UUID) never is, which makes the conversion idempotent.
+func (d *DB) hashLegacyAPIKeys(ctx context.Context) error {
+	if d.dialect == Postgres {
+		// The column was VARCHAR(36), too narrow for a hex digest. Widening a
+		// varchar is a catalog-only change, but it still takes a brief exclusive
+		// lock, so it is skipped once done.
+		var width *int64
+		if err := d.QueryRow(ctx,
+			"SELECT character_maximum_length FROM information_schema.columns "+
+				"WHERE table_schema=current_schema() AND table_name='users' AND column_name='api_key'",
+		).Scan(&width); err != nil {
+			return fmt.Errorf("inspect users.api_key: %w", err)
+		}
+		if width != nil && *width < apiKeyHashLen {
+			if _, err := d.ExecContext(ctx, "ALTER TABLE users ALTER COLUMN api_key TYPE VARCHAR(64)"); err != nil {
+				return fmt.Errorf("widen users.api_key: %w", err)
+			}
+		}
+	}
+
+	legacy, err := d.legacyAPIKeys(ctx)
+	if err != nil {
+		return fmt.Errorf("find legacy api keys: %w", err)
+	}
+	for id, plain := range legacy {
+		if _, err := d.Exec(ctx, "UPDATE users SET api_key = ? WHERE id = ? AND api_key = ?",
+			HashAPIKey(plain), id, plain); err != nil {
+			return fmt.Errorf("hash api key for user %d: %w", id, err)
 		}
 	}
 	return nil

@@ -41,6 +41,9 @@ func run() error {
 
 	log := newLogger(cfg)
 	slog.SetDefault(log)
+	for _, w := range cfg.Warnings {
+		log.Warn(w)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -78,6 +81,9 @@ func run() error {
 	// this only covers the paths that return before the server is built.
 	defer func() { _ = resolver.Close() }()
 
+	limiter := ratelimit.New(limiterBackend)
+	defer func() { _ = limiter.Close() }()
+
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewGoCollector(),
@@ -88,7 +94,7 @@ func run() error {
 		Config:   cfg,
 		DB:       db,
 		Logger:   log,
-		Limiter:  ratelimit.New(limiterBackend),
+		Limiter:  limiter,
 		Safety:   checker,
 		Geo:      resolver,
 		Registry: registry,

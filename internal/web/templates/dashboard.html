@@ -61,11 +61,16 @@
                     </form>
                 </div>
                 <p class="card-text text-muted mb-2">Use this key in the <code>X-API-KEY</code> header to create links via the API.</p>
+                {{with .Get "new_api_key"}}
+                <p class="text-warning small mb-2">Copy your new key now. Only a hash of it is stored, so it cannot be shown again.</p>
                 <div class="input-group">
                     <span class="input-group-text bg-transparent border-secondary text-light">Key</span>
-                    <input type="text" id="apiKeyValue" class="form-control bg-transparent border-secondary text-light font-monospace" value="{{.User.APIKey}}" readonly onclick="this.select()" aria-label="Your API key">
+                    <input type="text" id="apiKeyValue" class="form-control bg-transparent border-secondary text-light font-monospace" value="{{.}}" readonly onclick="this.select()" aria-label="Your API key">
                     <button class="btn btn-outline-light" onclick="copyApiKey(this)">Copy</button>
                 </div>
+                {{else}}
+                <p class="text-muted small mb-0">{{if $.User.APIKey}}Your key is stored hashed and cannot be displayed. Regenerate it if you no longer have it; the old key stops working.{{else}}You have no API key yet. Generate one to use the API.{{end}}</p>
+                {{end}}
             </div>
         </div>
 

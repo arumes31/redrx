@@ -263,6 +263,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The route's limit is per client IP, which does nothing against a spray
+	// spread over many addresses, so each account gets its own budget too.
+	// Unknown logins are counted the same way, keyed on the submitted string,
+	// so the limit cannot be used to tell which accounts exist.
+	account := "login:" + strings.ToLower(login)
+	if user != nil {
+		account = "user:" + strconv.FormatInt(user.ID, 10)
+	}
+	if !s.allowAccount(w, r, "login_account", account) {
+		return
+	}
+
 	// Hash even when the account does not exist. scrypt costs ~100ms, so
 	// returning early on an unknown user would time-distinguish it from a wrong
 	// password and turn login into a username oracle.
@@ -303,7 +315,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess.Login(user.ID)
+	sess.Login(user.ID, user.SessionEpoch)
 	if next != "/" {
 		http.Redirect(w, r, next, http.StatusSeeOther) // #nosec G710 -- validated by isSafeRedirect
 		return
@@ -397,7 +409,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Username:     form.Username,
 		Email:        form.Email,
 		PasswordHash: hash,
-		APIKey:       uuid.NewString(),
+		// No API key yet: it could never be shown, since only its hash is
+		// stored. The user generates one from the dashboard when needed.
 	}
 	if err := s.db.CreateUser(r.Context(), user); err != nil {
 		s.log.Error("create user", "error", err)
@@ -413,6 +426,34 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	sessionFrom(r).Logout()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// handleLogoutAll revokes every session of the current user, on every device,
+// by bumping the epoch their cookies must match. This one is logged out too.
+func (s *Server) handleLogoutAll(w http.ResponseWriter, r *http.Request) {
+	user := userFrom(r)
+	sess := sessionFrom(r)
+	if _, err := s.db.BumpSessionEpoch(r.Context(), user.ID); err != nil {
+		s.log.Error("revoke sessions", "user", user.ID, "error", err)
+		sess.AddFlash("danger", "Could not log out other sessions.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+	sess.Logout()
+	sess.AddFlash("success", "You have been logged out on all devices.")
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// allowAccount applies the per-account login budget on top of the per-IP route
+// limit, rendering the 429 page and returning false when it is spent.
+func (s *Server) allowAccount(w http.ResponseWriter, r *http.Request, scope, account string) bool {
+	res := s.limiter.Allow(r.Context(), scope, account, s.limits.LoginAccount)
+	if res.Allowed {
+		return true
+	}
+	s.metrics.rateLimited.WithLabelValues(scope).Inc()
+	s.renderRateLimited(w, r, res.RetryAfter)
+	return false
 }
 
 // pagination describes the dashboard's page controls.
@@ -458,6 +499,12 @@ func (p pagination) Numbers() []int {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	s.renderDashboard(w, r, "")
+}
+
+// renderDashboard renders the dashboard. newAPIKey is shown exactly once, right
+// after it was generated: only its hash is stored, so it cannot be shown again.
+func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, newAPIKey string) {
 	user := userFrom(r)
 
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
@@ -488,6 +535,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := s.newPageData(r)
+	data.Data["new_api_key"] = newAPIKey
 	data.Data["stats"] = stats
 	data.Data["urls"] = urls
 	data.Data["pagination"] = pagination{
@@ -502,13 +550,19 @@ func (s *Server) handleRegenerateAPIKey(w http.ResponseWriter, r *http.Request) 
 	user := userFrom(r)
 	sess := sessionFrom(r)
 
-	if err := s.db.SetAPIKey(r.Context(), user.ID, uuid.NewString()); err != nil {
+	key := uuid.NewString()
+	if err := s.db.SetAPIKey(r.Context(), user.ID, key); err != nil {
 		s.log.Error("regenerate api key", "error", err)
 		sess.AddFlash("danger", "Could not regenerate the API key.")
-	} else {
-		sess.AddFlash("success", "API Key regenerated successfully.")
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		return
 	}
-	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	// Rendered directly rather than redirected: the key must not travel through
+	// the session cookie or a URL, and this response is the only time it exists
+	// in clear.
+	w.Header().Set("Cache-Control", "no-store")
+	sess.AddFlash("success", "API Key regenerated successfully. Copy it now; it will not be shown again.")
+	s.renderDashboard(w, r, key)
 }
 
 // ownedLink loads a link and confirms the current user owns it.

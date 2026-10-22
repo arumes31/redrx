@@ -2,6 +2,7 @@ package ratelimit
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -93,5 +94,32 @@ func TestNoRulesMeansUnlimited(t *testing.T) {
 		if res := l.Allow(context.Background(), "any", "ip", nil); !res.Allowed {
 			t.Fatal("an empty rule set must not limit anything")
 		}
+	}
+}
+
+// failingBackend simulates an unreachable Redis.
+type failingBackend struct{}
+
+func (failingBackend) Incr(context.Context, string, time.Duration) (int64, error) {
+	return 0, errors.New("connection refused")
+}
+func (failingBackend) Ping(context.Context) error { return errors.New("connection refused") }
+func (failingBackend) Close() error               { return nil }
+
+// TestBackendOutageFallsBackToMemory guards against the limiter failing open:
+// with the shared backend down, the brute-force limits must still apply.
+func TestBackendOutageFallsBackToMemory(t *testing.T) {
+	l := New(failingBackend{})
+	defer l.Close()
+	rules := Rules{{Limit: 2, Window: time.Hour}}
+	ctx := context.Background()
+
+	for i := 1; i <= 2; i++ {
+		if res := l.Allow(ctx, "login", "1.2.3.4", rules); !res.Allowed {
+			t.Fatalf("request %d was blocked but is within the limit of 2", i)
+		}
+	}
+	if res := l.Allow(ctx, "login", "1.2.3.4", rules); res.Allowed {
+		t.Error("the 3rd request was allowed while the backend was down; the limiter failed open")
 	}
 }

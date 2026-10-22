@@ -16,7 +16,7 @@ type RedisBackend struct {
 
 // Per-phase timeouts. The go-redis defaults are a 5s dial with three retries
 // and backoff, so a Redis outage would turn each request into a multi-second
-// stall rather than an error — and the limiter's fail-open path only handles
+// stall rather than an error — and the limiter's fallback path only handles
 // errors, not hangs.
 const (
 	dialTimeout  = 500 * time.Millisecond
@@ -43,12 +43,12 @@ func NewRedisBackend(url string) (*RedisBackend, error) {
 // stops answering for the hostname and getent can block for seconds — measured
 // at ~2.8s per operation. go-redis honours a context deadline through both the
 // pool dial and the command, so a deadline here bounds the whole thing
-// including DNS, and the limiter's fail-open path turns the resulting error
-// into an allowed request rather than a stall.
+// including DNS, and the limiter's fallback path turns the resulting error
+// into an in-memory count rather than a stall.
 //
 // It must sit above the sum of the per-phase timeouts, or a healthy Redis
 // reached over a cold pool — one that must dial, write and read — would be cut
-// off mid-connect and fail open needlessly. A small margin covers the second
+// off mid-connect and fall back needlessly. A small margin covers the second
 // read of a pipelined MULTI/EXEC.
 const opTimeout = dialTimeout + writeTimeout + readTimeout + 200*time.Millisecond
 

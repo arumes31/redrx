@@ -25,7 +25,8 @@ services:
       - ANONYMOUS_POW_DIFFICULTY=${ANONYMOUS_POW_DIFFICULTY:-16}
       - ENABLE_CONSENT_BANNER=${ENABLE_CONSENT_BANNER:-false}
       - HONOR_DO_NOT_TRACK=${HONOR_DO_NOT_TRACK:-true}
-      - RATELIMIT_STORAGE_URL=redis://redis:6379
+      # REDIS_PASSWORD is embedded in this URL, so keep it URL-safe (alphanumerics).
+      - RATELIMIT_STORAGE_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env, e.g. openssl rand -hex 24}@redis:6379
       - RATELIMIT_DEFAULT=${RATELIMIT_DEFAULT:-200 per day;50 per hour}
       - RATELIMIT_CREATE=${RATELIMIT_CREATE:-10 per minute}
       - RATELIMIT_REDIRECT=${RATELIMIT_REDIRECT:-100 per minute}
@@ -43,6 +44,9 @@ services:
 
   redis:
     image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    # Password-protected even on the internal network, so another container
+    # that gets compromised cannot reset or read the rate-limit counters.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"]
     security_opt:
       - no-new-privileges:true
     restart: always

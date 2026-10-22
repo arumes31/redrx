@@ -1,9 +1,11 @@
 package web
 
 import (
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,6 +49,11 @@ func (s *Server) handleTOTPLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
+	// Per account as well as per IP, so guessing codes from many addresses
+	// still runs into a ceiling.
+	if !s.allowAccount(w, r, "totp_account", strconv.FormatInt(user.ID, 10)) {
+		return
+	}
 	valid, err := s.validateSecondFactor(r, user, r.PostFormValue("code"))
 	if err != nil {
 		s.log.Error("validate second factor", "user", user.ID, "error", err)
@@ -62,7 +69,7 @@ func (s *Server) handleTOTPLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess.Login(user.ID)
+	sess.Login(user.ID, user.SessionEpoch)
 	if isSafeRedirect(next) {
 		http.Redirect(w, r, next, http.StatusSeeOther)
 		return
@@ -131,8 +138,17 @@ func (s *Server) handleTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
-	valid, err := validateTOTP(secret, r.PostFormValue("code"))
-	if err != nil || !valid {
+	valid := false
+	if step, ok := matchTOTP(secret, r.PostFormValue("code"), time.Now()); ok {
+		// Recorded so the enrollment code cannot also be used to log in.
+		valid, err = s.db.ConsumeTOTPStep(r.Context(), user.ID, step)
+		if err != nil {
+			s.log.Error("record TOTP step", "user", user.ID, "error", err)
+			s.renderError(w, r, http.StatusInternalServerError)
+			return
+		}
+	}
+	if !valid {
 		sessionFrom(r).AddFlash("danger", "The authenticator code was invalid. Check the clock and try again.")
 		qrData, qrErr := qr.DataURLPayload(s.totpURL(user, secret), qr.Options{Foreground: "#000000", Background: "#ffffff"})
 		if qrErr != nil {
@@ -160,6 +176,10 @@ func (s *Server) handleTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("enable TOTP", "user", user.ID, "error", err)
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
+	}
+	// Enabling 2FA revoked every existing session; keep this one.
+	if err := s.relogin(r, user.ID); err != nil {
+		s.log.Error("refresh session after enabling TOTP", "user", user.ID, "error", err)
 	}
 	user.TOTPEnabled = true
 	data := s.newPageData(r)
@@ -196,8 +216,22 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
+	if err := s.relogin(r, user.ID); err != nil {
+		s.log.Error("refresh session after disabling TOTP", "user", user.ID, "error", err)
+	}
 	sessionFrom(r).AddFlash("success", "Two-factor authentication disabled.")
 	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+}
+
+// relogin re-reads the user's session epoch after an action that bumped it, so
+// the session performing the action survives the revocation it triggered.
+func (s *Server) relogin(r *http.Request, userID int64) error {
+	user, err := s.db.UserByID(r.Context(), userID)
+	if err != nil {
+		return err
+	}
+	sessionFrom(r).Login(user.ID, user.SessionEpoch)
+	return nil
 }
 
 func (s *Server) validateSecondFactor(r *http.Request, user *store.User, code string) (bool, error) {
@@ -207,19 +241,42 @@ func (s *Server) validateSecondFactor(r *http.Request, user *store.User, code st
 	}
 	trimmed := strings.TrimSpace(code)
 	if len(trimmed) == 6 && strings.IndexFunc(trimmed, func(r rune) bool { return r < '0' || r > '9' }) == -1 {
-		if valid, err := validateTOTP(secret, trimmed); err != nil || valid {
-			return valid, err
+		if step, ok := matchTOTP(secret, trimmed, time.Now()); ok {
+			// A code is good for one use: replaying it inside its ~90s window
+			// (shoulder-surfed, phished, or a second racing request) fails.
+			return s.db.ConsumeTOTPStep(r.Context(), user.ID, step)
 		}
 	}
 	hash := security.RecoveryCodeHash(s.cfg.SecretKey, code)
 	return s.db.ConsumeRecoveryCode(r.Context(), user.ID, hash)
 }
 
-func validateTOTP(secret, code string) (bool, error) {
+const totpPeriod = 30
+
+var totpOpts = totp.ValidateOpts{
+	Period: totpPeriod, Skew: 1, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1,
+}
+
+// matchTOTP checks a code against the current time-step and one either side,
+// returning the step it matched so the caller can reject its reuse.
+// totp.ValidateCustom applies the same window but does not say which step
+// matched.
+func matchTOTP(secret, code string, now time.Time) (int64, bool) {
 	code = strings.TrimSpace(code)
-	return totp.ValidateCustom(code, secret, time.Now(), totp.ValidateOpts{
-		Period: 30, Skew: 1, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1,
-	})
+	if len(code) != int(totpOpts.Digits) {
+		return 0, false
+	}
+	current := now.Unix() / totpPeriod
+	for _, step := range []int64{current - 1, current, current + 1} {
+		want, err := totp.GenerateCodeCustom(secret, time.Unix(step*totpPeriod, 0), totpOpts)
+		if err != nil {
+			return 0, false
+		}
+		if subtle.ConstantTimeCompare([]byte(want), []byte(code)) == 1 {
+			return step, true
+		}
+	}
+	return 0, false
 }
 
 func (s *Server) totpIssuer() string {

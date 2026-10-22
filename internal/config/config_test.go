@@ -25,7 +25,7 @@ func clearEnv(t *testing.T) {
 		"ANONYMOUS_POW_DIFFICULTY", "ENABLE_CONSENT_BANNER", "HONOR_DO_NOT_TRACK",
 		"RATELIMIT_DEFAULT", "RATELIMIT_STORAGE_URL", "RATELIMIT_LOGIN",
 		"RATELIMIT_REGISTER", "RATELIMIT_AUTH", "RATELIMIT_API", "RATELIMIT_CREATE",
-		"RATELIMIT_REDIRECT",
+		"RATELIMIT_REDIRECT", "RATELIMIT_LOGIN_ACCOUNT", "METRICS_TOKEN", "ALLOW_WEAK_SECRET_KEY",
 		"LISTEN_ADDR", "MAXMIND_LICENSE_KEY",
 	} {
 		t.Setenv(k, "")
@@ -447,4 +447,50 @@ func mustCIDR(t *testing.T, s string) *net.IPNet {
 		t.Fatalf("ParseCIDR(%q): %v", s, err)
 	}
 	return n
+}
+
+// TestPlaceholderSecretKeyRejectedInProduction: a SECRET_KEY copied from the
+// docs is public, and anyone holding it can sign a session for any user.
+func TestPlaceholderSecretKeyRejectedInProduction(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("REDRX_DEBUG", "false")
+	t.Setenv("BASE_DOMAIN", "links.example.org")
+	t.Setenv("SECRET_KEY", "your-production-cryptographic-secret")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load accepted a documented placeholder SECRET_KEY in production mode")
+	} else if !strings.Contains(err.Error(), "SECRET_KEY") {
+		t.Errorf("error = %v, want it to name SECRET_KEY", err)
+	}
+
+	// The explicit escape hatch lets an existing deployment boot while it plans
+	// a rotation (which invalidates stored TOTP secrets).
+	t.Setenv("ALLOW_WEAK_SECRET_KEY", "true")
+	if _, err := Load(); err != nil {
+		t.Errorf("Load with ALLOW_WEAK_SECRET_KEY: %v", err)
+	}
+}
+
+func TestShortSecretKeyWarns(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("REDRX_DEBUG", "false")
+	t.Setenv("BASE_DOMAIN", "links.example.org")
+
+	t.Setenv("SECRET_KEY", "short-key")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load with a short key: %v", err)
+	}
+	if len(cfg.Warnings) == 0 {
+		t.Error("a short SECRET_KEY produced no warning")
+	}
+
+	t.Setenv("SECRET_KEY", strings.Repeat("ab", 16))
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load with a 32-character key: %v", err)
+	}
+	if len(cfg.Warnings) != 0 {
+		t.Errorf("a 32-character key warned: %v", cfg.Warnings)
+	}
 }

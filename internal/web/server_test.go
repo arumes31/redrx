@@ -204,15 +204,11 @@ func TestQRCodeIsAPNG(t *testing.T) {
 
 func TestDraftCreatedByAPINeverResolvesUntilPublished(t *testing.T) {
 	srv, db := newTestServer(t)
-	user, err := db.UserByLogin(context.Background(), "alice")
-	if err != nil {
-		t.Fatalf("load fixture user: %v", err)
-	}
 	body := `{"long_url":"https://draft.example.com/","custom_code":"DRAFT1","draft":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/shorten", strings.NewReader(body))
 	req.Host = "short.example.com"
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-KEY", user.APIKey)
+	req.Header.Set("X-API-KEY", "11111111-2222-3333-4444-555555555555")
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
@@ -379,9 +375,19 @@ func TestLegacyUserCanLogInAndSeeDashboard(t *testing.T) {
 		t.Fatalf("dashboard returned %d, want 200\n%s", rec.Code, truncateBody(rec.Body.String()))
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"ABC123", "My Dashboard", "11111111-2222-3333-4444-555555555555"} {
+	for _, want := range []string{"ABC123", "My Dashboard"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("dashboard is missing %q", want)
+		}
+	}
+	// API keys are stored hashed; neither the key nor its hash is displayed.
+	user, err := srv.db.UserByLogin(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("load fixture user: %v", err)
+	}
+	for _, secret := range []string{"11111111-2222-3333-4444-555555555555", user.APIKey} {
+		if strings.Contains(body, secret) {
+			t.Errorf("dashboard displays the stored API key material %q", secret)
 		}
 	}
 }
