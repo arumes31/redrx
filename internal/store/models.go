@@ -11,8 +11,8 @@ type User struct {
 	Username     string
 	Email        string
 	PasswordHash string
-	// APIKey is the SHA-256 of the key as stored, not the key itself. The
-	// plaintext is shown to the user once, when it is generated.
+	// APIKey is the SHA-256 of the key (see HashAPIKey), never the key
+	// itself. The plaintext is shown to the user once, when it is generated.
 	APIKey      string
 	TOTPSecret  string
 	TOTPEnabled bool

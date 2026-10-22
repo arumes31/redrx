@@ -90,10 +90,9 @@ func (d *DB) CreateUser(ctx context.Context, u *User) error {
 	createdAt := NewTime(d.dialect, now())
 	u.CreatedAt = createdAt.Time
 
-	// u.APIKey arrives as the plaintext key and is stored hashed.
+	// u.APIKey, like the column, is the key's hash (see HashAPIKey).
 	var apiKey any
 	if u.APIKey != "" {
-		u.APIKey = HashAPIKey(u.APIKey)
 		apiKey = u.APIKey
 	}
 

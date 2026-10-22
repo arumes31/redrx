@@ -409,7 +409,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Username:     form.Username,
 		Email:        form.Email,
 		PasswordHash: hash,
-		APIKey:       uuid.NewString(),
+		// No API key yet: it could never be shown, since only its hash is
+		// stored. The user generates one from the dashboard when needed.
 	}
 	if err := s.db.CreateUser(r.Context(), user); err != nil {
 		s.log.Error("create user", "error", err)

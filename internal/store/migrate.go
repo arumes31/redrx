@@ -182,28 +182,26 @@ func (d *DB) Migrate(ctx context.Context) error {
 	return nil
 }
 
-type legacyAPIKey struct {
-	id  int64
-	key string
-}
-
-// legacyAPIKeys lists keys not yet in hashed form. They are collected before
-// any are updated, since SQLite allows only one connection and the open
-// result set would hold it.
-func (d *DB) legacyAPIKeys(ctx context.Context) ([]legacyAPIKey, error) {
+// legacyAPIKeys maps user id to each key not yet in hashed form. They are
+// collected before any are updated, since SQLite allows only one connection
+// and the open result set would hold it.
+func (d *DB) legacyAPIKeys(ctx context.Context) (map[int64]string, error) {
 	rows, err := d.Query(ctx,
 		"SELECT id, api_key FROM users WHERE api_key IS NOT NULL AND LENGTH(api_key) <> ?", apiKeyHashLen)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []legacyAPIKey
+	out := map[int64]string{}
 	for rows.Next() {
-		var k legacyAPIKey
-		if err := rows.Scan(&k.id, &k.key); err != nil {
+		var (
+			id    int64
+			plain string
+		)
+		if err := rows.Scan(&id, &plain); err != nil {
 			return nil, err
 		}
-		out = append(out, k)
+		out[id] = plain
 	}
 	return out, rows.Err()
 }
@@ -235,10 +233,10 @@ func (d *DB) hashLegacyAPIKeys(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("find legacy api keys: %w", err)
 	}
-	for _, k := range legacy {
+	for id, plain := range legacy {
 		if _, err := d.Exec(ctx, "UPDATE users SET api_key = ? WHERE id = ? AND api_key = ?",
-			HashAPIKey(k.key), k.id, k.key); err != nil {
-			return fmt.Errorf("hash api key for user %d: %w", k.id, err)
+			HashAPIKey(plain), id, plain); err != nil {
+			return fmt.Errorf("hash api key for user %d: %w", id, err)
 		}
 	}
 	return nil
