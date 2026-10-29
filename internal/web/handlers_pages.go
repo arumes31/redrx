@@ -6,12 +6,14 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/arumes31/redrx/internal/qr"
 	"github.com/arumes31/redrx/internal/security"
+	"github.com/arumes31/redrx/internal/session"
 	"github.com/arumes31/redrx/internal/shortcode"
 	"github.com/arumes31/redrx/internal/store"
 	"github.com/google/uuid"
@@ -310,12 +312,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		next = "/"
 	}
 	if user.TOTPEnabled {
-		sess.BeginTwoFactor(user.ID, next)
+		// The epoch is pinned now, so a log-out-everywhere between the password
+		// and the second factor invalidates this half-finished login too.
+		sess.BeginTwoFactor(user.ID, user.SessionEpoch, next)
 		http.Redirect(w, r, "/login/totp", http.StatusSeeOther)
 		return
 	}
 
-	sess.Login(user.ID, user.SessionEpoch)
+	if err := sess.Login(user.ID, user.SessionEpoch); err != nil {
+		s.log.Error("start session", "user", user.ID, "error", err)
+		s.renderError(w, r, http.StatusInternalServerError)
+		return
+	}
 	if next != "/" {
 		http.Redirect(w, r, next, http.StatusSeeOther) // #nosec G710 -- validated by isSafeRedirect
 		return
@@ -324,16 +332,52 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 // isSafeRedirect permits only same-site relative targets, so `next` cannot be
-// turned into an open redirect.
+// turned into an open redirect. It also requires the target to already be in
+// the form http.Redirect will emit: that function runs path.Clean on relative
+// targets, so validating only the raw string would let "/x/../\evil.com" pass
+// and then become "/\evil.com", which browsers read as the authority
+// "//evil.com". Accepting only canonical targets means what is checked is
+// exactly what is sent.
 func isSafeRedirect(target string) bool {
-	if target == "" || strings.HasPrefix(target, "//") || strings.HasPrefix(target, `/\`) {
-		return false
+	canonical, ok := canonicalRedirect(target)
+	return ok && canonical == target
+}
+
+// canonicalRedirect validates a relative target and returns it as
+// http.Redirect would rewrite it.
+func canonicalRedirect(target string) (string, bool) {
+	if target == "" || target[0] != '/' ||
+		(len(target) > 1 && (target[1] == '/' || target[1] == '\\')) ||
+		strings.ContainsRune(target, '\\') {
+		return "", false
 	}
-	u, err := url.Parse(target)
-	if err != nil {
-		return false
+	for i := 0; i < len(target); i++ {
+		if c := target[i]; c < 0x20 || c == 0x7f {
+			return "", false
+		}
 	}
-	return u.Scheme == "" && u.Host == "" && strings.HasPrefix(u.Path, "/")
+
+	// Mirror http.Redirect's normalisation of a relative target.
+	p, query, hasQuery := strings.Cut(target, "?")
+	trailing := strings.HasSuffix(p, "/")
+	p = path.Clean(p)
+	if trailing && !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+	canonical := p
+	if hasQuery {
+		canonical += "?" + query
+	}
+
+	if strings.HasPrefix(canonical, "//") {
+		return "", false
+	}
+	u, err := url.Parse(canonical)
+	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || u.Opaque != "" ||
+		!strings.HasPrefix(u.Path, "/") {
+		return "", false
+	}
+	return canonical, true
 }
 
 func (s *Server) handleRegisterForm(w http.ResponseWriter, r *http.Request) {
@@ -424,7 +468,20 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	sessionFrom(r).Logout()
+	sess := sessionFrom(r)
+	// Clearing the cookie only affects this browser. Revoking the id also ends
+	// any copy of the cookie someone else retained.
+	if sess.UserID != 0 && sess.SID != "" {
+		if err := s.db.RevokeSession(r.Context(), sess.SID, time.Now().Add(session.MaxAge)); err != nil {
+			// Clearing only the local cookie would report a logout that left
+			// any copy of it working, so say it failed instead.
+			s.log.Error("revoke session on logout", "user", sess.UserID, "error", err)
+			sess.AddFlash("danger", "Could not log out. Please try again.")
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+	}
+	sess.Logout()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 

@@ -9,11 +9,13 @@ package safety
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,6 +23,35 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/net/idna"
+)
+
+const (
+	// maxFeedBytes caps a single feed download so a hostile or broken feed
+	// cannot exhaust memory.
+	maxFeedBytes = 64 << 20
+	// maxHostLen and maxLabelLen are the DNS limits. Nothing longer resolves,
+	// and bounding the host also bounds the parent-domain walk in
+	// matchesDomainOrParent, which hashes every suffix.
+	maxHostLen  = 253
+	maxLabelLen = 63
+	// maxRawHostLen bounds the input to IDNA mapping before the canonical
+	// length can be checked.
+	maxRawHostLen = 1024
+)
+
+// hostProfile canonicalizes hostnames the way browsers do (WHATWG URL /
+// UTS #46 non-transitional, without STD3 or hyphen checks), so a Unicode
+// spelling such as fullwidth letters or an ideographic full stop is compared
+// against the blocklist in the same form the visitor's browser navigates to.
+var hostProfile = idna.New(
+	idna.MapForLookup(),
+	idna.Transitional(false),
+	idna.BidiRule(),
+	idna.StrictDomainName(false),
+	idna.ValidateLabels(false),
 )
 
 // ErrListUnavailable means the blocklist is configured but unreadable, so no
@@ -81,9 +112,56 @@ func New(opts Options) *Checker {
 }
 
 // normalizeDomain canonicalizes blocklist entries to the same representation
-// parseHost returns for URL hostnames.
+// parseHost returns for URL hostnames. Entries that cannot be canonicalized are
+// returned as an empty string.
 func normalizeDomain(domain string) string {
-	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
+	host, ok := canonicalHost(strings.TrimSpace(domain))
+	if !ok {
+		return ""
+	}
+	return host
+}
+
+// canonicalHost lowercases a hostname, drops a trailing root dot and applies
+// browser-compatible IDNA mapping to non-ASCII names, rejecting names that do
+// not map or exceed DNS length limits.
+func canonicalHost(host string) (string, bool) {
+	if host == "" || len(host) > maxRawHostLen {
+		return "", false
+	}
+	if !isASCII(host) {
+		mapped, err := hostProfile.ToASCII(host)
+		if err != nil {
+			return "", false
+		}
+		host = mapped
+	}
+	// A trailing dot is the DNS absolute-root marker: "evil.com." is the same
+	// host as "evil.com" for resolution, but is a different string from the
+	// blocklist entry, so it must be normalised before matching.
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	if host == "" || len(host) > maxHostLen {
+		return "", false
+	}
+	// One spelling per address, so "2001:0db8::0001" matches "2001:db8::1".
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String(), true
+	}
+	for label := range strings.SplitSeq(host, ".") {
+		if label == "" || len(label) > maxLabelLen {
+			return "", false
+		}
+	}
+	return host, true
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }
 
 // IsSafeURL reports whether target may be used as a redirect destination.
@@ -128,8 +206,8 @@ func IsAbsoluteHTTPURL(target string) bool {
 	return ok
 }
 
-// parseHost extracts the lowercase hostname, rejecting anything that is not an
-// absolute http(s) URL.
+// parseHost extracts the canonical hostname, rejecting anything that is not an
+// absolute http(s) URL with a valid host.
 func parseHost(target string) (string, bool) {
 	if target == "" {
 		return "", false
@@ -143,14 +221,7 @@ func parseHost(target string) (string, bool) {
 	default:
 		return "", false
 	}
-	// A trailing dot is the DNS absolute-root marker: "evil.com." is the same
-	// host as "evil.com" for resolution, but is a different string from the
-	// blocklist entry, so it must be normalised before matching.
-	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
-	if host == "" {
-		return "", false
-	}
-	return host, true
+	return canonicalHost(u.Hostname())
 }
 
 // matchesDomainOrParent walks a host up its parent domains, so a blocked
@@ -245,7 +316,7 @@ func (c *Checker) reload() (map[string]struct{}, error) {
 		return nil, fmt.Errorf("%w: %w", ErrListUnavailable, err)
 	}
 
-	domains, err := parseDomainList(f)
+	domains, unsupported, err := parseDomainList(f)
 	if err != nil {
 		if cached := c.cached(); cached != nil {
 			return cached, nil
@@ -260,13 +331,27 @@ func (c *Checker) reload() (map[string]struct{}, error) {
 	c.loadedAt = time.Now()
 	c.mu.Unlock()
 
+	if unsupported > 0 {
+		c.log.Warn("blocked domains list contains unsupported records", "path", c.listPath, "lines", unsupported)
+	}
 	c.log.Info("loaded blocked domains list", "path", c.listPath, "domains", len(domains))
 	return domains, nil
 }
 
 // parseDomainList reads plain-domain and hosts-file feeds into canonical names.
-func parseDomainList(r io.Reader) (map[string]struct{}, error) {
+// It also reports how many records it could not interpret, so a format change
+// upstream is visible in the logs rather than silently shrinking the policy.
+func parseDomainList(r io.Reader) (map[string]struct{}, int, error) {
 	domains := map[string]struct{}{}
+	unsupported, err := scanDomains(r, func(domain string) { domains[domain] = struct{}{} })
+	return domains, unsupported, err
+}
+
+// scanDomains calls visit for every canonical domain in a plain-domain or
+// hosts-file feed and returns the number of lines it could not fully
+// interpret.
+func scanDomains(r io.Reader, visit func(domain string)) (int, error) {
+	unsupported := 0
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
@@ -283,17 +368,33 @@ func parseDomainList(r io.Reader) (map[string]struct{}, error) {
 		if line == "" {
 			continue
 		}
-		// Hosts-file feeds prefix entries with an address; keep the last field.
-		if fields := strings.Fields(line); len(fields) > 1 {
-			line = fields[len(fields)-1]
+		// Hosts-file records are an address followed by one or more hostnames;
+		// every one of them is an entry, not just the last.
+		fields := strings.Fields(line)
+		if len(fields) > 1 {
+			if net.ParseIP(fields[0]) == nil {
+				unsupported++
+				continue
+			}
+			fields = fields[1:]
 		}
-		line = normalizeDomain(line)
-		if line == "" || line == "localhost" {
-			continue
+		invalid := false
+		for _, field := range fields {
+			domain := normalizeDomain(field)
+			if domain == "" {
+				invalid = true
+				continue
+			}
+			if domain == "localhost" {
+				continue
+			}
+			visit(domain)
 		}
-		domains[line] = struct{}{}
+		if invalid {
+			unsupported++
+		}
 	}
-	return domains, sc.Err()
+	return unsupported, sc.Err()
 }
 
 // Refresh downloads the phishing feeds when the cached file is older than the
@@ -361,6 +462,17 @@ func (c *Checker) Refresh(ctx context.Context) error {
 	if len(combined) == 0 {
 		return errors.New("safety: every phishing feed download failed")
 	}
+	// Parse before installing: a list the reader cannot load would otherwise
+	// replace a working one on disk.
+	// An empty result (only comments, or a format the parser does not know)
+	// would install a list that blocks nothing.
+	usable := 0
+	if _, err := scanDomains(bytes.NewReader(combined), func(string) { usable++ }); err != nil {
+		return fmt.Errorf("safety: downloaded list is unreadable, keeping the existing list: %w", err)
+	}
+	if usable == 0 {
+		return errors.New("safety: downloaded list has no usable domains, keeping the existing list")
+	}
 
 	if dir := filepath.Dir(c.listPath); dir != "" {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -407,8 +519,16 @@ func fetch(ctx context.Context, client *http.Client, rawURL string) ([]byte, err
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("status %s", resp.Status)
 	}
-	// Cap the download so a hostile or broken feed cannot exhaust memory.
-	return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	// Read one byte past the cap: a body that reaches it was truncated, and
+	// installing that prefix would silently un-block every domain in the tail.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFeedBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxFeedBytes {
+		return nil, fmt.Errorf("feed exceeds %d bytes", maxFeedBytes)
+	}
+	return body, nil
 }
 
 // Enabled reports whether phishing checking is switched on.

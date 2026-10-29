@@ -23,7 +23,7 @@ func (s *Server) handleTOTPLoginForm(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	if _, _, ok := sessionFrom(r).PendingTwoFactor(); !ok {
+	if _, ok := sessionFrom(r).PendingTwoFactor(); !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
@@ -35,17 +35,25 @@ func (s *Server) handleTOTPLoginForm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTOTPLogin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	sess := sessionFrom(r)
-	userID, next, ok := sess.PendingTwoFactor()
+	pending, ok := sess.PendingTwoFactor()
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	user, err := s.db.UserByID(r.Context(), userID)
+	user, err := s.db.UserByID(r.Context(), pending.UserID)
 	if err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
 			s.log.Error("load pending 2FA user", "error", err)
 		}
 		sess.Logout()
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	// Sessions were revoked after the password was checked: the password proof
+	// belongs to the revoked generation, so start over.
+	if user.SessionEpoch != pending.Epoch {
+		sess.Logout()
+		sess.AddFlash("info", "Your login expired. Please log in again.")
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
@@ -69,9 +77,13 @@ func (s *Server) handleTOTPLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess.Login(user.ID, user.SessionEpoch)
-	if isSafeRedirect(next) {
-		http.Redirect(w, r, next, http.StatusSeeOther)
+	if err := sess.Login(user.ID, user.SessionEpoch); err != nil {
+		s.log.Error("start session", "user", user.ID, "error", err)
+		s.renderError(w, r, http.StatusInternalServerError)
+		return
+	}
+	if isSafeRedirect(pending.Next) {
+		http.Redirect(w, r, pending.Next, http.StatusSeeOther) // #nosec G710 -- validated by isSafeRedirect
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -107,7 +119,12 @@ func (s *Server) handleTOTPStart(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
-	if err := s.db.SetTOTPPending(r.Context(), user.ID, encrypted); err != nil {
+	if err := s.db.SetTOTPPending(r.Context(), user.ID, user.SessionEpoch, encrypted); errors.Is(err, store.ErrStateChanged) {
+		// 2FA was enabled, or this session revoked, since the request began.
+		sessionFrom(r).AddFlash("info", "Two-factor authentication is already enabled.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	} else if err != nil {
 		s.log.Error("store TOTP enrollment", "error", err)
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
@@ -138,16 +155,7 @@ func (s *Server) handleTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
-	valid := false
-	if step, ok := matchTOTP(secret, r.PostFormValue("code"), time.Now()); ok {
-		// Recorded so the enrollment code cannot also be used to log in.
-		valid, err = s.db.ConsumeTOTPStep(r.Context(), user.ID, step)
-		if err != nil {
-			s.log.Error("record TOTP step", "user", user.ID, "error", err)
-			s.renderError(w, r, http.StatusInternalServerError)
-			return
-		}
-	}
+	step, valid := matchTOTP(secret, r.PostFormValue("code"), time.Now())
 	if !valid {
 		sessionFrom(r).AddFlash("danger", "The authenticator code was invalid. Check the clock and try again.")
 		qrData, qrErr := qr.DataURLPayload(s.totpURL(user, secret), qr.Options{Foreground: "#000000", Background: "#ffffff"})
@@ -172,7 +180,17 @@ func (s *Server) handleTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 	for i, code := range codes {
 		hashes[i] = security.RecoveryCodeHash(s.cfg.SecretKey, code)
 	}
-	if err := s.db.EnableTOTP(r.Context(), user.ID, hashes); err != nil {
+	// Activation is bound to the exact secret the code was checked against and
+	// records the step, so the enrollment code cannot also be used to log in.
+	err = s.db.EnableTOTP(r.Context(), user.ID, user.TOTPSecret, step, hashes)
+	if errors.Is(err, store.ErrStateChanged) {
+		// The pending secret was replaced, 2FA was enabled by another request,
+		// or this code was already used.
+		sessionFrom(r).AddFlash("warning", "Two-factor setup changed while confirming. Start setup again.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+	if err != nil {
 		s.log.Error("enable TOTP", "user", user.ID, "error", err)
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
@@ -230,8 +248,7 @@ func (s *Server) relogin(r *http.Request, userID int64) error {
 	if err != nil {
 		return err
 	}
-	sessionFrom(r).Login(user.ID, user.SessionEpoch)
-	return nil
+	return sessionFrom(r).Login(user.ID, user.SessionEpoch)
 }
 
 func (s *Server) validateSecondFactor(r *http.Request, user *store.User, code string) (bool, error) {

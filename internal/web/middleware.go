@@ -39,8 +39,23 @@ func (s *Server) wrap(h handlerFunc) http.Handler {
 				// The user revoked their sessions (log out everywhere, or a
 				// 2FA change) after this cookie was issued.
 				sess.Logout()
+			case err == nil && sess.SID == "":
+				// Issued before sessions carried an id, so a logout could never
+				// have revoked it. Make the holder log in again.
+				sess.Logout()
 			case err == nil:
-				user = u
+				revoked, rerr := s.db.SessionRevoked(r.Context(), sess.SID)
+				switch {
+				case rerr != nil:
+					// Fail closed: treat the request as anonymous, but keep the
+					// cookie, since the session may well still be valid.
+					s.log.Error("check session revocation", "error", rerr)
+				case revoked:
+					// Ended by an ordinary logout; this is a retained copy.
+					sess.Logout()
+				default:
+					user = u
+				}
 			case errors.Is(err, store.ErrNotFound):
 				// The account was deleted out from under the cookie.
 				sess.Logout()
@@ -316,8 +331,9 @@ func (s *Server) instrument(next http.Handler) http.Handler {
 		// most worth alerting on is the one missing from the metrics.
 		defer func() {
 			route := routeLabel(r, label)
-			s.metrics.requests.WithLabelValues(r.Method, route, statusClass(rec.status)).Inc()
-			s.metrics.duration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
+			method := methodLabel(r.Method)
+			s.metrics.requests.WithLabelValues(method, route, statusClass(rec.status)).Inc()
+			s.metrics.duration.WithLabelValues(method, route).Observe(time.Since(start).Seconds())
 		}()
 
 		next.ServeHTTP(rec, r)
@@ -373,6 +389,19 @@ func routeLabel(r *http.Request, label *routeName) string {
 		return p
 	}
 	return "other"
+}
+
+// methodLabel maps the request method onto a fixed set. Any token is a valid
+// method, and each distinct label value is a collector child retained for the
+// life of the process, so the raw method would let clients grow memory and
+// scrape size without bound.
+func methodLabel(method string) string {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+		http.MethodPatch, http.MethodDelete, http.MethodOptions:
+		return method
+	}
+	return "OTHER"
 }
 
 func statusClass(status int) string {

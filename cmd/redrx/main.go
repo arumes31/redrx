@@ -326,6 +326,10 @@ func sweepBlockedLinks(ctx context.Context, checker *safety.Checker, db *store.D
 	var doomed []int64
 
 	err := db.EachURL(ctx, func(u *store.URL) error {
+		// Stop promptly on shutdown rather than finishing a full-table scan.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		hit, err := blocked(u.LongURL)
 		if err != nil {
 			return err

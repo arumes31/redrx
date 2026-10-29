@@ -16,6 +16,7 @@ import (
 	"github.com/arumes31/redrx/internal/geo"
 	"github.com/arumes31/redrx/internal/qr"
 	"github.com/arumes31/redrx/internal/security"
+	"github.com/arumes31/redrx/internal/session"
 	"github.com/arumes31/redrx/internal/shortcode"
 	"github.com/arumes31/redrx/internal/store"
 )
@@ -52,7 +53,7 @@ func (s *Server) handleRedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if link.IsPasswordProtected() && !sessionFrom(r).IsLinkAuthorized(link.ShortCode) {
+	if link.IsPasswordProtected() && !sessionFrom(r).IsLinkAuthorized(link.ShortCode, linkGrant(link)) {
 		http.Redirect(w, r, "/link-auth/"+url.PathEscape(link.ShortCode), http.StatusSeeOther)
 		return
 	}
@@ -67,12 +68,14 @@ func (s *Server) handleRedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.db.TouchLastAccessed(r.Context(), link.ID, time.Now().UTC()); err != nil {
-		s.log.Warn("update last accessed", "code", link.ShortCode, "error", err)
-	}
 	s.metrics.redirects.Inc()
 
+	// The last-access time is shown to the link owner, so it is visit activity
+	// like a click and falls under the same statistics, DNT and consent rules.
 	if link.StatsEnabled && s.shouldTrack(r) {
+		if err := s.db.TouchLastAccessed(r.Context(), link.ID, time.Now().UTC()); err != nil {
+			s.log.Warn("update last accessed", "code", link.ShortCode, "error", err)
+		}
 		s.recordClick(r, link, ua)
 	}
 
@@ -90,6 +93,13 @@ func (s *Server) handleRedirect(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("render redirect page", "error", err)
 		s.renderError(w, r, http.StatusInternalServerError)
 	}
+}
+
+// linkGrant identifies the link instance and password a visitor unlocks, so
+// the grant is void once the code is reused by another link or the password
+// changes.
+func linkGrant(link *store.URL) string {
+	return session.LinkGrant(link.ID, link.CreatedAt, link.PasswordHash)
 }
 
 // selectTarget picks the destination for this visitor: a device-specific URL
@@ -179,7 +189,7 @@ func (s *Server) handleLinkAuth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if link.IsPasswordProtected() && security.CheckPasswordHash(link.PasswordHash, r.PostFormValue("password")) {
-		sess.AuthorizeLink(link.ShortCode)
+		sess.AuthorizeLink(link.ShortCode, linkGrant(link))
 		http.Redirect(w, r, "/"+url.PathEscape(link.ShortCode), http.StatusSeeOther)
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func roundTrip(t *testing.T, m *Manager, mutate func(*Session)) *Session {
@@ -29,17 +30,17 @@ func TestSessionRoundTrip(t *testing.T) {
 	got := roundTrip(t, m, func(s *Session) {
 		s.Login(42, 0)
 		s.AddFlash("success", "hello there")
-		s.AuthorizeLink("ABC123")
+		s.AuthorizeLink("ABC123", LinkGrant(1, testCreated, "hash"))
 		s.CSRFToken()
 	})
 
 	if got.UserID != 42 {
 		t.Errorf("UserID = %d, want 42", got.UserID)
 	}
-	if !got.IsLinkAuthorized("ABC123") {
+	if !got.IsLinkAuthorized("ABC123", LinkGrant(1, testCreated, "hash")) {
 		t.Error("link authorization did not survive the round trip")
 	}
-	if got.IsLinkAuthorized("OTHER") {
+	if got.IsLinkAuthorized("OTHER", LinkGrant(1, testCreated, "hash")) {
 		t.Error("an unrelated link is reported as authorized")
 	}
 
@@ -189,7 +190,7 @@ func TestOversizedSessionIsShrunkNotDropped(t *testing.T) {
 	s.Login(42, 0)
 	s.CSRFToken()
 	for i := 0; i < 400; i++ {
-		s.AuthorizeLink(fmt.Sprintf("CODE%06d", i))
+		s.AuthorizeLink(fmt.Sprintf("CODE%06d", i), LinkGrant(int64(i), testCreated, "hash"))
 	}
 	m.Save(rec, s)
 
@@ -225,7 +226,7 @@ func TestOversizedFlashesAreDroppedFirst(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s := m.Load(httptest.NewRequest(http.MethodGet, "/", nil))
 	s.Login(7, 0)
-	s.AuthorizeLink("KEEPME")
+	s.AuthorizeLink("KEEPME", LinkGrant(7, testCreated, "hash"))
 	for i := 0; i < 200; i++ {
 		s.AddFlash("info", strings.Repeat("x", 100))
 	}
@@ -246,7 +247,41 @@ func TestOversizedFlashesAreDroppedFirst(t *testing.T) {
 	if len(got.Flashes) != 0 {
 		t.Errorf("Flashes = %d, want 0 — they should be dropped first", len(got.Flashes))
 	}
-	if !got.IsLinkAuthorized("KEEPME") {
+	if !got.IsLinkAuthorized("KEEPME", LinkGrant(7, testCreated, "hash")) {
 		t.Error("the link authorisation was evicted before the flashes were")
 	}
 }
+
+func TestBeginTwoFactorDropsPreviousIdentity(t *testing.T) {
+	s := &Session{}
+	if err := s.Login(1, 3); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	s.BeginTwoFactor(2, 5, "/dashboard")
+	if s.UserID != 0 || s.SID != "" || s.Epoch != 0 {
+		t.Errorf("identity kept alongside a pending login: uid=%d sid=%q ep=%d", s.UserID, s.SID, s.Epoch)
+	}
+	pending, ok := s.PendingTwoFactor()
+	if !ok || pending.UserID != 2 || pending.Epoch != 5 || pending.Next != "/dashboard" {
+		t.Errorf("PendingTwoFactor = %+v, %t", pending, ok)
+	}
+}
+
+func TestLinkGrantIsBoundToInstanceAndPassword(t *testing.T) {
+	s := &Session{}
+	s.AuthorizeLink("CODE", LinkGrant(1, testCreated, "hash-a"))
+	if !s.IsLinkAuthorized("CODE", LinkGrant(1, testCreated, "hash-a")) {
+		t.Error("the unlocked link is not authorized")
+	}
+	if s.IsLinkAuthorized("CODE", LinkGrant(2, testCreated, "hash-a")) {
+		t.Error("a different link reusing the code is authorized")
+	}
+	if s.IsLinkAuthorized("CODE", LinkGrant(1, testCreated.Add(time.Microsecond), "hash-a")) {
+		t.Error("a new link that reused the id is authorized")
+	}
+	if s.IsLinkAuthorized("CODE", LinkGrant(1, testCreated, "hash-b")) {
+		t.Error("the link is still authorized after its password changed")
+	}
+}
+
+var testCreated = time.Date(2026, 1, 2, 3, 4, 5, 6000, time.UTC)

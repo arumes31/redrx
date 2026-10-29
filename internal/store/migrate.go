@@ -96,6 +96,15 @@ var schema = []table{
 		extra: []string{"FOREIGN KEY(url_id) REFERENCES urls (id)"},
 	},
 	{
+		// revoked_sessions remembers the ids of cookies ended by an ordinary
+		// logout until they would have expired anyway. Only a digest is kept.
+		name: "revoked_sessions",
+		columns: []column{
+			{"sid_hash", "VARCHAR(64) NOT NULL PRIMARY KEY", "VARCHAR(64) PRIMARY KEY"},
+			{"expires_at", "DATETIME NOT NULL", "TIMESTAMP NOT NULL"},
+		},
+	},
+	{
 		name: "used_pow_challenges",
 		columns: []column{
 			{"challenge_hash", "VARCHAR(64) NOT NULL PRIMARY KEY", "VARCHAR(64) PRIMARY KEY"},
@@ -116,6 +125,7 @@ var indexes = []struct{ name, ddl string }{
 	{"idx_click_url_timestamp", "CREATE INDEX IF NOT EXISTS idx_click_url_timestamp ON clicks (url_id, timestamp)"},
 	{"idx_recovery_user_hash", "CREATE UNIQUE INDEX IF NOT EXISTS idx_recovery_user_hash ON recovery_codes (user_id, code_hash)"},
 	{"idx_used_pow_expires", "CREATE INDEX IF NOT EXISTS idx_used_pow_expires ON used_pow_challenges (expires_at)"},
+	{"idx_revoked_sessions_expires", "CREATE INDEX IF NOT EXISTS idx_revoked_sessions_expires ON revoked_sessions (expires_at)"},
 }
 
 // Migrate creates any missing tables, columns and indexes. It is additive only:
