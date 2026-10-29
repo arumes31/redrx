@@ -82,8 +82,8 @@ func (s *Server) handleTOTPLogin(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
-	if next, ok := safeRedirect(pending.Next); ok {
-		http.Redirect(w, r, next, http.StatusSeeOther) // #nosec G710 -- validated by safeRedirect
+	if isSafeRedirect(pending.Next) {
+		http.Redirect(w, r, pending.Next, http.StatusSeeOther) // #nosec G710 -- validated by isSafeRedirect
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)

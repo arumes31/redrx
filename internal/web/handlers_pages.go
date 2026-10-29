@@ -305,10 +305,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// safeRedirect admits only same-site relative paths, which gosec's taint
+	// isSafeRedirect admits only same-site relative paths, which gosec's taint
 	// analysis cannot follow through the helper.
-	next, ok := safeRedirect(r.URL.Query().Get("next"))
-	if !ok {
+	next := r.URL.Query().Get("next")
+	if !isSafeRedirect(next) {
 		next = "/"
 	}
 	if user.TOTPEnabled {
@@ -325,18 +325,27 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if next != "/" {
-		http.Redirect(w, r, next, http.StatusSeeOther) // #nosec G710 -- validated by safeRedirect
+		http.Redirect(w, r, next, http.StatusSeeOther) // #nosec G710 -- validated by isSafeRedirect
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// safeRedirect permits only same-site relative targets, so `next` cannot be
-// turned into an open redirect. It returns the target in the form
-// http.Redirect will emit: that function runs path.Clean on relative targets,
-// so validating only the raw string would let "/x/../\evil.com" pass and then
-// become "/\evil.com", which browsers read as the authority "//evil.com".
-func safeRedirect(target string) (string, bool) {
+// isSafeRedirect permits only same-site relative targets, so `next` cannot be
+// turned into an open redirect. It also requires the target to already be in
+// the form http.Redirect will emit: that function runs path.Clean on relative
+// targets, so validating only the raw string would let "/x/../\evil.com" pass
+// and then become "/\evil.com", which browsers read as the authority
+// "//evil.com". Accepting only canonical targets means what is checked is
+// exactly what is sent.
+func isSafeRedirect(target string) bool {
+	canonical, ok := canonicalRedirect(target)
+	return ok && canonical == target
+}
+
+// canonicalRedirect validates a relative target and returns it as
+// http.Redirect would rewrite it.
+func canonicalRedirect(target string) (string, bool) {
 	if target == "" || target[0] != '/' ||
 		(len(target) > 1 && (target[1] == '/' || target[1] == '\\')) ||
 		strings.ContainsRune(target, '\\') {

@@ -59,8 +59,8 @@ func (s *Server) handleConsent(w http.ResponseWriter, r *http.Request) {
 		MaxAge: 365 * 24 * 60 * 60, HttpOnly: true,
 		Secure: !s.cfg.Debug, SameSite: http.SameSiteLaxMode,
 	})
-	target, ok := safeRedirect(r.PostFormValue("return_to"))
-	if !ok {
+	target := r.PostFormValue("return_to")
+	if !isSafeRedirect(target) {
 		target = "/"
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)

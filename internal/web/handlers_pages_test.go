@@ -6,16 +6,15 @@ import (
 	"testing"
 )
 
-func TestSafeRedirect(t *testing.T) {
+func TestIsSafeRedirect(t *testing.T) {
 	tests := []struct {
 		name   string
 		target string
 		want   bool
-		canon  string
 	}{
-		{name: "root", target: "/", want: true, canon: "/"},
-		{name: "same-site path", target: "/dashboard?tab=links#recent", want: true, canon: "/dashboard?tab=links#recent"},
-		{name: "dot segments are cleaned", target: "/a/../dashboard/", want: true, canon: "/dashboard/"},
+		{name: "root", target: "/", want: true},
+		{name: "same-site path", target: "/dashboard?tab=links#recent", want: true},
+		{name: "trailing slash", target: "/dashboard/", want: true},
 		{name: "empty", target: "", want: false},
 		{name: "relative path", target: "dashboard", want: false},
 		{name: "absolute URL", target: "https://attacker.example/", want: false},
@@ -25,35 +24,34 @@ func TestSafeRedirect(t *testing.T) {
 		{name: "backslash anywhere", target: `/dashboard\x`, want: false},
 		{name: "control character", target: "/\nattacker.example/", want: false},
 		{name: "tab", target: "/\t/attacker.example/", want: false},
-		{name: "doubled slash after cleaning", target: "/./attacker.example", want: true, canon: "/attacker.example"},
+		// Non-canonical paths are rewritten by http.Redirect, so they are refused
+		// rather than validated in one form and sent in another.
+		{name: "dot segments", target: "/a/../dashboard", want: false},
+		{name: "doubled slash inside", target: "/./attacker.example", want: false},
+		{name: "collapsed slashes", target: "/a//b", want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := safeRedirect(tt.target)
-			if ok != tt.want {
-				t.Fatalf("safeRedirect(%q) ok = %t, want %t", tt.target, ok, tt.want)
-			}
-			if ok && got != tt.canon {
-				t.Errorf("safeRedirect(%q) = %q, want %q", tt.target, got, tt.canon)
+			if got := isSafeRedirect(tt.target); got != tt.want {
+				t.Errorf("isSafeRedirect(%q) = %t, want %t", tt.target, got, tt.want)
 			}
 		})
 	}
 }
 
-// TestSafeRedirectMatchesHTTPRedirect checks that the value validated is the
-// value http.Redirect emits, so its normalisation cannot turn an accepted path
-// into an external one.
-func TestSafeRedirectMatchesHTTPRedirect(t *testing.T) {
-	for _, target := range []string{"/a/../b", "/a/./b/", "/x/..//y?q=1", "/dashboard?tab=links"} {
-		canon, ok := safeRedirect(target)
-		if !ok {
-			t.Fatalf("safeRedirect(%q) rejected a same-site path", target)
+// TestSafeRedirectIsSentUnchanged checks that every accepted target is emitted
+// by http.Redirect exactly as validated, so its normalisation cannot turn an
+// accepted path into an external one.
+func TestSafeRedirectIsSentUnchanged(t *testing.T) {
+	for _, target := range []string{"/", "/dashboard", "/a/b/", "/dashboard?tab=links", "/x?next=/../y"} {
+		if !isSafeRedirect(target) {
+			t.Fatalf("isSafeRedirect(%q) rejected a canonical same-site path", target)
 		}
 		rec := httptest.NewRecorder()
-		http.Redirect(rec, httptest.NewRequest(http.MethodGet, "/login", nil), canon, http.StatusSeeOther)
-		if loc := rec.Header().Get("Location"); loc != canon {
-			t.Errorf("http.Redirect(%q) emitted %q", canon, loc)
+		http.Redirect(rec, httptest.NewRequest(http.MethodGet, "/login", nil), target, http.StatusSeeOther)
+		if loc := rec.Header().Get("Location"); loc != target {
+			t.Errorf("http.Redirect(%q) emitted %q", target, loc)
 		}
 	}
 }
