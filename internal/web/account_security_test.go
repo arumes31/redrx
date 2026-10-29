@@ -107,10 +107,10 @@ func TestTOTPCodeCannotBeReplayed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encrypt TOTP secret: %v", err)
 	}
-	if err := db.SetTOTPPending(ctx, user.ID, sealed); err != nil {
+	if err := db.SetTOTPPending(ctx, user.ID, user.SessionEpoch, sealed); err != nil {
 		t.Fatalf("SetTOTPPending: %v", err)
 	}
-	if err := db.EnableTOTP(ctx, user.ID, nil); err != nil {
+	if err := db.EnableTOTP(ctx, user.ID, sealed, 0, nil); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 	code, err := totp.GenerateCode(secret, time.Now())

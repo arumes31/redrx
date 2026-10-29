@@ -145,26 +145,49 @@ func (d *DB) SetUserPasswordHash(ctx context.Context, userID int64, hash string)
 }
 
 // SetTOTPPending stores an encrypted enrollment secret without enabling 2FA.
-func (d *DB) SetTOTPPending(ctx context.Context, userID int64, encryptedSecret string) error {
-	_, err := d.Exec(ctx,
-		"UPDATE users SET totp_secret = ?, totp_enabled = ?, totp_last_step = NULL WHERE id = ?",
-		encryptedSecret, false, userID)
-	return err
+//
+// The write is conditional on 2FA still being off and the session epoch still
+// matching the caller's session: the handler's "already enabled?" check ran on
+// an earlier snapshot, and a request admitted before activation must not be
+// able to overwrite the active secret afterwards and switch 2FA back off. It
+// returns ErrStateChanged when the account no longer matches.
+func (d *DB) SetTOTPPending(ctx context.Context, userID, sessionEpoch int64, encryptedSecret string) error {
+	res, err := d.Exec(ctx,
+		"UPDATE users SET totp_secret = ?, totp_enabled = ?, totp_last_step = NULL "+
+			"WHERE id = ? AND COALESCE(totp_enabled, ?) = ? AND COALESCE(session_epoch, 0) = ?",
+		encryptedSecret, false, userID, false, false, sessionEpoch)
+	if err != nil {
+		return err
+	}
+	return requireOneRow(res)
 }
 
 // EnableTOTP atomically enables TOTP and replaces the one-time recovery codes.
 // It also bumps the session epoch, so sessions opened before 2FA was turned on
 // (possibly by whoever prompted the user to enable it) stop working.
-func (d *DB) EnableTOTP(ctx context.Context, userID int64, codeHashes []string) error {
+//
+// pendingSecret is the stored ciphertext the confirmation code was verified
+// against and step the time-step it matched. Activation happens only if that
+// exact enrollment is still pending and the step was not used before, so a
+// concurrent setup request that swapped in a different secret cannot have it
+// enabled by proof of the old one. It returns ErrStateChanged otherwise.
+func (d *DB) EnableTOTP(ctx context.Context, userID int64, pendingSecret string, step int64, codeHashes []string) error {
 	tx, err := d.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.ExecContext(ctx, d.rebind(
-		"UPDATE users SET totp_enabled = ?, session_epoch = COALESCE(session_epoch, 0) + 1 WHERE id = ?"),
-		true, userID); err != nil {
+	res, err := tx.ExecContext(ctx, d.rebind(
+		"UPDATE users SET totp_enabled = ?, totp_last_step = ?, "+
+			"session_epoch = COALESCE(session_epoch, 0) + 1 "+
+			"WHERE id = ? AND totp_secret = ? AND COALESCE(totp_enabled, ?) = ? "+
+			"AND (totp_last_step IS NULL OR totp_last_step < ?)"),
+		true, step, userID, pendingSecret, false, false, step)
+	if err != nil {
+		return err
+	}
+	if err := requireOneRow(res); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, d.rebind(
@@ -180,6 +203,19 @@ func (d *DB) EnableTOTP(ctx context.Context, userID int64, codeHashes []string) 
 		}
 	}
 	return tx.Commit()
+}
+
+// requireOneRow turns a conditional UPDATE that matched nothing into
+// ErrStateChanged.
+func requireOneRow(res sql.Result) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return ErrStateChanged
+	}
+	return nil
 }
 
 // DisableTOTP clears the secret and every unused recovery code together, and

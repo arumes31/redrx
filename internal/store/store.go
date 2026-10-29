@@ -31,6 +31,10 @@ const (
 // ErrNotFound is returned by lookups that match no row.
 var ErrNotFound = errors.New("store: not found")
 
+// ErrStateChanged is returned by conditional updates when the row no longer
+// matches the state the caller verified, e.g. a concurrent request changed it.
+var ErrStateChanged = errors.New("store: state changed concurrently")
+
 // pyDatetimeLayout is how SQLAlchemy renders DATETIME values into SQLite TEXT.
 // Writing anything else would break ordering comparisons against existing rows,
 // so all SQLite timestamp writes go through it.

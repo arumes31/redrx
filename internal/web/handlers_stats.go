@@ -49,7 +49,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	// A password-protected link's stats page shows its destination and rotation
 	// targets, so serving it without the password would route straight around
 	// the gate on the redirect path. Owners still see their own.
-	if !owner && link.IsPasswordProtected() && !sessionFrom(r).IsLinkAuthorized(link.ShortCode) {
+	if !owner && link.IsPasswordProtected() && !sessionFrom(r).IsLinkAuthorized(link.ShortCode, linkGrant(link)) {
 		http.Redirect(w, r, "/link-auth/"+url.PathEscape(link.ShortCode), http.StatusSeeOther)
 		return
 	}

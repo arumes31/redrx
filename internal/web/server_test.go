@@ -285,12 +285,12 @@ func TestRecoveryCodeCompletesTwoFactorLoginOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encrypt TOTP secret: %v", err)
 	}
-	if err := db.SetTOTPPending(ctx, user.ID, secret); err != nil {
+	if err := db.SetTOTPPending(ctx, user.ID, user.SessionEpoch, secret); err != nil {
 		t.Fatalf("SetTOTPPending: %v", err)
 	}
 	const recovery = "ABCD-EFGH-JKLM"
 	hash := security.RecoveryCodeHash(srv.cfg.SecretKey, recovery)
-	if err := db.EnableTOTP(ctx, user.ID, []string{hash}); err != nil {
+	if err := db.EnableTOTP(ctx, user.ID, secret, 0, []string{hash}); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 
