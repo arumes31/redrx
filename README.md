@@ -13,8 +13,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/actions/workflow/status/arumes31/redirx/docker-build.yml?branch=main&style=for-the-badge&logo=github&color=vibrant" alt="Build Status" />
-  <img src="https://img.shields.io/badge/go-1.26-00ADD8?style=for-the-badge&logo=go" alt="Go Version" />
+  <img src="https://img.shields.io/github/actions/workflow/status/arumes31/redrx/docker-build.yml?branch=main&style=for-the-badge&logo=github&color=vibrant" alt="Build Status" />
+  <img src="https://img.shields.io/badge/go-1.27.3-00ADD8?style=for-the-badge&logo=go" alt="Go Version" />
   <img src="https://img.shields.io/badge/security-gosec%20%7C%20govulncheck-yellow?style=for-the-badge&logo=securityscorecard" alt="Security Scanning" />
   <img src="https://img.shields.io/badge/dependencies-up%20to%20date-brightgreen?style=for-the-badge&logo=dependabot" alt="Dependabot" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License MIT" />
@@ -84,7 +84,7 @@ The destination is re-checked against the blocklist on every request, not only a
 
 ## 🛠️ Tech Stack
 
-*   **Core Backend:** Go 1.26, standard-library `net/http` routing and `html/template` rendering — no web framework
+*   **Core Backend:** Go 1.27.3, standard-library `net/http` routing and `html/template` rendering — no web framework
 *   **Data Processing:** PostgreSQL via `pgx` (robust relational store), Redis (shared rate limiting & geo cache), SQLite via the pure-Go `modernc.org/sqlite` driver (resilient local fallback, no cgo)
 *   **Geo-Location Engine:** MaxMind GeoLite2 country mapping with a Redis-backed lookup cache
 *   **Real-time Metrics:** Integrated Prometheus endpoint handler on `/metrics` (protect it with `METRICS_TOKEN` or a firewall if the app port is reachable)
@@ -176,7 +176,7 @@ instead of changing it to the application user.
 
 ## 💻 Local Development Setup
 
-Requires Go 1.26.5 or newer, the minimum declared by the `go` directive in `go.mod`. Dependencies are pinned in `go.mod` and checksum-verified through `go.sum`.
+Requires Go 1.27.3 or newer, the minimum declared by the `go` directive in `go.mod`. Dependencies are pinned in `go.mod` and checksum-verified through `go.sum`.
 
 ### 1. Build
 
@@ -222,19 +222,39 @@ The suite includes a committed SQLite fixture written by the previous Python app
 |----------|----------|---------|-------------|
 | **Core** | `SECRET_KEY` | - | Strong cryptographic key for session signing and hashing. Enforced in production; documented placeholder values are refused, and keys under 32 characters log a warning. Rotating it logs everyone out and invalidates stored TOTP secrets and recovery codes. |
 | **Core** | `ALLOW_WEAK_SECRET_KEY` | `false` | Escape hatch that lets an existing deployment boot with a placeholder `SECRET_KEY` while it plans a rotation. |
-| **Domain** | `BASE_DOMAIN` | `short.example.com` | Base host string used when formatting shortened URLs. |
+| **Domain & URLs** | `BASE_DOMAIN` | `short.example.com` | Base host string used when formatting shortened URLs. |
+| **Domain & URLs** | `SHORT_CODE_LENGTH` | `6` | Default length of generated random base62 short codes. |
+| **Domain & URLs** | `EXPIRY_HOURS` | `24` | Default link time-to-live in hours when no explicit expiration is provided. |
+| **QR Codes** | `DEFAULT_QR_COLOR` | `black` | Default foreground color for QR codes (color name or hex, e.g. `#000000`). |
+| **QR Codes** | `DEFAULT_QR_BACKGROUND` | `white` | Default background color for QR codes (color name or hex). |
+| **Database** | `DATABASE_URL` | `sqlite:///db/shortener.db` | PostgreSQL URI (e.g. `postgresql://user:pass@host:5432/db`) or SQLite file URI fallback. |
 | **GeoIP** | `MAXMIND_LICENSE_KEY` | - | Required to download the GeoIP dataset and update in background. |
-| **Phishing** | `ENABLE_PHISHING_CHECK` | `true` | Enables domain protection against real-time blacklists. |
-| **Phishing** | `ENABLE_AUTO_REMOVE_PHISHING` | `false` | Automatically removes links that redirect to verified phishing domains. |
-| **Database** | `DATABASE_URL` | - | PostgreSQL URI (e.g. `postgresql://user:pass@host:5432/db`). Defaults to SQLite local file fallback. |
+| **GeoIP** | `GEOIP_DB_PATH` | `GeoLite2-Country.mmdb` | Filesystem path to the MaxMind GeoLite2-Country database file. |
+| **Phishing & Safety** | `ENABLE_PHISHING_CHECK` | `true` | Enables domain protection against real-time blacklists. |
+| **Phishing & Safety** | `ENABLE_AUTO_REMOVE_PHISHING` | `false` | Automatically removes links that redirect to verified phishing domains. |
+| **Phishing & Safety** | `PHISHING_CHECK_INTERVAL` | `24` | Interval in hours between background phishing feed updates. |
+| **Phishing & Safety** | `PHISHING_REMOVE_INTERVAL` | `24` | Interval in hours between background sweeps removing malicious links. |
+| **Phishing & Safety** | `PHISHING_LIST_URLS` | Active Phishing DB URL | Comma-separated list of raw blocklist URLs fetched during phishing checks. |
+| **Phishing & Safety** | `BLOCKED_DOMAINS` | - | Comma-separated list of static domains prohibited from being shortened. |
+| **Phishing & Safety** | `BLOCKED_DOMAINS_PATH` | `/app/data/blocked_domains.txt` | Path to persistent text file storing custom blocked domains. |
 | **Limits** | `RATELIMIT_STORAGE_URL` | `redis://redis:6379` | Rate limiting backend. Can fall back to local storage `memory://` in dev. The compose files build it from `REDIS_PASSWORD`. |
 | **Limits** | `REDIS_PASSWORD` | - | Compose only, required: the password the bundled Redis is started with (`--requirepass`). Keep it URL-safe. |
+| **Limits** | `RATELIMIT_DEFAULT` | `200 per day;50 per hour` | Default rate limit applied across general routes. |
+| **Limits** | `RATELIMIT_CREATE` | `10 per minute` | Rate limit for short link creation requests. |
+| **Limits** | `RATELIMIT_REDIRECT` | `100 per minute` | Rate limit for link redirection visits. |
+| **Limits** | `RATELIMIT_API` | `60 per minute` | Rate limit for REST API endpoints. |
+| **Limits** | `RATELIMIT_AUTH` | `10 per minute` | Rate limit for general authentication endpoints. |
+| **Limits** | `RATELIMIT_LOGIN` | `10 per minute` | Per-IP budget for login attempts. |
 | **Limits** | `RATELIMIT_LOGIN_ACCOUNT` | `20 per hour` | Per-account budget for the password and TOTP login steps, in addition to the per-IP `RATELIMIT_LOGIN`. |
+| **Limits** | `RATELIMIT_REGISTER` | `5 per hour` | Rate limit for new user registrations. |
 | **Access** | `DISABLE_ANONYMOUS_CREATE` | `false` | When true, only authenticated users can shorten links. |
 | **Access** | `DISABLE_REGISTRATION` | `false` | When true, public registration routes are disabled. |
 | **Abuse prevention** | `ANONYMOUS_POW_DIFFICULTY` | `16` | Proof-of-work difficulty for anonymous link creation; `0` disables it, maximum `28`. |
-| **Privacy** | `ENABLE_CONSENT_BANNER` | `false` | Ask visitors for consent before recording anonymous click analytics. |
-| **Privacy** | `HONOR_DO_NOT_TRACK` | `true` | Skip click analytics whenever the browser sends `DNT: 1`. |
+| **Privacy & SEO** | `ENABLE_CONSENT_BANNER` | `false` | Ask visitors for consent before recording anonymous click analytics. |
+| **Privacy & SEO** | `HONOR_DO_NOT_TRACK` | `true` | Skip click analytics whenever the browser sends `DNT: 1`. |
+| **Privacy & SEO** | `ANONYMIZE_LOGS` | `false` | When true, masks client IP addresses in logs. |
+| **Privacy & SEO** | `ENABLE_SEO` | `false` | Enables search engine optimization tags, canonical URLs, and meta headers. |
+| **Privacy & SEO** | `SEO_DOMAIN` | `redrx.eu` | Primary domain name rendered in SEO canonical metadata. |
 | **Proxy** | `TRUSTED_PROXIES` | - | Peers whose `X-Forwarded-*` / `CF-*` headers are believed (IPs or CIDRs, comma separated; `*` for any). Empty means the headers are ignored. |
 | **Proxy** | `USE_CLOUDFLARE` | `false` | Trust `CF-Connecting-IP` from a trusted proxy. Required for correct client IPs behind Cloudflare. |
 | **Server** | `LISTEN_ADDR` | `:5000` | Address the HTTP server binds to. |
