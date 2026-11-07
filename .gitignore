@@ -3,6 +3,9 @@ TODO.md
 temp/
 blocked_domains.txt
 graphify-out/
+docs/
+.stfolder/
+.stignore
 
 .claudeignore
 
