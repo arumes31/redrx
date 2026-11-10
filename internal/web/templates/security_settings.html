@@ -51,6 +51,7 @@
             {{else}}
             <form action="/settings/totp/start" method="POST" class="mt-4">
                 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <div class="mb-3"><label class="form-label" for="start_password">Confirm your password to set up an authenticator</label><input class="form-control" id="start_password" name="password" type="password" autocomplete="current-password" required></div>
                 <button class="btn btn-shorten" type="submit">Set up authenticator</button>
             </form>
             {{end}}

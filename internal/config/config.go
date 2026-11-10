@@ -64,6 +64,9 @@ type Config struct {
 
 	// MetricsToken, when set, is the bearer token /metrics requires.
 	MetricsToken string
+	// MetricsPublic serves /metrics without a token. Off by default: without a
+	// token or this opt-in, /metrics answers 403.
+	MetricsPublic bool
 
 	Listen string
 
@@ -242,7 +245,8 @@ func Load() (*Config, error) {
 		RateLimitCreate:       env("RATELIMIT_CREATE", "10 per minute"),
 		RateLimitRedirect:     env("RATELIMIT_REDIRECT", "100 per minute"),
 
-		MetricsToken: env("METRICS_TOKEN", ""),
+		MetricsToken:  env("METRICS_TOKEN", ""),
+		MetricsPublic: envBool("METRICS_PUBLIC", false),
 
 		Listen: env("LISTEN_ADDR", ":5000"),
 	}

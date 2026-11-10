@@ -603,9 +603,23 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, newAPIK
 	s.render(w, r, http.StatusOK, "dashboard.html", data)
 }
 
+// handleRegenerateAPIKey replaces the account's API key after reauthentication
+// and shows the new plaintext key exactly once.
 func (s *Server) handleRegenerateAPIKey(w http.ResponseWriter, r *http.Request) {
 	user := userFrom(r)
 	sess := sessionFrom(r)
+
+	// The API key is a long-lived bearer credential that outlives logout and
+	// session revocation, so minting one needs the password (and second factor)
+	// rather than just a session cookie.
+	switch s.reauthenticate(w, r, user.ID) {
+	case reauthOK:
+	case reauthFailed:
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		return
+	default:
+		return
+	}
 
 	key := uuid.NewString()
 	if err := s.db.SetAPIKey(r.Context(), user.ID, key); err != nil {
