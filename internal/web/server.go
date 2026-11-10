@@ -270,16 +270,25 @@ func newMetrics(reg *prometheus.Registry) *metrics {
 	return m
 }
 
+// handleMetrics serves the Prometheus registry to authorized scrapers.
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	// With METRICS_TOKEN set, scrapes must present it as a bearer token. It is
-	// optional so existing unauthenticated scrape configs keep working.
-	if token := s.cfg.MetricsToken; token != "" {
+	// With METRICS_TOKEN set, scrapes must present it as a bearer token. The
+	// endpoint discloses traffic and process telemetry, so without a token it
+	// is closed unless the operator explicitly opts in with METRICS_PUBLIC
+	// (for a port that only the scraper can reach). The peer address cannot
+	// tell a direct scrape from a reverse proxy relaying a public request, so
+	// it is not used as a substitute for the token.
+	switch token := s.cfg.MetricsToken; {
+	case token != "":
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !ok || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(got)), []byte(token)) != 1 {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+	case !s.cfg.MetricsPublic:
+		http.Error(w, "Forbidden: set METRICS_TOKEN (or METRICS_PUBLIC=true) to enable metrics", http.StatusForbidden)
+		return
 	}
 	promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{}).ServeHTTP(w, r)
 }

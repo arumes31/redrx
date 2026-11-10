@@ -185,7 +185,7 @@ func TestAPIKeysAreStoredHashedAndShownOnce(t *testing.T) {
 	page := getWithCookie(t, srv, "/dashboard", cookie)
 	cookie = sessionCookieOr(page.Result(), cookie)
 	rec := postForm(t, srv, "/regenerate-api-key", cookie,
-		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}}, "")
+		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}, "password": {"alice-password"}}, "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("regenerate = %d, want 200 with the new key", rec.Code)
 	}
@@ -246,7 +246,7 @@ func TestEnablingTOTPKeepsCurrentSessionOnly(t *testing.T) {
 	page := getWithCookie(t, srv, "/settings/security", current)
 	current = sessionCookieOr(page.Result(), current)
 	rec := postForm(t, srv, "/settings/totp/start", current,
-		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}}, "")
+		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}, "password": {"alice-password"}}, "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start TOTP = %d, want 200", rec.Code)
 	}
@@ -275,5 +275,144 @@ func TestEnablingTOTPKeepsCurrentSessionOnly(t *testing.T) {
 	}
 	if code := getWithCookie(t, srv, "/dashboard", other).Code; code != http.StatusSeeOther {
 		t.Errorf("another session survived enabling 2FA (%d)", code)
+	}
+}
+
+// TestRegeneratingAPIKeyRequiresPassword checks that a session cookie alone
+// cannot mint a new API key, which would outlive every session revocation.
+func TestRegeneratingAPIKeyRequiresPassword(t *testing.T) {
+	srv, db := newTestServer(t)
+	ctx := context.Background()
+	before, err := db.UserByLogin(ctx, "alice")
+	if err != nil {
+		t.Fatalf("load fixture user: %v", err)
+	}
+
+	cookie := login(t, srv, "alice", "alice-password")
+	for _, password := range []string{"", "wrong-password"} {
+		page := getWithCookie(t, srv, "/dashboard", cookie)
+		cookie = sessionCookieOr(page.Result(), cookie)
+		rec := postForm(t, srv, "/regenerate-api-key", cookie,
+			url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}, "password": {password}}, "")
+		if rec.Code != http.StatusSeeOther {
+			t.Errorf("regenerate with password %q = %d, want 303", password, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), `id="apiKeyValue"`) {
+			t.Errorf("a key was disclosed with password %q", password)
+		}
+		cookie = sessionCookieOr(rec.Result(), cookie)
+	}
+	after, err := db.UserByLogin(ctx, "alice")
+	if err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if after.APIKey != before.APIKey {
+		t.Error("the API key was replaced without the password")
+	}
+	if code := apiGet(t, srv, "/api/v1/ABC123", legacyAPIKey); code != http.StatusOK {
+		t.Errorf("the existing key stopped working (%d)", code)
+	}
+}
+
+// TestTOTPEnrollmentRequiresPassword checks that a session cookie alone cannot
+// bind an authenticator, which would lock the owner out of the account.
+func TestTOTPEnrollmentRequiresPassword(t *testing.T) {
+	srv, db := newTestServer(t)
+	cookie := login(t, srv, "alice", "alice-password")
+	page := getWithCookie(t, srv, "/settings/security", cookie)
+	cookie = sessionCookieOr(page.Result(), cookie)
+
+	rec := postForm(t, srv, "/settings/totp/start", cookie,
+		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}, "password": {"wrong-password"}}, "")
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("start TOTP with a wrong password = %d, want 303", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "user-select-all") {
+		t.Error("the enrollment secret was disclosed without the password")
+	}
+	user, err := db.UserByLogin(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if user.TOTPSecret != "" {
+		t.Error("a pending TOTP secret was stored without the password")
+	}
+}
+
+// TestMetricsAreClosedWithoutTokenOrOptIn checks that /metrics is not served
+// anonymously by default, whatever the peer address or forwarding headers,
+// and that METRICS_PUBLIC restores anonymous access.
+func TestMetricsAreClosedWithoutTokenOrOptIn(t *testing.T) {
+	closed, _ := newTestServer(t)
+	public, _ := newTestServer(t, func(c *config.Config) { c.MetricsPublic = true })
+
+	for _, remoteAddr := range []string{"127.0.0.1:9000", "172.18.0.5:9000", "203.0.113.7:9000"} {
+		for _, tc := range []struct {
+			srv  *Server
+			want int
+		}{{closed, http.StatusForbidden}, {public, http.StatusOK}} {
+			req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+			req.RemoteAddr = remoteAddr
+			rec := httptest.NewRecorder()
+			tc.srv.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Errorf("GET /metrics from %s (public=%v) = %d, want %d",
+					remoteAddr, tc.srv == public, rec.Code, tc.want)
+			}
+		}
+	}
+}
+
+// TestRegeneratingAPIKeyRequiresSecondFactorWhenEnabled checks that, once 2FA
+// is on, the password alone no longer mints an API key.
+func TestRegeneratingAPIKeyRequiresSecondFactorWhenEnabled(t *testing.T) {
+	srv, _ := newTestServer(t)
+	cookie := login(t, srv, "alice", "alice-password")
+
+	page := getWithCookie(t, srv, "/settings/security", cookie)
+	cookie = sessionCookieOr(page.Result(), cookie)
+	rec := postForm(t, srv, "/settings/totp/start", cookie,
+		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}, "password": {"alice-password"}}, "")
+	cookie = sessionCookieOr(rec.Result(), cookie)
+	body := rec.Body.String()
+	const marker = `user-select-all">`
+	i := strings.Index(body, marker)
+	if i < 0 {
+		t.Fatalf("no manual setup code on the enrollment page (%d)", rec.Code)
+	}
+	secret, _, _ := strings.Cut(body[i+len(marker):], "<")
+	code, err := totp.GenerateCode(secret, time.Now())
+	if err != nil {
+		t.Fatalf("generate code: %v", err)
+	}
+	rec = postForm(t, srv, "/settings/totp/confirm", cookie,
+		url.Values{"code": {code}, "csrf_token": {extractCSRF(t, body)}}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("confirm TOTP = %d", rec.Code)
+	}
+	cookie = sessionCookieOr(rec.Result(), cookie)
+
+	regenerate := func(form url.Values) *httptest.ResponseRecorder {
+		t.Helper()
+		page := getWithCookie(t, srv, "/dashboard", cookie)
+		cookie = sessionCookieOr(page.Result(), cookie)
+		form.Set("csrf_token", extractCSRF(t, page.Body.String()))
+		rec := postForm(t, srv, "/regenerate-api-key", cookie, form, "")
+		cookie = sessionCookieOr(rec.Result(), cookie)
+		return rec
+	}
+
+	if rec := regenerate(url.Values{"password": {"alice-password"}}); rec.Code != http.StatusSeeOther ||
+		strings.Contains(rec.Body.String(), `id="apiKeyValue"`) {
+		t.Fatalf("regenerate without a code = %d, want 303 and no key", rec.Code)
+	}
+	// The enrollment step is spent; the next step is inside the accepted window.
+	next, err := totp.GenerateCode(secret, time.Now().Add(30*time.Second))
+	if err != nil {
+		t.Fatalf("generate code: %v", err)
+	}
+	if rec := regenerate(url.Values{"password": {"alice-password"}, "code": {next}}); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `id="apiKeyValue"`) {
+		t.Fatalf("regenerate with password and code = %d, want 200 with a key", rec.Code)
 	}
 }
