@@ -224,13 +224,12 @@ func TestLinkPasswordGrantDoesNotCarryToReusedCode(t *testing.T) {
 }
 
 func TestMetricsMethodLabelIsBounded(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _ := newTestServer(t, func(c *config.Config) { c.MetricsPublic = true })
 	req := httptest.NewRequest("BREWCOFFEE", "/ABC123", nil)
 	req.Host = "short.example.com"
 	srv.ServeHTTP(httptest.NewRecorder(), req)
 
 	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	metricsReq.RemoteAddr = "127.0.0.1:9000"
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, metricsReq)
 	body, err := io.ReadAll(rec.Body)

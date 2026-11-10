@@ -339,31 +339,80 @@ func TestTOTPEnrollmentRequiresPassword(t *testing.T) {
 	}
 }
 
-func TestMetricsWithoutTokenServeOnlyDirectInternalScrapes(t *testing.T) {
-	srv, _ := newTestServer(t)
+// TestMetricsAreClosedWithoutTokenOrOptIn checks that /metrics is not served
+// anonymously by default, whatever the peer address or forwarding headers,
+// and that METRICS_PUBLIC restores anonymous access.
+func TestMetricsAreClosedWithoutTokenOrOptIn(t *testing.T) {
+	closed, _ := newTestServer(t)
+	public, _ := newTestServer(t, func(c *config.Config) { c.MetricsPublic = true })
 
-	cases := []struct {
-		name       string
-		remoteAddr string
-		header     string
-		want       int
-	}{
-		{"loopback", "127.0.0.1:9000", "", http.StatusOK},
-		{"docker network", "172.18.0.5:9000", "", http.StatusOK},
-		{"ipv6 loopback", "[::1]:9000", "", http.StatusOK},
-		{"public client", "203.0.113.7:9000", "", http.StatusForbidden},
-		{"through a reverse proxy", "172.18.0.2:9000", "203.0.113.7", http.StatusForbidden},
+	for _, remoteAddr := range []string{"127.0.0.1:9000", "172.18.0.5:9000", "203.0.113.7:9000"} {
+		for _, tc := range []struct {
+			srv  *Server
+			want int
+		}{{closed, http.StatusForbidden}, {public, http.StatusOK}} {
+			req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+			req.RemoteAddr = remoteAddr
+			rec := httptest.NewRecorder()
+			tc.srv.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Errorf("GET /metrics from %s (public=%v) = %d, want %d",
+					remoteAddr, tc.srv == public, rec.Code, tc.want)
+			}
+		}
 	}
-	for _, tc := range cases {
-		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-		req.RemoteAddr = tc.remoteAddr
-		if tc.header != "" {
-			req.Header.Set("X-Forwarded-For", tc.header)
-		}
-		rec := httptest.NewRecorder()
-		srv.ServeHTTP(rec, req)
-		if rec.Code != tc.want {
-			t.Errorf("%s: GET /metrics = %d, want %d", tc.name, rec.Code, tc.want)
-		}
+}
+
+// TestRegeneratingAPIKeyRequiresSecondFactorWhenEnabled checks that, once 2FA
+// is on, the password alone no longer mints an API key.
+func TestRegeneratingAPIKeyRequiresSecondFactorWhenEnabled(t *testing.T) {
+	srv, _ := newTestServer(t)
+	cookie := login(t, srv, "alice", "alice-password")
+
+	page := getWithCookie(t, srv, "/settings/security", cookie)
+	cookie = sessionCookieOr(page.Result(), cookie)
+	rec := postForm(t, srv, "/settings/totp/start", cookie,
+		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}, "password": {"alice-password"}}, "")
+	cookie = sessionCookieOr(rec.Result(), cookie)
+	body := rec.Body.String()
+	const marker = `user-select-all">`
+	i := strings.Index(body, marker)
+	if i < 0 {
+		t.Fatalf("no manual setup code on the enrollment page (%d)", rec.Code)
+	}
+	secret, _, _ := strings.Cut(body[i+len(marker):], "<")
+	code, err := totp.GenerateCode(secret, time.Now())
+	if err != nil {
+		t.Fatalf("generate code: %v", err)
+	}
+	rec = postForm(t, srv, "/settings/totp/confirm", cookie,
+		url.Values{"code": {code}, "csrf_token": {extractCSRF(t, body)}}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("confirm TOTP = %d", rec.Code)
+	}
+	cookie = sessionCookieOr(rec.Result(), cookie)
+
+	regenerate := func(form url.Values) *httptest.ResponseRecorder {
+		t.Helper()
+		page := getWithCookie(t, srv, "/dashboard", cookie)
+		cookie = sessionCookieOr(page.Result(), cookie)
+		form.Set("csrf_token", extractCSRF(t, page.Body.String()))
+		rec := postForm(t, srv, "/regenerate-api-key", cookie, form, "")
+		cookie = sessionCookieOr(rec.Result(), cookie)
+		return rec
+	}
+
+	if rec := regenerate(url.Values{"password": {"alice-password"}}); rec.Code != http.StatusSeeOther ||
+		strings.Contains(rec.Body.String(), `id="apiKeyValue"`) {
+		t.Fatalf("regenerate without a code = %d, want 303 and no key", rec.Code)
+	}
+	// The enrollment step is spent; the next step is inside the accepted window.
+	next, err := totp.GenerateCode(secret, time.Now().Add(30*time.Second))
+	if err != nil {
+		t.Fatalf("generate code: %v", err)
+	}
+	if rec := regenerate(url.Values{"password": {"alice-password"}, "code": {next}}); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `id="apiKeyValue"`) {
+		t.Fatalf("regenerate with password and code = %d, want 200 with a key", rec.Code)
 	}
 }

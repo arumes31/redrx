@@ -6,9 +6,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/netip"
 	"strings"
 	"time"
 
@@ -272,48 +270,27 @@ func newMetrics(reg *prometheus.Registry) *metrics {
 	return m
 }
 
+// handleMetrics serves the Prometheus registry to authorized scrapers.
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	// With METRICS_TOKEN set, scrapes must present it as a bearer token from
-	// anywhere. Without one, only a scraper on the same host or private network
-	// talking to the app directly is served: the endpoint discloses traffic and
-	// process telemetry, and it used to be public by default.
-	if token := s.cfg.MetricsToken; token != "" {
+	// With METRICS_TOKEN set, scrapes must present it as a bearer token. The
+	// endpoint discloses traffic and process telemetry, so without a token it
+	// is closed unless the operator explicitly opts in with METRICS_PUBLIC
+	// (for a port that only the scraper can reach). The peer address cannot
+	// tell a direct scrape from a reverse proxy relaying a public request, so
+	// it is not used as a substitute for the token.
+	switch token := s.cfg.MetricsToken; {
+	case token != "":
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !ok || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(got)), []byte(token)) != 1 {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-	} else if !isInternalScrape(r) {
-		http.Error(w, "Forbidden: set METRICS_TOKEN to scrape metrics from outside the private network", http.StatusForbidden)
+	case !s.cfg.MetricsPublic:
+		http.Error(w, "Forbidden: set METRICS_TOKEN (or METRICS_PUBLIC=true) to enable metrics", http.StatusForbidden)
 		return
 	}
 	promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{}).ServeHTTP(w, r)
-}
-
-// forwardingHeaders mark a request that reached the app through a reverse
-// proxy. The peer address of such a request is the proxy's, which is usually
-// on a private network even when the visitor is not.
-var forwardingHeaders = []string{"X-Forwarded-For", "Forwarded", "X-Real-IP", "CF-Connecting-IP", "True-Client-IP"}
-
-// isInternalScrape reports whether r came straight from a loopback, private or
-// link-local address without passing through a proxy.
-func isInternalScrape(r *http.Request) bool {
-	for _, h := range forwardingHeaders {
-		if r.Header.Get(h) != "" {
-			return false
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	addr, err := netip.ParseAddr(host)
-	if err != nil {
-		return false
-	}
-	addr = addr.Unmap()
-	return addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast()
 }
 
 // handleHealth reports database and rate-limit backend health.

@@ -603,6 +603,8 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, newAPIK
 	s.render(w, r, http.StatusOK, "dashboard.html", data)
 }
 
+// handleRegenerateAPIKey replaces the account's API key after reauthentication
+// and shows the new plaintext key exactly once.
 func (s *Server) handleRegenerateAPIKey(w http.ResponseWriter, r *http.Request) {
 	user := userFrom(r)
 	sess := sessionFrom(r)

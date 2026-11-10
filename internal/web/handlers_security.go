@@ -95,6 +95,8 @@ func (s *Server) handleSecuritySettings(w http.ResponseWriter, r *http.Request) 
 	s.render(w, r, http.StatusOK, "security_settings.html", data)
 }
 
+// handleTOTPStart begins authenticator enrollment after reauthentication: it
+// stores a pending encrypted secret and shows its QR code and manual code.
 func (s *Server) handleTOTPStart(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	user := userFrom(r)
@@ -218,6 +220,8 @@ func (s *Server) handleTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "security_settings.html", data)
 }
 
+// handleTOTPDisable removes the second factor after reauthentication with the
+// password and a current authenticator or recovery code.
 func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	user, err := s.db.UserByID(r.Context(), userFrom(r).ID)

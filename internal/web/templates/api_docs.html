@@ -235,7 +235,7 @@
                             </ul>
 <pre class="m-0 p-3 text-light bg-dark rounded mt-2" style="overflow-x: auto;"><code># Example Usage:
 curl -H "Authorization: Bearer $METRICS_TOKEN" https://{{.Config.CanonicalHost}}/metrics</code></pre>
-                            <p class="small text-muted mt-2 mb-0">Without <code>METRICS_TOKEN</code> configured, only direct scrapes from loopback or private-network addresses are answered.</p>
+                            <p class="small text-muted mt-2 mb-0">Without <code>METRICS_TOKEN</code> configured, the endpoint returns 403 unless the operator set <code>METRICS_PUBLIC=true</code>.</p>
                         </div>
                     </div>
 

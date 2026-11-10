@@ -87,7 +87,7 @@ The destination is re-checked against the blocklist on every request, not only a
 *   **Core Backend:** Go 1.27.3, standard-library `net/http` routing and `html/template` rendering — no web framework
 *   **Data Processing:** PostgreSQL via `pgx` (robust relational store), Redis (shared rate limiting & geo cache), SQLite via the pure-Go `modernc.org/sqlite` driver (resilient local fallback, no cgo)
 *   **Geo-Location Engine:** MaxMind GeoLite2 country mapping with a Redis-backed lookup cache
-*   **Real-time Metrics:** Integrated Prometheus endpoint handler on `/metrics` (served only to direct private-network scrapers unless `METRICS_TOKEN` is set)
+*   **Real-time Metrics:** Integrated Prometheus endpoint handler on `/metrics` (requires `METRICS_TOKEN`, or the explicit `METRICS_PUBLIC=true` opt-in)
 *   **Modern Frontend:** HTML5, CSS3 (Bootstrap 5 Dark Mode theme), custom Canvas API backdrop animations, all embedded into the binary
 
 ### Project Layout
@@ -258,7 +258,8 @@ The suite includes a committed SQLite fixture written by the previous Python app
 | **Proxy** | `TRUSTED_PROXIES` | - | Peers whose `X-Forwarded-*` / `CF-*` headers are believed (IPs or CIDRs, comma separated; `*` for any). Empty means the headers are ignored. |
 | **Proxy** | `USE_CLOUDFLARE` | `false` | Trust `CF-Connecting-IP` from a trusted proxy. Required for correct client IPs behind Cloudflare. |
 | **Server** | `LISTEN_ADDR` | `:5000` | Address the HTTP server binds to. |
-| **Server** | `METRICS_TOKEN` | - | When set, `/metrics` requires `Authorization: Bearer <token>`. Unset, `/metrics` only answers direct scrapes from loopback or private-network addresses (requests carrying `X-Forwarded-For` or similar proxy headers get `403`), so set a token to scrape through a reverse proxy or from a public address. |
+| **Server** | `METRICS_TOKEN` | - | When set, `/metrics` requires `Authorization: Bearer <token>`. Unset, `/metrics` returns `403` unless `METRICS_PUBLIC=true`. |
+| **Server** | `METRICS_PUBLIC` | `false` | Serve `/metrics` without a token. Only enable it when the app port is reachable by nothing but your scraper. Ignored when `METRICS_TOKEN` is set. |
 | **Server** | `REDRX_DEBUG` | `false` | Development mode. Relaxes the canonical-domain redirect and allows a fallback `SECRET_KEY`. |
 
 ### Running behind a reverse proxy
