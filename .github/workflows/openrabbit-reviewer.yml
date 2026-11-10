@@ -2,20 +2,21 @@ name: OpenRabbit Reviewer
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review, edited]
 
 permissions:
   contents: read
 
 concurrency:
-  group: openrabbit-${{ github.event.pull_request.number }}
+  # Title/body edits get their own group so they never cancel a running review.
+  group: openrabbit-${{ github.event.pull_request.number }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: true
 
 jobs:
   review:
     name: OpenRabbit (advisory)
-    # Skip Dependabot bumps and drafts; review once the PR is ready.
-    if: github.event.pull_request.user.login != 'dependabot[bot]' && !github.event.pull_request.draft
+    # Skip Dependabot bumps, drafts and title/body-only edits (base-branch changes still review).
+    if: github.event.pull_request.user.login != 'dependabot[bot]' && !github.event.pull_request.draft && (github.event.action != 'edited' || github.event.changes.base)
     permissions:
       contents: read
       # Required only for posting COMMENT reviews and inline suggestions via the API.
