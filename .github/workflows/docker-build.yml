@@ -3,6 +3,11 @@ name: Build and Publish Image
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
   workflow_dispatch:
 
 # Actions are pinned to full commit SHAs; see security-analysis.yml for why.

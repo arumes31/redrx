@@ -2,6 +2,12 @@ name: strix-penetration-test
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
   workflow_dispatch:
 
 # Read-only by default; only the comment job below gets a write scope.
@@ -15,7 +21,8 @@ concurrency:
 jobs:
   security-scan:
     name: Strix (advisory)
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Skip forks, drafts and Dependabot bumps (dependency-only diffs).
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 90

@@ -1,10 +1,12 @@
 name: Security Analysis
 
 on:
+  # Kept on every change (no path filter): this workflow holds the Gitleaks
+  # job, and main has no branch protection, so direct pushes need it too.
   push:
-    branches: [ "main", "v2_test", "v2.0.0", "v2.2" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "v2_test", "v2.0.0", "v2.2" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 # Every action is pinned to a full commit SHA. A tag — even a major one like
@@ -16,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
