@@ -127,7 +127,7 @@ func TestPublicPagesRender(t *testing.T) {
 		{"/robots.txt", http.StatusOK},
 		{"/sitemap.xml", http.StatusOK},
 		{"/health", http.StatusOK},
-		{"/metrics", http.StatusOK},
+		{"/metrics", http.StatusForbidden}, // public client, no METRICS_TOKEN
 		{"/static/css/style.css", http.StatusOK},
 		{"/NOSUCHCODE", http.StatusNotFound},
 		{"/dashboard", http.StatusSeeOther}, // redirected to login

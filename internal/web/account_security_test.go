@@ -185,7 +185,7 @@ func TestAPIKeysAreStoredHashedAndShownOnce(t *testing.T) {
 	page := getWithCookie(t, srv, "/dashboard", cookie)
 	cookie = sessionCookieOr(page.Result(), cookie)
 	rec := postForm(t, srv, "/regenerate-api-key", cookie,
-		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}}, "")
+		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}, "password": {"alice-password"}}, "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("regenerate = %d, want 200 with the new key", rec.Code)
 	}
@@ -246,7 +246,7 @@ func TestEnablingTOTPKeepsCurrentSessionOnly(t *testing.T) {
 	page := getWithCookie(t, srv, "/settings/security", current)
 	current = sessionCookieOr(page.Result(), current)
 	rec := postForm(t, srv, "/settings/totp/start", current,
-		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}}, "")
+		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}, "password": {"alice-password"}}, "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start TOTP = %d, want 200", rec.Code)
 	}
@@ -275,5 +275,95 @@ func TestEnablingTOTPKeepsCurrentSessionOnly(t *testing.T) {
 	}
 	if code := getWithCookie(t, srv, "/dashboard", other).Code; code != http.StatusSeeOther {
 		t.Errorf("another session survived enabling 2FA (%d)", code)
+	}
+}
+
+// TestRegeneratingAPIKeyRequiresPassword checks that a session cookie alone
+// cannot mint a new API key, which would outlive every session revocation.
+func TestRegeneratingAPIKeyRequiresPassword(t *testing.T) {
+	srv, db := newTestServer(t)
+	ctx := context.Background()
+	before, err := db.UserByLogin(ctx, "alice")
+	if err != nil {
+		t.Fatalf("load fixture user: %v", err)
+	}
+
+	cookie := login(t, srv, "alice", "alice-password")
+	for _, password := range []string{"", "wrong-password"} {
+		page := getWithCookie(t, srv, "/dashboard", cookie)
+		cookie = sessionCookieOr(page.Result(), cookie)
+		rec := postForm(t, srv, "/regenerate-api-key", cookie,
+			url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}, "password": {password}}, "")
+		if rec.Code != http.StatusSeeOther {
+			t.Errorf("regenerate with password %q = %d, want 303", password, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), `id="apiKeyValue"`) {
+			t.Errorf("a key was disclosed with password %q", password)
+		}
+		cookie = sessionCookieOr(rec.Result(), cookie)
+	}
+	after, err := db.UserByLogin(ctx, "alice")
+	if err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if after.APIKey != before.APIKey {
+		t.Error("the API key was replaced without the password")
+	}
+	if code := apiGet(t, srv, "/api/v1/ABC123", legacyAPIKey); code != http.StatusOK {
+		t.Errorf("the existing key stopped working (%d)", code)
+	}
+}
+
+// TestTOTPEnrollmentRequiresPassword checks that a session cookie alone cannot
+// bind an authenticator, which would lock the owner out of the account.
+func TestTOTPEnrollmentRequiresPassword(t *testing.T) {
+	srv, db := newTestServer(t)
+	cookie := login(t, srv, "alice", "alice-password")
+	page := getWithCookie(t, srv, "/settings/security", cookie)
+	cookie = sessionCookieOr(page.Result(), cookie)
+
+	rec := postForm(t, srv, "/settings/totp/start", cookie,
+		url.Values{"csrf_token": {extractCSRF(t, page.Body.String())}, "password": {"wrong-password"}}, "")
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("start TOTP with a wrong password = %d, want 303", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "user-select-all") {
+		t.Error("the enrollment secret was disclosed without the password")
+	}
+	user, err := db.UserByLogin(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if user.TOTPSecret != "" {
+		t.Error("a pending TOTP secret was stored without the password")
+	}
+}
+
+func TestMetricsWithoutTokenServeOnlyDirectInternalScrapes(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	cases := []struct {
+		name       string
+		remoteAddr string
+		header     string
+		want       int
+	}{
+		{"loopback", "127.0.0.1:9000", "", http.StatusOK},
+		{"docker network", "172.18.0.5:9000", "", http.StatusOK},
+		{"ipv6 loopback", "[::1]:9000", "", http.StatusOK},
+		{"public client", "203.0.113.7:9000", "", http.StatusForbidden},
+		{"through a reverse proxy", "172.18.0.2:9000", "203.0.113.7", http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.RemoteAddr = tc.remoteAddr
+		if tc.header != "" {
+			req.Header.Set("X-Forwarded-For", tc.header)
+		}
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != tc.want {
+			t.Errorf("%s: GET /metrics = %d, want %d", tc.name, rec.Code, tc.want)
+		}
 	}
 }

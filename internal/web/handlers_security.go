@@ -103,6 +103,18 @@ func (s *Server) handleTOTPStart(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
+	// Enrolling a factor locks every other session out and decides who can sign
+	// in from now on, so a session cookie alone is not enough: whoever holds a
+	// stolen cookie could otherwise bind their own authenticator and take the
+	// account from its owner.
+	switch s.reauthenticate(w, r, user.ID) {
+	case reauthOK:
+	case reauthFailed:
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	default:
+		return
+	}
 	issuer := s.totpIssuer()
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer: issuer, AccountName: user.Email, Period: 30,
@@ -213,20 +225,16 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
-	if !security.CheckPasswordHash(user.PasswordHash, r.PostFormValue("password")) {
-		sessionFrom(r).AddFlash("danger", "The password was incorrect.")
+	if !user.TOTPEnabled {
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
-	valid, err := s.validateSecondFactor(r, user, r.PostFormValue("code"))
-	if err != nil {
-		s.log.Error("validate factor while disabling TOTP", "error", err)
-		s.renderError(w, r, http.StatusInternalServerError)
-		return
-	}
-	if !valid {
-		sessionFrom(r).AddFlash("danger", "The authenticator or recovery code was invalid.")
+	switch s.reauthenticate(w, r, user.ID) {
+	case reauthOK:
+	case reauthFailed:
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	default:
 		return
 	}
 	if err := s.db.DisableTOTP(r.Context(), user.ID); err != nil {
@@ -239,6 +247,56 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionFrom(r).AddFlash("success", "Two-factor authentication disabled.")
 	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+}
+
+// reauthResult is the outcome of reauthenticate.
+type reauthResult int
+
+const (
+	// reauthOK means the caller proved the account credentials.
+	reauthOK reauthResult = iota
+	// reauthFailed means the proof was wrong; a flash explains why and the
+	// caller decides where to send the user.
+	reauthFailed
+	// reauthHandled means a response (429 or 500) was already written.
+	reauthHandled
+)
+
+// reauthenticate demands fresh proof of the account's credentials before a
+// sensitive change: the current password and, when two-factor authentication
+// is enabled, a single-use authenticator or recovery code. A session cookie is
+// a bearer token that can be stolen or left behind on a shared machine, so it
+// must not by itself be enough to mint new long-lived credentials. Attempts are
+// also counted per account, so guessing the password from many addresses runs
+// into the same ceiling as the login form.
+func (s *Server) reauthenticate(w http.ResponseWriter, r *http.Request, userID int64) reauthResult {
+	if !s.allowAccount(w, r, "reauth_account", strconv.FormatInt(userID, 10)) {
+		return reauthHandled
+	}
+	user, err := s.db.UserByID(r.Context(), userID)
+	if err != nil {
+		s.log.Error("load user for reauthentication", "user", userID, "error", err)
+		s.renderError(w, r, http.StatusInternalServerError)
+		return reauthHandled
+	}
+	if !security.CheckPasswordHash(user.PasswordHash, r.PostFormValue("password")) {
+		sessionFrom(r).AddFlash("danger", "The password was incorrect.")
+		return reauthFailed
+	}
+	if !user.TOTPEnabled {
+		return reauthOK
+	}
+	valid, err := s.validateSecondFactor(r, user, r.PostFormValue("code"))
+	if err != nil {
+		s.log.Error("validate second factor for reauthentication", "user", userID, "error", err)
+		s.renderError(w, r, http.StatusInternalServerError)
+		return reauthHandled
+	}
+	if !valid {
+		sessionFrom(r).AddFlash("danger", "The authenticator or recovery code was invalid.")
+		return reauthFailed
+	}
+	return reauthOK
 }
 
 // relogin re-reads the user's session epoch after an action that bumped it, so

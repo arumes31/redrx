@@ -87,7 +87,7 @@ The destination is re-checked against the blocklist on every request, not only a
 *   **Core Backend:** Go 1.27.3, standard-library `net/http` routing and `html/template` rendering — no web framework
 *   **Data Processing:** PostgreSQL via `pgx` (robust relational store), Redis (shared rate limiting & geo cache), SQLite via the pure-Go `modernc.org/sqlite` driver (resilient local fallback, no cgo)
 *   **Geo-Location Engine:** MaxMind GeoLite2 country mapping with a Redis-backed lookup cache
-*   **Real-time Metrics:** Integrated Prometheus endpoint handler on `/metrics` (protect it with `METRICS_TOKEN` or a firewall if the app port is reachable)
+*   **Real-time Metrics:** Integrated Prometheus endpoint handler on `/metrics` (served only to direct private-network scrapers unless `METRICS_TOKEN` is set)
 *   **Modern Frontend:** HTML5, CSS3 (Bootstrap 5 Dark Mode theme), custom Canvas API backdrop animations, all embedded into the binary
 
 ### Project Layout
@@ -245,7 +245,7 @@ The suite includes a committed SQLite fixture written by the previous Python app
 | **Limits** | `RATELIMIT_API` | `60 per minute` | Rate limit for REST API endpoints. |
 | **Limits** | `RATELIMIT_AUTH` | `10 per minute` | Rate limit for general authentication endpoints. |
 | **Limits** | `RATELIMIT_LOGIN` | `10 per minute` | Per-IP budget for login attempts. |
-| **Limits** | `RATELIMIT_LOGIN_ACCOUNT` | `20 per hour` | Per-account budget for the password and TOTP login steps, in addition to the per-IP `RATELIMIT_LOGIN`. |
+| **Limits** | `RATELIMIT_LOGIN_ACCOUNT` | `20 per hour` | Per-account budget for the password and TOTP login steps, and for the password re-checks on API-key regeneration and 2FA setup/removal, in addition to the per-IP limits. |
 | **Limits** | `RATELIMIT_REGISTER` | `5 per hour` | Rate limit for new user registrations. |
 | **Access** | `DISABLE_ANONYMOUS_CREATE` | `false` | When true, only authenticated users can shorten links. |
 | **Access** | `DISABLE_REGISTRATION` | `false` | When true, public registration routes are disabled. |
@@ -258,7 +258,7 @@ The suite includes a committed SQLite fixture written by the previous Python app
 | **Proxy** | `TRUSTED_PROXIES` | - | Peers whose `X-Forwarded-*` / `CF-*` headers are believed (IPs or CIDRs, comma separated; `*` for any). Empty means the headers are ignored. |
 | **Proxy** | `USE_CLOUDFLARE` | `false` | Trust `CF-Connecting-IP` from a trusted proxy. Required for correct client IPs behind Cloudflare. |
 | **Server** | `LISTEN_ADDR` | `:5000` | Address the HTTP server binds to. |
-| **Server** | `METRICS_TOKEN` | - | When set, `/metrics` requires `Authorization: Bearer <token>`. Unset leaves it public. |
+| **Server** | `METRICS_TOKEN` | - | When set, `/metrics` requires `Authorization: Bearer <token>`. Unset, `/metrics` only answers direct scrapes from loopback or private-network addresses (requests carrying `X-Forwarded-For` or similar proxy headers get `403`), so set a token to scrape through a reverse proxy or from a public address. |
 | **Server** | `REDRX_DEBUG` | `false` | Development mode. Relaxes the canonical-domain redirect and allows a fallback `SECRET_KEY`. |
 
 ### Running behind a reverse proxy
@@ -294,7 +294,7 @@ Rate limits use the same syntax as before (`"200 per day;50 per hour"`, `"10 per
 For the full detailed documentation including parameter tables and system metrics, visit the `/api-docs` page on your running Redrx instance.
 
 ### Authentication
-Include your personal API key in request headers. Generate it from the dashboard: only a hash is stored, so the key is shown once, when it is generated. Keys created before this change keep working.
+Include your personal API key in request headers. Generate it from the dashboard (this asks for your current password, and an authentication code when two-factor authentication is enabled): only a hash is stored, so the key is shown once, when it is generated. Keys created before this change keep working.
 ```http
 X-API-KEY: your_api_key_here
 ```
