@@ -1,16 +1,12 @@
 name: Security Analysis
 
 on:
-  # No push trigger: every change reaches main through a PR that runs this
-  # workflow, "Build and Publish Image" re-runs vet and the race tests before
-  # publishing, and "Daily Security Scan" refreshes the gosec SARIF for main.
+  # Kept on every change (no path filter): this workflow holds the Gitleaks
+  # job, and main has no branch protection, so direct pushes need it too.
+  push:
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.github/ISSUE_TEMPLATE/**'
   workflow_dispatch:
 
 # Every action is pinned to a full commit SHA. A tag — even a major one like
